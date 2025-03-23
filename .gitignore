@@ -230,3 +230,5 @@ bin/**
 !bin/.gitkeep
 
 CMakeLists.txt.user
+
+output.*
