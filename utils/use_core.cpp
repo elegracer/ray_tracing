@@ -40,33 +40,32 @@ int main(int argc, const char* argv[]) {
     const double focal_length = 1.0;
     const double viewport_height = 2.0;
     const double viewport_width = viewport_height * (double(image_width) / image_height);
-    const Eigen::Vector3d camera_center {0.0, 0.0, 0.0};
+    const Vec3d camera_center {0.0, 0.0, 0.0};
 
     // Calculate the vectors across the horizontal and down the vertical viewport edges
-    const Eigen::Vector3d viewport_u {viewport_width, 0.0, 0.0};
-    const Eigen::Vector3d viewport_v {0.0, -viewport_height, 0.0};
+    const Vec3d viewport_u {viewport_width, 0.0, 0.0};
+    const Vec3d viewport_v {0.0, -viewport_height, 0.0};
 
     // Calculate the horizontal and vertical delta vectors from pixel to pixel
-    const Eigen::Vector3d pixel_delta_u = viewport_u / image_width;
-    const Eigen::Vector3d pixel_delta_v = viewport_v / image_height;
+    const Vec3d pixel_delta_u = viewport_u / image_width;
+    const Vec3d pixel_delta_v = viewport_v / image_height;
 
     // Calculate the location of the upper left pixel
-    const Eigen::Vector3d viewport_upper_left =
-        camera_center - Eigen::Vector3d {0.0, 0.0, focal_length} - viewport_u / 2 - viewport_v / 2;
-    const Eigen::Vector3d pixel00_loc = viewport_upper_left + 0.5 * (pixel_delta_u + pixel_delta_v);
+    const Vec3d viewport_upper_left =
+        camera_center - Vec3d {0.0, 0.0, focal_length} - viewport_u / 2 - viewport_v / 2;
+    const Vec3d pixel00_loc = viewport_upper_left + 0.5 * (pixel_delta_u + pixel_delta_v);
 
     // Render
     cv::Mat img(image_height, image_width, CV_8UC3);
 
     for (int y = 0; y < image_height; y++) {
         for (int x = 0; x < image_width; x++) {
-            const Eigen::Vector3d pixel_center =
-                pixel00_loc + (x * pixel_delta_u) + (y * pixel_delta_v);
-            const Eigen::Vector3d ray_direction = pixel_center - camera_center;
+            const Vec3d pixel_center = pixel00_loc + (x * pixel_delta_u) + (y * pixel_delta_v);
+            const Vec3d ray_direction = pixel_center - camera_center;
 
             Ray ray(camera_center, ray_direction);
 
-            const Eigen::Vector3i color = scale_normalized_color(ray_color(ray), 256);
+            const Vec3i color = scale_normalized_color(ray_color(ray), 256);
 
             img.at<cv::Vec3b>(y, x) = cv::Vec3b(color.z(), color.y(), color.x());
         }

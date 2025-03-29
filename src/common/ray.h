@@ -6,16 +6,14 @@ class Ray {
 
 public:
     Ray() = delete;
-    Ray(const Eigen::Vector3d& origin, const Eigen::Vector3d& direction)
-        : m_origin(origin),
-          m_direction(direction) {}
+    Ray(const Vec3d& origin, const Vec3d& direction) : m_origin(origin), m_direction(direction) {}
 
     auto&& origin(this auto&& self) { return self.m_origin; }
     auto&& direction(this auto&& self) { return self.m_direction; }
 
-    Eigen::Vector3d at(const double t) const { return m_origin + m_direction * t; }
+    Vec3d at(const double t) const { return m_origin + m_direction * t; }
 
 private:
-    Eigen::Vector3d m_origin;
-    Eigen::Vector3d m_direction;
+    Vec3d m_origin;
+    Vec3d m_direction;
 };

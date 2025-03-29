@@ -4,6 +4,6 @@
 
 #include <Eigen/Core>
 
-namespace Eigen {
-using Vector3b = Eigen::Vector<uint8_t, 3>;
-}
+using Vec3b = Eigen::Vector<uint8_t, 3>;
+using Vec3d = Eigen::Vector3d;
+using Vec3i = Eigen::Vector3i;
