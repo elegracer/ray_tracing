@@ -66,7 +66,7 @@ int main(int argc, const char* argv[]) {
 
             Ray ray(camera_center, ray_direction);
 
-            const Eigen::Vector3i color = ray_color(ray);
+            const Eigen::Vector3i color = scale_normalized_color(ray_color(ray), 256);
 
             img.at<cv::Vec3b>(y, x) = cv::Vec3b(color.z(), color.y(), color.x());
         }
