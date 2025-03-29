@@ -41,7 +41,7 @@ option(OPTION_A "..." ON)
 # core library
 configure_file(cmake/version.h.in include/core/version.h)
 
-add_library(core)
+add_library(core SHARED)
 target_sources(core
     PRIVATE
         ${CMAKE_CURRENT_BINARY_DIR}/include/core/version.h
