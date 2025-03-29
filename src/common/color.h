@@ -15,15 +15,15 @@ inline Vec3i scale_normalized_color(const Vec3d& color_normalized, const int sca
 inline double hit_sphere(const Vec3d& center, const double radius, const Ray& ray) {
     const Vec3d oc = center - ray.origin();
     const double a = ray.direction().squaredNorm();
-    const double b = -2.0 * ray.direction().dot(oc);
+    const double h = ray.direction().dot(oc);
     const double c = oc.squaredNorm() - radius * radius;
-    const double discriminant = b * b - 4.0 * a * c;
+    const double discriminant = h * h - a * c;
 
     if (discriminant < 0.0) {
         return -1.0;
     }
 
-    return (-b - std::sqrt(discriminant)) / (2.0 * a);
+    return (h - std::sqrt(discriminant)) / a;
 }
 
 inline Vec3d ray_color(const Ray& ray) {
