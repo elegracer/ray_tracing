@@ -26,6 +26,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # # link time optimization
 # set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
 
+# if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT ANDROID)
+#     add_compile_options(-stdlib=libc++)
+#     add_link_options(-stdlib=libc++)
+#     set(CMAKE_CXX_FLAGS "-stdlib=libc++")
+# endif()
 
 set(THIRDPARTY_SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/3rdparty)
 
@@ -33,6 +38,7 @@ find_package(Eigen3 CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 find_package(cxxopts CONFIG REQUIRED)
 find_package(range-v3 CONFIG REQUIRED)
+find_package(proxy CONFIG REQUIRED)
 find_package(OpenCV CONFIG REQUIRED)
 
 # options
@@ -59,6 +65,7 @@ target_link_libraries(core
         fmt::fmt
         cxxopts::cxxopts
         range-v3::meta range-v3::concepts range-v3::range-v3
+        msft_proxy
         ${OpenCV_LIBS}
 )
 

@@ -4,6 +4,7 @@
         "fmt",
         "cxxopts",
         "range-v3",
+        "proxy",
         "opencv"
     ]
 }

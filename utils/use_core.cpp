@@ -1,4 +1,4 @@
-#include "common/ray.h"
+#include "common/sphere.h"
 #include "core/core.h"
 
 #include <fmt/core.h>
@@ -6,7 +6,32 @@
 #include <cxxopts.hpp>
 #include <opencv2/opencv.hpp>
 
+#include "common/defs.h"
 #include "common/color.h"
+#include "common/hittable_list.h"
+
+
+inline Vec3i scale_normalized_color(const Vec3d& color_normalized, const int scale) {
+    return (color_normalized * ((double)scale - 0.001))
+        .cast<int>()
+        .array()
+        .max(0)
+        .min(scale - 1)
+        .matrix();
+}
+
+
+inline Vec3d ray_color(const Ray& ray, const pro::proxy<Hittable>& hittable) {
+    HitRecord hit_rec;
+    if (hittable->hit(ray, 0, infinity, hit_rec)) {
+        return 0.5 * (hit_rec.normal + Vec3d::Ones());
+    }
+
+    const Vec3d unit_direction = ray.direction().normalized();
+    const double a = 0.5 * (unit_direction.y() + 1.0);
+    return (1.0 - a) * Vec3d {1.0, 1.0, 1.0} + a * Vec3d {0.5, 0.7, 1.0};
+}
+
 
 int main(int argc, const char* argv[]) {
 
@@ -35,6 +60,13 @@ int main(int argc, const char* argv[]) {
 
     // Calculate the image height, and ensure that it's at least 1
     const int image_height = std::max(int(image_width / aspect_ratio), 1);
+
+    // World
+    HittableList world;
+    world.add(pro::make_proxy<Hittable, Sphere>(Vec3d {0.0, 0.0, -1.0}, 0.5));
+    world.add(pro::make_proxy<Hittable, Sphere>(Vec3d {0.0, -100.5, -1.0}, 100.0));
+
+    pro::proxy<Hittable> world_as_hittable = &world;
 
     // Camera
     const double focal_length = 1.0;
@@ -65,7 +97,7 @@ int main(int argc, const char* argv[]) {
 
             Ray ray(camera_center, ray_direction);
 
-            const Vec3i color = scale_normalized_color(ray_color(ray), 256);
+            const Vec3i color = scale_normalized_color(ray_color(ray, world_as_hittable), 256);
 
             img.at<cv::Vec3b>(y, x) = cv::Vec3b(color.z(), color.y(), color.x());
         }
