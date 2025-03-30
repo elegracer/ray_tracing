@@ -56,7 +56,7 @@ int main(int argc, const char* argv[]) {
     // Image
 
     const double aspect_ratio = 16.0 / 9.0;
-    const int image_width = 400;
+    const int image_width = 1280;
 
     // Calculate the image height, and ensure that it's at least 1
     const int image_height = std::max(int(image_width / aspect_ratio), 1);
