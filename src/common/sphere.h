@@ -10,8 +10,7 @@ public:
         : m_center(center),
           m_radius(std::max(0.0, radius)) {}
 
-    bool hit(const Ray& ray, const double ray_tmin, const double ray_tmax,
-        HitRecord& hit_rec) const {
+    bool hit(const Ray& ray, const Interval& ray_t, HitRecord& hit_rec) const {
         const Vec3d oc = m_center - ray.origin();
         const double a = ray.direction().squaredNorm();
         const double h = ray.direction().dot(oc);
@@ -26,9 +25,9 @@ public:
 
         // Find the nearest root that lies in the acceptable range
         double root = (h - sqrtd) / a;
-        if (root <= ray_tmin || root >= ray_tmax) {
+        if (!ray_t.surrounds(root)) {
             root = (h + sqrtd) / a;
-            if (root <= ray_tmin || root >= ray_tmax) {
+            if (!ray_t.surrounds(root)) {
                 return false;
             }
         }

@@ -23,7 +23,7 @@ inline Vec3i scale_normalized_color(const Vec3d& color_normalized, const int sca
 
 inline Vec3d ray_color(const Ray& ray, const pro::proxy<Hittable>& hittable) {
     HitRecord hit_rec;
-    if (hittable->hit(ray, 0, infinity, hit_rec)) {
+    if (hittable->hit(ray, Interval {0, infinity}, hit_rec)) {
         return 0.5 * (hit_rec.normal + Vec3d::Ones());
     }
 

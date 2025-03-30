@@ -4,6 +4,7 @@
 
 #include "defs.h"
 #include "ray.h"
+#include "interval.h"
 
 
 struct HitRecord {
@@ -24,5 +25,4 @@ PRO_DEF_MEM_DISPATCH(MemHit, hit);
 
 struct Hittable
     : pro::facade_builder ::support_copy<pro::constraint_level::nontrivial>::add_convention<MemHit,
-          bool(const Ray& ray, const double ray_tmin, const double ray_tmax, HitRecord& hit_rec)
-              const>::build {};
+          bool(const Ray& ray, const Interval& ray_t, HitRecord& hit_rec) const>::build {};
