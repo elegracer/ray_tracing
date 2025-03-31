@@ -40,6 +40,7 @@ find_package(cxxopts CONFIG REQUIRED)
 find_package(range-v3 CONFIG REQUIRED)
 find_package(proxy CONFIG REQUIRED)
 find_package(OpenCV CONFIG REQUIRED)
+find_path(ICECREAM_CPP_INCLUDE_DIRS "icecream.hpp")
 
 # options
 option(OPTION_A "..." ON)
@@ -58,6 +59,7 @@ target_include_directories(core
     PUBLIC
         ${CMAKE_CURRENT_BINARY_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${ICECREAM_CPP_INCLUDE_DIRS}
 )
 target_link_libraries(core
     PUBLIC
