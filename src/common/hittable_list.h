@@ -3,6 +3,7 @@
 #include "defs.h"
 #include "hittable.h"
 #include "interval.h"
+#include "icecream.hpp"
 
 #include <vector>
 

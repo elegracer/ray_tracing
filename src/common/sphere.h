@@ -2,6 +2,7 @@
 
 #include "defs.h"
 #include "hittable.h"
+#include "icecream.hpp"
 
 class Sphere {
 public:
