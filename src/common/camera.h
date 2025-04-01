@@ -104,7 +104,7 @@ private:
         HitRecord hit_rec;
 
         if (hittable->hit(ray, Interval {0.001, infinity}, hit_rec)) {
-            const Vec3d direction = random_on_hemisphere(hit_rec.normal);
+            const Vec3d direction = hit_rec.normal + random_unit_vector();
             return 0.5 * ray_color(Ray(hit_rec.p, direction), depth - 1, hittable);
         }
 
