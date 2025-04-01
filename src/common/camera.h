@@ -14,6 +14,7 @@ public:
     double aspect_ratio = 1.0;  // Ratio of image width over height
     int image_width = 100;      // Rendered image width in pixel count
     int samples_per_pixel = 10; // Count of random samples for each pixel
+    int max_depth = 10;         // Maximum number of ray bounces into scene
     cv::Mat img;                // Rendered image as cv::Mat
 
 public:
@@ -30,7 +31,7 @@ public:
                 Vec3d pixel_color = {0.0, 0.0, 0.0};
                 for (int sample = 0; sample < samples_per_pixel; ++sample) {
                     Ray ray = get_ray(x, y);
-                    pixel_color += ray_color(ray, world);
+                    pixel_color += ray_color(ray, max_depth, world);
                 }
                 pixel_color *= pixel_samples_scale;
 
@@ -94,11 +95,17 @@ private:
         return Vec3d(random_double() - 0.5, random_double() - 0.5, 0.0);
     }
 
-    Vec3d ray_color(const Ray& ray, const pro::proxy<Hittable>& hittable) {
+    Vec3d ray_color(const Ray& ray, const int depth, const pro::proxy<Hittable>& hittable) {
+        // If we've exceeded the ray bounce limit, no more light is gathered
+        if (depth <= 0) {
+            return {0.0, 0.0, 0.0};
+        }
+
         HitRecord hit_rec;
 
-        if (hittable->hit(ray, Interval {0, infinity}, hit_rec)) {
-            return 0.5 * (hit_rec.normal + Vec3d::Ones());
+        if (hittable->hit(ray, Interval {0.001, infinity}, hit_rec)) {
+            const Vec3d direction = random_on_hemisphere(hit_rec.normal);
+            return 0.5 * ray_color(Ray(hit_rec.p, direction), depth - 1, hittable);
         }
 
         const Vec3d unit_direction = ray.direction().normalized();

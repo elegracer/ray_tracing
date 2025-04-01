@@ -41,3 +41,24 @@ inline double random_double(const double min, const double max) {
     // Returns a random real in [min,max)
     return min + (max - min) * random_double();
 }
+
+// Random Unit Vector Generation
+
+inline Vec3d random_unit_vector() {
+    while (true) {
+        const Vec3d p = Vec3d::Random();
+        const double norm_sq = p.squaredNorm();
+        if (norm_sq > 1e-100 && norm_sq <= 1.0) {
+            return p.normalized();
+        }
+    }
+}
+
+inline Vec3d random_on_hemisphere(const Vec3d& normal) {
+    const Vec3d on_unit_sphere = random_unit_vector();
+    if (on_unit_sphere.dot(normal) > 0.0) {
+        return on_unit_sphere;
+    } else {
+        return -on_unit_sphere;
+    }
+}
