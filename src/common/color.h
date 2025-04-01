@@ -17,3 +17,11 @@ inline double hit_sphere(const Vec3d& center, const double radius, const Ray& ra
 
     return (h - std::sqrt(discriminant)) / a;
 }
+
+inline double linear_to_gamma(const double linear_component) {
+    if (linear_component > 0.0) {
+        return std::sqrt(linear_component);
+    }
+
+    return 0.0;
+}

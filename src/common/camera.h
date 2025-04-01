@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hittable.h"
+#include "color.h"
 
 #include <fmt/format.h>
 #include <icecream.hpp>
@@ -34,6 +35,11 @@ public:
                     pixel_color += ray_color(ray, max_depth, world);
                 }
                 pixel_color *= pixel_samples_scale;
+
+                // Apply a linear to gamma transform for gamma 2
+                pixel_color.x() = linear_to_gamma(pixel_color.x());
+                pixel_color.y() = linear_to_gamma(pixel_color.y());
+                pixel_color.z() = linear_to_gamma(pixel_color.z());
 
                 // Translate the [0,1] component values to the byte range [0,255]
                 static const Interval intensity(0.000, 0.999);
