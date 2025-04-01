@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/defs.h"
+#include "common.h"
 
 
 class Interval {
@@ -14,6 +14,8 @@ public:
     bool contains(const double x) const { return min <= x && x <= max; }
 
     bool surrounds(const double x) const { return min < x && x < max; }
+
+    double clamp(const double x) const { return std::clamp(x, min, max); }
 
     double min = +infinity;
     double max = -infinity;

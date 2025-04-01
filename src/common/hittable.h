@@ -2,7 +2,7 @@
 
 #include "proxy/proxy.h"
 
-#include "defs.h"
+#include "common.h"
 #include "ray.h"
 #include "interval.h"
 

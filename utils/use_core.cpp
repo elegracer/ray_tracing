@@ -6,7 +6,7 @@
 #include <cxxopts.hpp>
 #include <opencv2/opencv.hpp>
 
-#include "common/defs.h"
+#include "common/common.h"
 #include "common/camera.h"
 #include "common/hittable_list.h"
 
@@ -43,6 +43,7 @@ int main(int argc, const char* argv[]) {
     Camera cam;
     cam.aspect_ratio = 16.0 / 9.0;
     cam.image_width = 1280;
+    cam.samples_per_pixel = 50;
 
     // Render
     cam.render(world_as_hittable);

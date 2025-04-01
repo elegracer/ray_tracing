@@ -11,9 +11,10 @@ class Camera {
 public:
     Camera() { initialize(); }
 
-    double aspect_ratio = 1.0; // Ratio of image width over height
-    int image_width = 100;     // Rendered image width in pixel count
-    cv::Mat img;               // Rendered image as cv::Mat
+    double aspect_ratio = 1.0;  // Ratio of image width over height
+    int image_width = 100;      // Rendered image width in pixel count
+    int samples_per_pixel = 10; // Count of random samples for each pixel
+    cv::Mat img;                // Rendered image as cv::Mat
 
 public:
     void render(const pro::proxy<Hittable>& world) {
@@ -26,17 +27,27 @@ public:
                 const Vec3d pixel_center = pixel00_loc + (x * pixel_delta_u) + (y * pixel_delta_v);
                 const Vec3d ray_direction = pixel_center - center;
 
-                Ray ray(center, ray_direction);
+                Vec3d pixel_color = {0.0, 0.0, 0.0};
+                for (int sample = 0; sample < samples_per_pixel; ++sample) {
+                    Ray ray = get_ray(x, y);
+                    pixel_color += ray_color(ray, world);
+                }
+                pixel_color *= pixel_samples_scale;
 
-                const Vec3i color = scale_normalized_color(ray_color(ray, world), 256);
+                // Translate the [0,1] component values to the byte range [0,255]
+                static const Interval intensity(0.000, 0.999);
+                const int rbyte = int(256 * intensity.clamp(pixel_color.x()));
+                const int gbyte = int(256 * intensity.clamp(pixel_color.y()));
+                const int bbyte = int(256 * intensity.clamp(pixel_color.z()));
 
-                img.at<cv::Vec3b>(y, x) = cv::Vec3b(color.z(), color.y(), color.x());
+                img.at<cv::Vec3b>(y, x) = cv::Vec3b(bbyte, gbyte, rbyte);
             }
         }
     }
 
 private:
     int image_height;               // Rendered image height
+    double pixel_samples_scale;     // Color scale factor for a sum of pixel samples
     Vec3d center = {0.0, 0.0, 0.0}; // Camera center
     Vec3d pixel_delta_u;            // Offset to pixel to the right
     Vec3d pixel_delta_v;            // Offset to pixel below
@@ -44,6 +55,8 @@ private:
 
     void initialize() {
         image_height = std::max(int(image_width / aspect_ratio), 1);
+
+        pixel_samples_scale = 1.0 / samples_per_pixel;
 
         // Determine viewport dimensions.
         const double focal_length = 1.0;
@@ -64,13 +77,21 @@ private:
         pixel00_loc = viewport_upper_left + 0.5 * (pixel_delta_u + pixel_delta_v);
     }
 
-    Vec3i scale_normalized_color(const Vec3d& color_normalized, const int scale) {
-        return (color_normalized * ((double)scale - 0.001))
-            .cast<int>()
-            .array()
-            .max(0)
-            .min(scale - 1)
-            .matrix();
+    Ray get_ray(const int x, const int y) const {
+        // Construct a camera ray originating from the origin and directed at randomly
+        // sampled point around the pixel location i, j
+        const Vec3d offset = sample_square();
+        const Vec3d pixel_sample =
+            pixel00_loc + ((x + offset.x()) * pixel_delta_u) + ((y + offset.y()) * pixel_delta_v);
+        const Vec3d ray_origin = center;
+        const Vec3d ray_direction = pixel_sample - ray_origin;
+
+        return Ray(ray_origin, ray_direction);
+    }
+
+    Vec3d sample_square() const {
+        // Returns the vector to a random point in the [-0.5,-0.5]-[+0.5,+0.5] unit square.
+        return Vec3d(random_double() - 0.5, random_double() - 0.5, 0.0);
     }
 
     Vec3d ray_color(const Ray& ray, const pro::proxy<Hittable>& hittable) {

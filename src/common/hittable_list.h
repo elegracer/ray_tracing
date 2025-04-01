@@ -1,6 +1,6 @@
 #pragma once
 
-#include "defs.h"
+#include "common.h"
 #include "hittable.h"
 #include "interval.h"
 #include "icecream.hpp"
