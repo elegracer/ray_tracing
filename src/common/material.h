@@ -51,17 +51,18 @@ private:
 
 
 struct Metal {
-    Metal(const Vec3d& albedo) : albedo(albedo) {}
+    Metal(const Vec3d& albedo, const double fuzz) : albedo(albedo), fuzz(fuzz < 1.0 ? fuzz : 1.0) {}
 
     bool scatter(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation,
         Ray& scattered) const {
         Vec3d reflected = reflect(ray_in.direction(), hit_rec.normal);
-
+        reflected = reflected.normalized() + (fuzz * random_unit_vector());
         scattered = Ray(hit_rec.p, reflected);
         attenuation = albedo;
-        return true;
+        return scattered.direction().dot(hit_rec.normal) > 0.0;
     }
 
 private:
     Vec3d albedo;
+    double fuzz;
 };
