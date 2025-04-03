@@ -110,8 +110,12 @@ private:
         HitRecord hit_rec;
 
         if (hittable->hit(ray, Interval {0.001, infinity}, hit_rec)) {
-            const Vec3d direction = hit_rec.normal + random_unit_vector();
-            return 0.5 * ray_color(Ray(hit_rec.p, direction), depth - 1, hittable);
+            Ray scattered;
+            Vec3d attenuation;
+            if (hit_rec.mat->scatter(ray, hit_rec, attenuation, scattered)) {
+                return attenuation.array() * ray_color(scattered, depth - 1, hittable).array();
+            }
+            return {0.0, 0.0, 0.0};
         }
 
         const Vec3d unit_direction = ray.direction().normalized();

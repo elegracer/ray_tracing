@@ -9,7 +9,7 @@
 #include "common/common.h"
 #include "common/camera.h"
 #include "common/hittable_list.h"
-
+#include "common/material.h"
 
 int main(int argc, const char* argv[]) {
 
@@ -31,11 +31,17 @@ int main(int argc, const char* argv[]) {
         fmt::print("use default output_image_format: {}\n", output_image_format);
     }
 
+    auto material_ground = std::make_shared<Lambertion>(Vec3d {0.8, 0.8, 0.0});
+    auto material_center = std::make_shared<Lambertion>(Vec3d {0.1, 0.2, 0.5});
+    auto material_left = std::make_shared<Metal>(Vec3d {0.8, 0.8, 0.8});
+    auto material_right = std::make_shared<Metal>(Vec3d {0.8, 0.6, 0.2});
 
     // World
     HittableList world;
-    world.add(pro::make_proxy<Hittable, Sphere>(Vec3d {0.0, 0.0, -1.0}, 0.5));
-    world.add(pro::make_proxy<Hittable, Sphere>(Vec3d {0.0, -100.5, -1.0}, 100.0));
+    world.add(pro::make_proxy<Hittable, Sphere>(Vec3d {0.0, -100.5, -1.0}, 100.0, material_ground));
+    world.add(pro::make_proxy<Hittable, Sphere>(Vec3d {0.0, 0.0, -1.2}, 0.5, material_center));
+    world.add(pro::make_proxy<Hittable, Sphere>(Vec3d {-1.0, 0.0, -1.0}, 0.5, material_left));
+    world.add(pro::make_proxy<Hittable, Sphere>(Vec3d {1.0, 0.0, -1.0}, 0.5, material_right));
 
     pro::proxy<Hittable> world_as_hittable = &world;
 

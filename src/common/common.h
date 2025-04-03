@@ -62,3 +62,7 @@ inline Vec3d random_on_hemisphere(const Vec3d& normal) {
         return -on_unit_sphere;
     }
 }
+
+inline Vec3d reflect(const Vec3d& v, const Vec3d& n) {
+    return v - 2.0 * v.dot(n) * n;
+}

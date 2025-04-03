@@ -2,24 +2,9 @@
 
 #include "proxy/proxy.h"
 
-#include "common.h"
 #include "ray.h"
 #include "interval.h"
-
-
-struct HitRecord {
-    Vec3d p;
-    Vec3d normal;
-    double t;
-    bool front_face;
-
-    void set_face_normal(const Ray& ray, const Vec3d& outward_normal) {
-        // Sets the hit record normal vector
-        // NOTE: the parameter `outward_normal` is assumed to have unit length
-        front_face = ray.direction().dot(outward_normal) < 0.0;
-        normal = front_face ? outward_normal : -outward_normal;
-    }
-};
+#include "material.h"
 
 PRO_DEF_MEM_DISPATCH(MemHit, hit);
 

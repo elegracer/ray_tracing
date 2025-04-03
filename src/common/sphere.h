@@ -7,9 +7,10 @@
 class Sphere {
 public:
     Sphere() = delete;
-    Sphere(const Vec3d& center, const double radius)
+    Sphere(const Vec3d& center, const double radius, pro::proxy<Material> mat)
         : m_center(center),
-          m_radius(std::max(0.0, radius)) {}
+          m_radius(std::max(0.0, radius)),
+          m_mat(mat) {}
 
     bool hit(const Ray& ray, const Interval& ray_t, HitRecord& hit_rec) const {
         const Vec3d oc = m_center - ray.origin();
@@ -37,6 +38,7 @@ public:
         hit_rec.p = ray.at(hit_rec.t);
         const Vec3d outward_normal = (hit_rec.p - m_center) / m_radius;
         hit_rec.set_face_normal(ray, outward_normal);
+        hit_rec.mat = m_mat;
 
         return true;
     }
@@ -44,4 +46,5 @@ public:
 private:
     Vec3d m_center;
     double m_radius;
+    pro::proxy<Material> m_mat;
 };
