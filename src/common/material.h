@@ -66,3 +66,25 @@ private:
     Vec3d albedo;
     double fuzz;
 };
+
+
+struct Dielectric {
+    Dielectric(const double refraction_index) : refraction_index(refraction_index) {}
+
+    bool scatter(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation,
+        Ray& scattered) const {
+        attenuation = {1.0, 1.0, 1.0};
+        const double ri = hit_rec.front_face ? (1.0 / refraction_index) : refraction_index;
+
+        const Vec3d unit_direction = ray_in.direction().normalized();
+        const Vec3d refracted = refract(unit_direction, hit_rec.normal, ri);
+
+        scattered = Ray(hit_rec.p, refracted);
+        return true;
+    }
+
+private:
+    // Refractive index in vaccum or air, or the ratio of the material's refractive index onver the
+    // refractive index of the enclosing media
+    double refraction_index;
+};
