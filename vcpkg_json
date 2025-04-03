@@ -5,6 +5,7 @@
         "cxxopts",
         "range-v3",
         "proxy",
-        "opencv"
+        "opencv",
+        "icecream-cpp"
     ]
 }
