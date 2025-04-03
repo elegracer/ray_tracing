@@ -77,9 +77,14 @@ struct Dielectric {
         const double ri = hit_rec.front_face ? (1.0 / refraction_index) : refraction_index;
 
         const Vec3d unit_direction = ray_in.direction().normalized();
-        const Vec3d refracted = refract(unit_direction, hit_rec.normal, ri);
+        const double cos_theta = std::min(-unit_direction.dot(hit_rec.normal), 1.0);
+        const double sin_theta = std::sqrt(1.0 - cos_theta * cos_theta);
 
-        scattered = Ray(hit_rec.p, refracted);
+        const bool cannot_refract = ri * sin_theta > 1.0;
+        const Vec3d direction = cannot_refract ? reflect(unit_direction, hit_rec.normal)
+                                               : refract(unit_direction, hit_rec.normal, ri);
+
+        scattered = Ray(hit_rec.p, direction);
         return true;
     }
 
