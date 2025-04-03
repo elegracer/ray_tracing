@@ -81,8 +81,10 @@ struct Dielectric {
         const double sin_theta = std::sqrt(1.0 - cos_theta * cos_theta);
 
         const bool cannot_refract = ri * sin_theta > 1.0;
-        const Vec3d direction = cannot_refract ? reflect(unit_direction, hit_rec.normal)
-                                               : refract(unit_direction, hit_rec.normal, ri);
+        const Vec3d direction =
+            (cannot_refract || reflectance(cos_theta, refraction_index) > random_double())
+                ? reflect(unit_direction, hit_rec.normal)
+                : refract(unit_direction, hit_rec.normal, ri);
 
         scattered = Ray(hit_rec.p, direction);
         return true;
@@ -92,4 +94,11 @@ private:
     // Refractive index in vaccum or air, or the ratio of the material's refractive index onver the
     // refractive index of the enclosing media
     double refraction_index;
+
+    static double reflectance(const double cosine, const double refraction_index) {
+        // Use Schlick's approximation for reflectance.
+        const double r0 = (1.0 - refraction_index) / (1.0 + refraction_index);
+        const double r0sq = r0 * r0;
+        return r0sq + (1.0 - r0sq) * std::pow(1.0 - cosine, 5);
+    }
 };
