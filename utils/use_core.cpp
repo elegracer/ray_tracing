@@ -53,7 +53,11 @@ int main(int argc, const char* argv[]) {
     cam.image_width = 1280;
     cam.samples_per_pixel = 50;
     cam.max_depth = 50;
+
     cam.vfov = 100.0;
+    cam.lookfrom = {-2.0, 2.0, 1.0};
+    cam.lookat = {0.0, 0.0, -1.0};
+    cam.vup = {0.0, 1.0, 0.0};
 
     // Render
     cam.render(world_as_hittable);

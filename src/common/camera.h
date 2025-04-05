@@ -17,7 +17,10 @@ public:
     int samples_per_pixel = 10; // Count of random samples for each pixel
     int max_depth = 10;         // Maximum number of ray bounces into scene
 
-    double vfov = 90; // Vertical field of view in degrees
+    double vfov = 90;                 // Vertical field of view in degrees
+    Vec3d lookfrom = {0.0, 0.0, 0.0}; // Point camera is looking from
+    Vec3d lookat = {0.0, 0.0, -1.0};  // Point camera is looking at
+    Vec3d vup = {0.0, 1.0, 0.0};      // Camera-relative "up" direction
 
     cv::Mat img; // Rendered image as cv::Mat
 
@@ -61,6 +64,7 @@ private:
     Vec3d center = {0.0, 0.0, 0.0}; // Camera center
     Vec3d pixel_delta_u;            // Offset to pixel to the right
     Vec3d pixel_delta_v;            // Offset to pixel below
+    Vec3d u, v, w;                  // Camera frame basis vectors
     Vec3d pixel00_loc;              // Location of pixel 0, 0
 
     void initialize() {
@@ -68,16 +72,23 @@ private:
 
         pixel_samples_scale = 1.0 / samples_per_pixel;
 
+        center = lookfrom;
+
         // Determine viewport dimensions.
-        const double focal_length = 1.0;
+        const double focal_length = (lookfrom - lookat).norm();
         const double theta = deg2rad(vfov);
         const double h = std::tan(0.5 * theta);
         const double viewport_height = 2.0 * h * focal_length;
         const double viewport_width = viewport_height * (double(image_width) / image_height);
 
+        // Calculate the u,v,w unit basis vectors from the camera coordinate frame.
+        w = (lookfrom - lookat).normalized();
+        u = vup.cross(w).normalized();
+        v = w.cross(u).normalized();
+
         // Calculate the vectors across the horizontal and down the vertical viewport edges.
-        const Vec3d viewport_u {viewport_width, 0.0, 0.0};
-        const Vec3d viewport_v {0.0, -viewport_height, 0.0};
+        const Vec3d viewport_u = viewport_width * u;
+        const Vec3d viewport_v = viewport_height * -v;
 
         // Calculate the horizontal and vertical delta vectors from pixel to pixel
         pixel_delta_u = viewport_u / image_width;
@@ -85,7 +96,7 @@ private:
 
         // Calculate the location of the upper left pixel
         const Vec3d viewport_upper_left =
-            center - Vec3d {0.0, 0.0, focal_length} - viewport_u / 2 - viewport_v / 2;
+            center - (focal_length * w) - viewport_u / 2 - viewport_v / 2;
         pixel00_loc = viewport_upper_left + 0.5 * (pixel_delta_u + pixel_delta_v);
     }
 
