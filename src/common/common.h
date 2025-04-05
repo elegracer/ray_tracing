@@ -42,6 +42,14 @@ inline double random_double(const double min, const double max) {
     return min + (max - min) * random_double();
 }
 
+inline Vec3d random_vec3d() {
+    return Vec3d {random_double(), random_double(), random_double()};
+}
+
+inline Vec3d random_vec3d(const double min, const double max) {
+    return Vec3d {random_double(min, max), random_double(min, max), random_double(min, max)};
+}
+
 // Random Unit Vector Generation
 
 inline Vec3d random_unit_vector() {

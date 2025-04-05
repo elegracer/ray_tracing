@@ -31,19 +31,50 @@ int main(int argc, const char* argv[]) {
         fmt::print("use default output_image_format: {}\n", output_image_format);
     }
 
-    auto material_ground = std::make_shared<Lambertion>(Vec3d {0.8, 0.8, 0.0});
-    auto material_center = std::make_shared<Lambertion>(Vec3d {0.1, 0.2, 0.5});
-    auto material_left = std::make_shared<Dielectric>(1.50);
-    auto material_bubble = std::make_shared<Dielectric>(1.00 / 1.50);
-    auto material_right = std::make_shared<Metal>(Vec3d {0.8, 0.6, 0.2}, 1.0);
-
     // World
     HittableList world;
-    world.add(pro::make_proxy<Hittable, Sphere>(Vec3d {0.0, -100.5, -1.0}, 100.0, material_ground));
-    world.add(pro::make_proxy<Hittable, Sphere>(Vec3d {0.0, 0.0, -1.2}, 0.5, material_center));
-    world.add(pro::make_proxy<Hittable, Sphere>(Vec3d {-1.0, 0.0, -1.0}, 0.5, material_left));
-    world.add(pro::make_proxy<Hittable, Sphere>(Vec3d {-1.0, 0.0, -1.0}, 0.4, material_bubble));
-    world.add(pro::make_proxy<Hittable, Sphere>(Vec3d {1.0, 0.0, -1.0}, 0.5, material_right));
+
+    auto ground_material = std::make_shared<Lambertion>(Vec3d {0.5, 0.5, 0.5});
+    world.add(pro::make_proxy_shared<Hittable, Sphere>(Vec3d {0.0, -1000.0, 0.0}, 1000.0,
+        ground_material));
+
+    for (int a = -11; a < 11; ++a) {
+        for (int b = -11; b < 11; ++b) {
+            const double choose_mat = random_double();
+            const Vec3d center {a + 0.5 * random_double(), 0.2, b + 0.5 * random_double()};
+
+            if ((center - Vec3d {4.0, 0.2, 0.0}).norm() > 0.9) {
+                if (choose_mat < 0.8) {
+                    // diffuse
+                    const Vec3d albedo = random_vec3d().array() * random_vec3d().array();
+                    auto sphere_material = std::make_shared<Lambertion>(albedo);
+                    world.add(
+                        pro::make_proxy_shared<Hittable, Sphere>(center, 0.2, sphere_material));
+                } else if (choose_mat < 0.95) {
+                    // metal
+                    const Vec3d albedo = random_vec3d(0.5, 1.0);
+                    const double fuzz = random_double(0.0, 0.5);
+                    auto sphere_material = std::make_shared<Metal>(albedo, fuzz);
+                    world.add(
+                        pro::make_proxy_shared<Hittable, Sphere>(center, 0.2, sphere_material));
+                } else {
+                    // glass
+                    auto sphere_material = std::make_shared<Dielectric>(1.5);
+                    world.add(
+                        pro::make_proxy_shared<Hittable, Sphere>(center, 0.2, sphere_material));
+                }
+            }
+        }
+    }
+
+    auto material_1 = std::make_shared<Dielectric>(1.50);
+    world.add(pro::make_proxy<Hittable, Sphere>(Vec3d {0.0, 1.0, 0.0}, 1.0, material_1));
+
+    auto material_2 = std::make_shared<Lambertion>(Vec3d {0.4, 0.2, 0.1});
+    world.add(pro::make_proxy<Hittable, Sphere>(Vec3d {-4.0, 1.0, 0.0}, 1.0, material_2));
+
+    auto material_3 = std::make_shared<Metal>(Vec3d {0.7, 0.6, 0.5}, 0.0);
+    world.add(pro::make_proxy<Hittable, Sphere>(Vec3d {4.0, 1.0, 0.0}, 1.0, material_3));
 
     pro::proxy<Hittable> world_as_hittable = &world;
 
@@ -51,16 +82,16 @@ int main(int argc, const char* argv[]) {
     Camera cam;
     cam.aspect_ratio = 16.0 / 9.0;
     cam.image_width = 1280;
-    cam.samples_per_pixel = 50;
+    cam.samples_per_pixel = 500;
     cam.max_depth = 50;
 
-    cam.vfov = 30.0;
-    cam.lookfrom = {-2.0, 2.0, 1.0};
-    cam.lookat = {0.0, 0.0, -1.0};
+    cam.vfov = 20.0;
+    cam.lookfrom = {13.0, 2.0, 3.0};
+    cam.lookat = {0.0, 0.0, 0.0};
     cam.vup = {0.0, 1.0, 0.0};
 
-    cam.defocus_angle = 10.0;
-    cam.focus_dist = 3.4;
+    cam.defocus_angle = 0.6;
+    cam.focus_dist = 10.0;
 
     // Render
     cam.render(world_as_hittable);
