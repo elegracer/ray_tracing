@@ -16,7 +16,10 @@ public:
     int image_width = 100;      // Rendered image width in pixel count
     int samples_per_pixel = 10; // Count of random samples for each pixel
     int max_depth = 10;         // Maximum number of ray bounces into scene
-    cv::Mat img;                // Rendered image as cv::Mat
+
+    double vfov = 90; // Vertical field of view in degrees
+
+    cv::Mat img; // Rendered image as cv::Mat
 
 public:
     void render(const pro::proxy<Hittable>& world) {
@@ -67,7 +70,9 @@ private:
 
         // Determine viewport dimensions.
         const double focal_length = 1.0;
-        const double viewport_height = 2.0;
+        const double theta = deg2rad(vfov);
+        const double h = std::tan(0.5 * theta);
+        const double viewport_height = 2.0 * h * focal_length;
         const double viewport_width = viewport_height * (double(image_width) / image_height);
 
         // Calculate the vectors across the horizontal and down the vertical viewport edges.
