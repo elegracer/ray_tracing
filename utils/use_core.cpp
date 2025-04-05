@@ -54,7 +54,7 @@ int main(int argc, const char* argv[]) {
     cam.samples_per_pixel = 50;
     cam.max_depth = 50;
 
-    cam.vfov = 100.0;
+    cam.vfov = 30.0;
     cam.lookfrom = {-2.0, 2.0, 1.0};
     cam.lookat = {0.0, 0.0, -1.0};
     cam.vup = {0.0, 1.0, 0.0};
