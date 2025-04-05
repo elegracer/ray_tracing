@@ -41,6 +41,8 @@ find_package(range-v3 CONFIG REQUIRED)
 find_package(proxy CONFIG REQUIRED)
 find_package(OpenCV CONFIG REQUIRED)
 find_path(ICECREAM_CPP_INCLUDE_DIRS "icecream.hpp")
+find_package(TBB CONFIG REQUIRED)
+find_package(indicators CONFIG REQUIRED)
 
 # options
 option(OPTION_A "..." ON)
@@ -69,6 +71,8 @@ target_link_libraries(core
         range-v3::meta range-v3::concepts range-v3::range-v3
         msft_proxy
         ${OpenCV_LIBS}
+        TBB::tbb TBB::tbbmalloc
+        indicators::indicators
 )
 
 # utils

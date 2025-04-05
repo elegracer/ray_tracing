@@ -6,6 +6,8 @@
         "range-v3",
         "proxy",
         "opencv",
-        "icecream-cpp"
+        "icecream-cpp",
+        "tbb",
+        "indicators"
     ]
 }

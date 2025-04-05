@@ -3,10 +3,14 @@
 #include "hittable.h"
 #include "color.h"
 
+#include <fmt/core.h>
 #include <fmt/format.h>
 #include <icecream.hpp>
 #include <opencv2/opencv.hpp>
-
+#include <tbb/parallel_for.h>
+#include <tbb/blocked_range2d.h>
+#include <indicators/block_progress_bar.hpp>
+#include <indicators/cursor_control.hpp>
 
 class Camera {
 public:
@@ -27,38 +31,61 @@ public:
 
     cv::Mat img; // Rendered image as cv::Mat
 
+    std::atomic_int rendered_pixel_count;
+    int total_pixel_count;
+
 public:
     void render(const pro::proxy<Hittable>& world) {
         initialize();
 
         img = cv::Mat(image_height, image_width, CV_8UC3);
 
-        for (int y = 0; y < image_height; y++) {
-            for (int x = 0; x < image_width; x++) {
-                const Vec3d pixel_center = pixel00_loc + (x * pixel_delta_u) + (y * pixel_delta_v);
-                const Vec3d ray_direction = pixel_center - center;
 
-                Vec3d pixel_color = {0.0, 0.0, 0.0};
-                for (int sample = 0; sample < samples_per_pixel; ++sample) {
-                    Ray ray = get_ray(x, y);
-                    pixel_color += ray_color(ray, max_depth, world);
+        // Initialize progress bar
+        using namespace indicators;
+        show_console_cursor(false);
+        BlockProgressBar bar {option::ForegroundColor {Color::white},
+            option::FontStyles {std::vector<FontStyle> {FontStyle::bold}},
+            option::MaxProgress {total_pixel_count}};
+
+        tbb::parallel_for(tbb::blocked_range2d<int>(0, image_height, 0, image_width),
+            [&, this](const tbb::blocked_range2d<int>& range) {
+                for (int y = range.rows().begin(), y_end = range.rows().end(); y < y_end; ++y) {
+                    for (int x = range.cols().begin(), x_end = range.cols().end(); x < x_end; ++x) {
+                        const Vec3d pixel_center =
+                            pixel00_loc + (x * pixel_delta_u) + (y * pixel_delta_v);
+                        const Vec3d ray_direction = pixel_center - center;
+
+                        Vec3d pixel_color = {0.0, 0.0, 0.0};
+                        for (int sample = 0; sample < samples_per_pixel; ++sample) {
+                            Ray ray = get_ray(x, y);
+                            pixel_color += ray_color(ray, max_depth, world);
+                        }
+                        pixel_color *= pixel_samples_scale;
+
+                        // Apply a linear to gamma transform for gamma 2
+                        pixel_color.x() = linear_to_gamma(pixel_color.x());
+                        pixel_color.y() = linear_to_gamma(pixel_color.y());
+                        pixel_color.z() = linear_to_gamma(pixel_color.z());
+
+                        // Translate the [0,1] component values to the byte range [0,255]
+                        static const Interval intensity(0.000, 0.999);
+                        const int rbyte = int(256 * intensity.clamp(pixel_color.x()));
+                        const int gbyte = int(256 * intensity.clamp(pixel_color.y()));
+                        const int bbyte = int(256 * intensity.clamp(pixel_color.z()));
+
+                        img.at<cv::Vec3b>(y, x) = cv::Vec3b(bbyte, gbyte, rbyte);
+                        rendered_pixel_count += 1;
+                    }
                 }
-                pixel_color *= pixel_samples_scale;
+                const int rendered_pixel_count_val = rendered_pixel_count.load();
+                bar.set_option(option::PostfixText {
+                    fmt::format("{}/{}", rendered_pixel_count_val, total_pixel_count)});
+                bar.set_progress(rendered_pixel_count_val);
+            });
 
-                // Apply a linear to gamma transform for gamma 2
-                pixel_color.x() = linear_to_gamma(pixel_color.x());
-                pixel_color.y() = linear_to_gamma(pixel_color.y());
-                pixel_color.z() = linear_to_gamma(pixel_color.z());
-
-                // Translate the [0,1] component values to the byte range [0,255]
-                static const Interval intensity(0.000, 0.999);
-                const int rbyte = int(256 * intensity.clamp(pixel_color.x()));
-                const int gbyte = int(256 * intensity.clamp(pixel_color.y()));
-                const int bbyte = int(256 * intensity.clamp(pixel_color.z()));
-
-                img.at<cv::Vec3b>(y, x) = cv::Vec3b(bbyte, gbyte, rbyte);
-            }
-        }
+        bar.mark_as_completed();
+        show_console_cursor(true);
     }
 
 private:
@@ -107,6 +134,10 @@ private:
         const double defocus_radius = focus_dist * std::tan(deg2rad(0.5 * defocus_angle));
         defocus_disk_u = u * defocus_radius;
         defocus_disk_v = v * defocus_radius;
+
+        // Initialize rendered pixel count and total pixel count
+        total_pixel_count = image_width * image_height;
+        rendered_pixel_count = 0;
     }
 
     Ray get_ray(const int x, const int y) const {
