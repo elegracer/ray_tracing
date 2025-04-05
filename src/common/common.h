@@ -63,6 +63,15 @@ inline Vec3d random_on_hemisphere(const Vec3d& normal) {
     }
 }
 
+inline Vec3d random_in_init_disk() {
+    while (true) {
+        if (const Vec3d p = {random_double(-1.0, 1.0), random_double(-1.0, 1.0), 0.0};
+            p.squaredNorm() < 1.0) {
+            return p;
+        }
+    }
+}
+
 inline Vec3d reflect(const Vec3d& v, const Vec3d& n) {
     return v - 2.0 * v.dot(n) * n;
 }
