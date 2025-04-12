@@ -48,8 +48,9 @@ int main(int argc, const char* argv[]) {
                     // diffuse
                     const Vec3d albedo = random_vec3d().array() * random_vec3d().array();
                     auto sphere_material = std::make_shared<Lambertion>(albedo);
-                    world.add(
-                        pro::make_proxy_shared<Hittable, Sphere>(center, 0.2, sphere_material));
+                    const Vec3d center2 = center + Vec3d {0.0, random_double(0.0, 0.5), 0.0};
+                    world.add(pro::make_proxy_shared<Hittable, Sphere>(center, center2, 0.2,
+                        sphere_material));
                 } else if (choose_mat < 0.95) {
                     // metal
                     const Vec3d albedo = random_vec3d(0.5, 1.0);

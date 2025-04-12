@@ -40,7 +40,7 @@ struct Lambertion {
             scatter_direction = hit_rec.normal;
         }
 
-        scattered = Ray(hit_rec.p, scatter_direction);
+        scattered = Ray(hit_rec.p, scatter_direction, ray_in.time());
         attenuation = albedo;
         return true;
     }
@@ -57,7 +57,7 @@ struct Metal {
         Ray& scattered) const {
         Vec3d reflected = reflect(ray_in.direction(), hit_rec.normal);
         reflected = reflected.normalized() + (fuzz * random_unit_vector());
-        scattered = Ray(hit_rec.p, reflected);
+        scattered = Ray(hit_rec.p, reflected, ray_in.time());
         attenuation = albedo;
         return scattered.direction().dot(hit_rec.normal) > 0.0;
     }
@@ -86,7 +86,7 @@ struct Dielectric {
                 ? reflect(unit_direction, hit_rec.normal)
                 : refract(unit_direction, hit_rec.normal, ri);
 
-        scattered = Ray(hit_rec.p, direction);
+        scattered = Ray(hit_rec.p, direction, ray_in.time());
         return true;
     }
 

@@ -7,13 +7,23 @@
 class Sphere {
 public:
     Sphere() = delete;
-    Sphere(const Vec3d& center, const double radius, pro::proxy<Material> mat)
-        : m_center(center),
+
+    // Stationary Sphere
+    Sphere(const Vec3d& static_center, const double radius, pro::proxy<Material> mat)
+        : m_center(static_center, {0.0, 0.0, 0.0}),
+          m_radius(std::max(0.0, radius)),
+          m_mat(mat) {}
+
+    // Moving Sphere
+    Sphere(const Vec3d& center1, const Vec3d& center2, const double radius,
+        pro::proxy<Material> mat)
+        : m_center(center1, center2 - center1),
           m_radius(std::max(0.0, radius)),
           m_mat(mat) {}
 
     bool hit(const Ray& ray, const Interval& ray_t, HitRecord& hit_rec) const {
-        const Vec3d oc = m_center - ray.origin();
+        const Vec3d current_center = m_center.at(ray.time());
+        const Vec3d oc = current_center - ray.origin();
         const double a = ray.direction().squaredNorm();
         const double h = ray.direction().dot(oc);
         const double c = oc.squaredNorm() - m_radius * m_radius;
@@ -36,7 +46,7 @@ public:
 
         hit_rec.t = root;
         hit_rec.p = ray.at(hit_rec.t);
-        const Vec3d outward_normal = (hit_rec.p - m_center) / m_radius;
+        const Vec3d outward_normal = (hit_rec.p - current_center) / m_radius;
         hit_rec.set_face_normal(ray, outward_normal);
         hit_rec.mat = m_mat;
 
@@ -44,7 +54,7 @@ public:
     }
 
 private:
-    Vec3d m_center;
+    Ray m_center;
     double m_radius;
     pro::proxy<Material> m_mat;
 };

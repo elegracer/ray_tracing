@@ -149,8 +149,9 @@ private:
 
         const Vec3d ray_origin = (defocus_angle < 0.0) ? center : defocus_disk_sample();
         const Vec3d ray_direction = pixel_sample - ray_origin;
+        const double ray_time = random_double();
 
-        return Ray(ray_origin, ray_direction);
+        return Ray(ray_origin, ray_direction, ray_time);
     }
 
     Vec3d sample_square() const {
