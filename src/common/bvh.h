@@ -11,7 +11,13 @@ struct BVHNode {
     }
 
     BVHNode(std::vector<pro::proxy<Hittable>>& objects, const size_t start, const size_t end) {
-        const int axis = random_int(0, 2);
+        // Build the bounding box of the span of source objects.
+        m_bbox = AABB::empty;
+        for (size_t index = start; index < end; ++index) {
+            m_bbox = AABB {m_bbox, objects[index]->bounding_box()};
+        }
+
+        const int axis = m_bbox.longest_axis();
 
         const auto comparator = (axis == 0)   ? box_x_compare
                                 : (axis == 1) ? box_y_compare
@@ -31,8 +37,6 @@ struct BVHNode {
             m_left = pro::make_proxy_shared<Hittable, BVHNode>(objects, start, mid);
             m_right = pro::make_proxy_shared<Hittable, BVHNode>(objects, mid, end);
         }
-
-        m_bbox = AABB {m_left->bounding_box(), m_right->bounding_box()};
     }
 
     bool hit(const Ray& ray, const Interval& ray_t, HitRecord& hit_rec) const {
