@@ -42,6 +42,13 @@ inline double random_double(const double min, const double max) {
     return min + (max - min) * random_double();
 }
 
+inline int random_int(const int min, const int max) {
+    // Returns a random int in [min, max]
+    static std::uniform_int_distribution<int> distribution {};
+    static std::mt19937 generator;
+    return min + distribution(generator) % (max - min + 1);
+}
+
 inline Vec3d random_vec3d() {
     return Vec3d {random_double(), random_double(), random_double()};
 }

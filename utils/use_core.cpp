@@ -10,6 +10,7 @@
 #include "common/camera.h"
 #include "common/hittable_list.h"
 #include "common/material.h"
+#include "common/bvh.h"
 
 int main(int argc, const char* argv[]) {
 
@@ -69,15 +70,17 @@ int main(int argc, const char* argv[]) {
     }
 
     auto material_1 = std::make_shared<Dielectric>(1.50);
-    world.add(pro::make_proxy<Hittable, Sphere>(Vec3d {0.0, 1.0, 0.0}, 1.0, material_1));
+    world.add(pro::make_proxy_shared<Hittable, Sphere>(Vec3d {0.0, 1.0, 0.0}, 1.0, material_1));
 
     auto material_2 = std::make_shared<Lambertion>(Vec3d {0.4, 0.2, 0.1});
-    world.add(pro::make_proxy<Hittable, Sphere>(Vec3d {-4.0, 1.0, 0.0}, 1.0, material_2));
+    world.add(pro::make_proxy_shared<Hittable, Sphere>(Vec3d {-4.0, 1.0, 0.0}, 1.0, material_2));
 
     auto material_3 = std::make_shared<Metal>(Vec3d {0.7, 0.6, 0.5}, 0.0);
-    world.add(pro::make_proxy<Hittable, Sphere>(Vec3d {4.0, 1.0, 0.0}, 1.0, material_3));
+    world.add(pro::make_proxy_shared<Hittable, Sphere>(Vec3d {4.0, 1.0, 0.0}, 1.0, material_3));
 
-    pro::proxy<Hittable> world_as_hittable = &world;
+    auto bvhnode = pro::make_proxy_shared<Hittable, BVHNode>(world);
+
+    pro::proxy<Hittable> world_as_hittable = bvhnode;
 
     // Camera
     Camera cam;

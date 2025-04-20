@@ -10,11 +10,14 @@
 class HittableList {
 public:
     HittableList() = default;
-    HittableList(pro::proxy<Hittable> object) { add(object); }
+    explicit HittableList(pro::proxy<Hittable> object) { add(object); }
 
     void clear() { m_objects.clear(); }
 
-    void add(pro::proxy<Hittable> object) { m_objects.push_back(object); }
+    void add(pro::proxy<Hittable> object) {
+        m_objects.push_back(object);
+        m_bbox = AABB {m_bbox, object->bounding_box()};
+    }
 
     bool hit(const Ray& ray, const Interval& ray_t, HitRecord& hit_rec) const {
         HitRecord temp_hit_rec;
@@ -32,6 +35,10 @@ public:
         return hit_anything;
     }
 
-private:
+    AABB bounding_box() const { return m_bbox; }
+
     std::vector<pro::proxy<Hittable>> m_objects;
+
+private:
+    AABB m_bbox;
 };

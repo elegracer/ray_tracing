@@ -9,10 +9,12 @@ struct HitRecord;
 
 PRO_DEF_MEM_DISPATCH(MemScatter, scatter);
 
-struct Material
-    : pro::facade_builder ::support_copy<pro::constraint_level::nontrivial>::add_convention<
-          MemScatter, bool(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation,
-                          Ray& scattered) const>::build {};
+struct Material                                         //
+    : pro::facade_builder                               //
+      ::support_copy<pro::constraint_level::nontrivial> //
+      ::add_convention<MemScatter, bool(const Ray& ray_in, const HitRecord& hit_rec,
+                                       Vec3d& attenuation, Ray& scattered) const> //
+      ::build {};
 
 struct HitRecord {
     Vec3d p;
