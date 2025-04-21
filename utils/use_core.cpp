@@ -35,9 +35,10 @@ int main(int argc, const char* argv[]) {
     // World
     HittableList world;
 
-    auto ground_material = std::make_shared<Lambertion>(Vec3d {0.5, 0.5, 0.5});
+    auto checker =
+        std::make_shared<CheckerTexture>(0.32, Vec3d {0.2, 0.3, 0.1}, Vec3d {0.9, 0.9, 0.9});
     world.add(pro::make_proxy_shared<Hittable, Sphere>(Vec3d {0.0, -1000.0, 0.0}, 1000.0,
-        ground_material));
+        pro::make_proxy_shared<Material, Lambertion>(checker)));
 
     for (int a = -11; a < 11; ++a) {
         for (int b = -11; b < 11; ++b) {

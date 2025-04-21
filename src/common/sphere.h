@@ -1,8 +1,8 @@
 #pragma once
 
 #include "common.h"
-#include "hittable.h"
-#include "icecream.hpp"
+#include "aabb.h"
+#include "material.h"
 
 class Sphere {
 public:

@@ -4,6 +4,7 @@
 
 #include "common.h"
 #include "ray.h"
+#include "texture.h"
 
 struct HitRecord;
 
@@ -21,6 +22,8 @@ struct HitRecord {
     Vec3d normal;
     pro::proxy<Material> mat;
     double t;
+    double u;
+    double v;
     bool front_face;
 
     void set_face_normal(const Ray& ray, const Vec3d& outward_normal) {
@@ -33,7 +36,8 @@ struct HitRecord {
 
 
 struct Lambertion {
-    Lambertion(const Vec3d& albedo) : albedo(albedo) {}
+    Lambertion(const Vec3d& albedo) : m_tex(pro::make_proxy_shared<Texture, SolidColor>(albedo)) {}
+    Lambertion(const pro::proxy<Texture>& tex) : m_tex(tex) {}
 
     bool scatter(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation,
         Ray& scattered) const {
@@ -43,12 +47,12 @@ struct Lambertion {
         }
 
         scattered = Ray(hit_rec.p, scatter_direction, ray_in.time());
-        attenuation = albedo;
+        attenuation = m_tex->value(hit_rec.u, hit_rec.v, hit_rec.p);
         return true;
     }
 
 private:
-    Vec3d albedo;
+    pro::proxy<Texture> m_tex;
 };
 
 

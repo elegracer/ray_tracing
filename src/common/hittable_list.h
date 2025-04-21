@@ -1,9 +1,7 @@
 #pragma once
 
-#include "common.h"
 #include "hittable.h"
 #include "interval.h"
-#include "icecream.hpp"
 
 #include <vector>
 
