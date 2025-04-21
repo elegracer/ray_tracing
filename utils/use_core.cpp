@@ -3,7 +3,7 @@
 
 #include <fmt/core.h>
 #include <Eigen/Eigen>
-#include <cxxopts.hpp>
+#include <argparse/argparse.hpp>
 #include <opencv2/opencv.hpp>
 
 #include "common/common.h"
@@ -14,23 +14,27 @@
 
 int main(int argc, const char* argv[]) {
 
-    std::string output_image_format = "png";
+    std::string output_image_format {};
+    std::string scene_to_render {};
 
-    cxxopts::Options options("use_core", core::get_project_description());
-    options                           //
-        .set_tab_expansion()          //
-        .allow_unrecognised_options() //
-        .add_options()                //
-        ("output_image_format", "Output Image Format, e.g. jpg, png, bmp etc.",
-            cxxopts::value<std::string>(output_image_format));
+    argparse::ArgumentParser program("use_core");
+    program.add_description(core::get_project_description());
 
-    const auto result = options.parse(argc, argv);
+    program.add_argument("--output_image_format")
+        .help("Output Image Format, e.g. jpg, png, bmp etc.")
+        .default_value("png")
+        .store_into(output_image_format);
 
-    if (result.count("output_image_format")) {
-        fmt::print("parsed output_image_format: {}\n", output_image_format);
-    } else {
-        fmt::print("use default output_image_format: {}\n", output_image_format);
-    }
+    program.add_argument("--scene")
+        .help("Scene to render")
+        .choices("bouncing_spheres", "checkered_spheres")
+        .default_value("bouncing_spheres")
+        .store_into(scene_to_render);
+
+    program.parse_args(argc, argv);
+
+    fmt::print("output_image_format: {}\n", output_image_format);
+    fmt::print("scene to render: {}\n", scene_to_render);
 
     // World
     HittableList world;

@@ -36,7 +36,7 @@ set(THIRDPARTY_SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/3rdparty)
 
 find_package(Eigen3 CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
-find_package(cxxopts CONFIG REQUIRED)
+find_package(argparse CONFIG REQUIRED)
 find_package(range-v3 CONFIG REQUIRED)
 find_package(proxy CONFIG REQUIRED)
 find_package(OpenCV CONFIG REQUIRED)
@@ -67,7 +67,7 @@ target_link_libraries(core
     PUBLIC
         Eigen3::Eigen
         fmt::fmt
-        cxxopts::cxxopts
+        argparse::argparse
         range-v3::meta range-v3::concepts range-v3::range-v3
         msft_proxy
         ${OpenCV_LIBS}

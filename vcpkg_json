@@ -2,7 +2,7 @@
     "dependencies": [
         "eigen3",
         "fmt",
-        "cxxopts",
+        "argparse",
         "range-v3",
         "proxy",
         "opencv",
