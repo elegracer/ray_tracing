@@ -128,6 +128,39 @@ void render_checkered_spheres(const std::string& output_image_format) {
     cv::imwrite(fmt::format("output.{}", output_image_format), cam.img);
 }
 
+void render_earth(const std::string& output_image_format) {
+    // World
+    HittableList world;
+
+    auto earth_texture = pro::make_proxy_shared<Texture, ImageTexture>("earthmap.jpg");
+    auto earth_surface = pro::make_proxy_shared<Material, Lambertion>(earth_texture);
+    auto globe =
+        pro::make_proxy_shared<Hittable, Sphere>(Vec3d {0.0, 0.0, 0.0}, 2.0, earth_surface);
+
+    world.add(globe);
+
+    pro::proxy<Hittable> world_as_hittable = &world;
+
+    // Camera
+    Camera cam;
+    cam.aspect_ratio = 16.0 / 9.0;
+    cam.image_width = 1280;
+    cam.samples_per_pixel = 500;
+    cam.max_depth = 50;
+
+    cam.vfov = 20.0;
+    cam.lookfrom = {-3.0, 6.0, -10.0};
+    cam.lookat = {0.0, 0.0, 0.0};
+    cam.vup = {0.0, 1.0, 0.0};
+
+    cam.defocus_angle = 0.0;
+
+    cam.render(world_as_hittable);
+
+    // cv::imshow("output image", cam.img);
+    // cv::waitKey();
+    cv::imwrite(fmt::format("output.{}", output_image_format), cam.img);
+}
 
 int main(int argc, const char* argv[]) {
 
@@ -146,8 +179,8 @@ int main(int argc, const char* argv[]) {
 
     program.add_argument("--scene")
         .help("Scene to render")
-        .choices("bouncing_spheres", "checkered_spheres")
-        .default_value("checkered_spheres")
+        .choices("bouncing_spheres", "checkered_spheres", "earth")
+        .default_value("earth")
         .store_into(scene_to_render);
 
     try {
@@ -165,6 +198,8 @@ int main(int argc, const char* argv[]) {
         render_bouncing_spheres(output_image_format);
     } else if (scene_to_render == "checkered_spheres") {
         render_checkered_spheres(output_image_format);
+    } else if (scene_to_render == "earth") {
+        render_earth(output_image_format);
     } else {
         fmt::print(stderr, "Invalid scene to render: '{}' !!!\n", scene_to_render);
         return EXIT_FAILURE;

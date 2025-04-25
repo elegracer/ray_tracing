@@ -60,9 +60,25 @@ public:
         hit_rec.p = ray.at(hit_rec.t);
         const Vec3d outward_normal = (hit_rec.p - current_center) / m_radius;
         hit_rec.set_face_normal(ray, outward_normal);
+        get_sphere_uv(outward_normal, hit_rec.u, hit_rec.v);
         hit_rec.mat = m_mat;
 
         return true;
+    }
+
+    static void get_sphere_uv(const Vec3d& p, double& u, double& v) {
+        // p: a given point on the sphere of radius one, centered at the origin.
+        // u: returned value [0,1] of angle around the Y axis from X=-1.
+        // v: returned value [0,1] of angle from Y=-1 to Y=+1.
+        //     <1 0 0> yields <0.50 0.50>      <-1  0  0> yields <0.00 0.50>
+        //     <0 1 0> yields <0.50 1.00>      < 0 -1  0> yields <0.50 0.00>
+        //     <0 0 1> yields <0.25 0.50>      < 0  0 -1> yields <0.75 0.50>
+
+        const double theta = std::acos(-p.y());
+        const double phi = std::atan2(-p.z(), p.x()) + pi;
+
+        u = phi / (2.0 * pi);
+        v = theta / pi;
     }
 
 private:

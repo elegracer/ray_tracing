@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/rtw_image.h"
 #include "proxy/proxy.h"
 
 #include "common.h"
@@ -46,4 +47,27 @@ struct CheckerTexture {
     double m_inv_scale;
     pro::proxy<Texture> m_even;
     pro::proxy<Texture> m_odd;
+};
+
+struct ImageTexture {
+    ImageTexture(const std::string& img_filepath) : m_image(img_filepath) {}
+
+    Vec3d value(const double u, const double v, const Vec3d& p) const {
+        // If we have no texture data, then return solid cyan as a debugging aid.
+        if (m_image.height() <= 0) {
+            return {0.0, 1.0, 1.0};
+        }
+
+        // Clamp input texture coordinates to [0,1] x [1,0]
+        const double clamped_u = std::clamp(u, 0.0, 1.0);
+        // Flip Y to image coordinates
+        const double clamped_v = std::clamp(1.0 - v, 0.0, 1.0);
+
+        const int i = int(clamped_u * m_image.width());
+        const int j = int(clamped_v * m_image.height());
+
+        return m_image.pixel_data(i, j);
+    }
+
+    RTWImage m_image;
 };

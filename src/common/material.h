@@ -36,8 +36,9 @@ struct HitRecord {
 
 
 struct Lambertion {
-    Lambertion(const Vec3d& albedo) : m_tex(pro::make_proxy_shared<Texture, SolidColor>(albedo)) {}
-    Lambertion(const pro::proxy<Texture>& tex) : m_tex(tex) {}
+    explicit Lambertion(const Vec3d& albedo)
+        : m_tex(pro::make_proxy_shared<Texture, SolidColor>(albedo)) {}
+    explicit Lambertion(const pro::proxy<Texture>& tex) : m_tex(tex) {}
 
     bool scatter(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation,
         Ray& scattered) const {
