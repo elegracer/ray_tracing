@@ -15,6 +15,19 @@
 #include "common/bvh.h"
 
 
+constexpr uint64_t hash(std::string_view sv) {
+    uint64_t hash = 0;
+    for (char c : sv) {
+        hash = (hash * 131) + c;
+    }
+    return hash;
+}
+
+constexpr uint64_t operator""_hash(const char* str, size_t len) {
+    return hash({str, len});
+}
+
+
 void render_bouncing_spheres(const std::string& output_image_format) {
 
     // World
@@ -288,6 +301,53 @@ void render_simple_light(const std::string& output_image_format) {
     cv::imwrite(fmt::format("output.{}", output_image_format), cam.img);
 }
 
+
+void render_cornell_box(const std::string& output_image_format) {
+    // World
+    HittableList world;
+
+    auto red = pro::make_proxy_shared<Material, Lambertion>(Vec3d {0.65, 0.05, 0.05});
+    auto white = pro::make_proxy_shared<Material, Lambertion>(Vec3d {0.73, 0.73, 0.73});
+    auto green = pro::make_proxy_shared<Material, Lambertion>(Vec3d {0.12, 0.45, 0.15});
+    auto light = pro::make_proxy_shared<Material, DiffuseLight>(Vec3d {15.0, 15.0, 15.0});
+
+    world.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {555.0, 0.0, 0.0},
+        Vec3d {0.0, 555.0, 0.0}, Vec3d {0.0, 0.0, 555.0}, green));
+    world.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {0.0, 0.0, 0.0}, Vec3d {0.0, 555.0, 0.0},
+        Vec3d {0.0, 0.0, 555.0}, red));
+    world.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {343.0, 554.0, 332.0},
+        Vec3d {-130.0, 0.0, 0.0}, Vec3d {0.0, 0.0, -105.0}, light));
+    world.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {0.0, 0.0, 0.0}, Vec3d {555.0, 0.0, 0.0},
+        Vec3d {0.0, 0.0, 555.0}, white));
+    world.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {555.0, 555.0, 555.0},
+        Vec3d {-555.0, 0.0, 0.0}, Vec3d {0.0, 0.0, -555.0}, white));
+    world.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {0.0, 0.0, 555.0},
+        Vec3d {555.0, 0.0, 0.0}, Vec3d {0.0, 555.0, 0.0}, white));
+
+    pro::proxy<Hittable> world_as_hittable = &world;
+
+    // Camera
+    Camera cam;
+    cam.aspect_ratio = 16.0 / 9.0;
+    cam.image_width = 1280;
+    cam.samples_per_pixel = 500;
+    cam.max_depth = 50;
+    cam.background = {0.0, 0.0, 0.0};
+
+    cam.vfov = 40.0;
+    cam.lookfrom = {278.0, 278.0, -800.0};
+    cam.lookat = {278.0, 278.0, 0.0};
+    cam.vup = {0.0, 1.0, 0.0};
+
+    cam.defocus_angle = 0.0;
+
+    cam.render(world_as_hittable);
+
+    // cv::imshow("output image", cam.img);
+    // cv::waitKey();
+    cv::imwrite(fmt::format("output.{}", output_image_format), cam.img);
+}
+
 int main(int argc, const char* argv[]) {
 
     const std::string version_string = fmt::format("{}.{}.{}.{}", CORE_MAJOR_VERSION,
@@ -311,8 +371,9 @@ int main(int argc, const char* argv[]) {
             "earth_sphere",      //
             "perlin_spheres",    //
             "quads",             //
-            "simple_light")
-        .default_value("simple_light")
+            "simple_light",      //
+            "cornell_box")
+        .default_value("cornell_box")
         .store_into(scene_to_render);
 
     try {
@@ -326,21 +387,32 @@ int main(int argc, const char* argv[]) {
     fmt::print("output_image_format: {}\n", output_image_format);
     fmt::print("scene to render: {}\n", scene_to_render);
 
-    if (scene_to_render == "bouncing_spheres") {
-        render_bouncing_spheres(output_image_format);
-    } else if (scene_to_render == "checkered_spheres") {
-        render_checkered_spheres(output_image_format);
-    } else if (scene_to_render == "earth_sphere") {
-        render_earth_sphere(output_image_format);
-    } else if (scene_to_render == "perlin_spheres") {
-        render_perlin_spheres(output_image_format);
-    } else if (scene_to_render == "quads") {
-        render_quads(output_image_format);
-    } else if (scene_to_render == "simple_light") {
-        render_simple_light(output_image_format);
-    } else {
-        fmt::print(stderr, "Invalid scene to render: '{}' !!!\n", scene_to_render);
-        return EXIT_FAILURE;
+    switch (hash(scene_to_render)) {
+        case "bouncing_spheres"_hash: {
+            render_bouncing_spheres(output_image_format);
+        } break;
+        case "checkered_spheres"_hash: {
+            render_checkered_spheres(output_image_format);
+        } break;
+        case "earth_sphere"_hash: {
+            render_earth_sphere(output_image_format);
+        } break;
+        case "perlin_spheres"_hash: {
+            render_perlin_spheres(output_image_format);
+        } break;
+        case "quads"_hash: {
+            render_quads(output_image_format);
+        } break;
+        case "simple_light"_hash: {
+            render_simple_light(output_image_format);
+        } break;
+        case "cornell_box"_hash: {
+            render_cornell_box(output_image_format);
+        } break;
+        default: {
+            fmt::print(stderr, "Invalid scene to render: '{}' !!!\n", scene_to_render);
+            return EXIT_FAILURE;
+        }
     }
 
     return EXIT_SUCCESS;
