@@ -248,6 +248,44 @@ void render_quads(const std::string& output_image_format) {
     cv::imwrite(fmt::format("output.{}", output_image_format), cam.img);
 }
 
+
+void render_simple_light(const std::string& output_image_format) {
+    // World
+    HittableList world;
+
+    auto perlin_texture = pro::make_proxy_shared<Texture, NoiseTexture>(4.0);
+    world.add(pro::make_proxy_shared<Hittable, Sphere>(Vec3d {0.0, 2.0, 0.0}, 2.0,
+        pro::make_proxy_shared<Material, Lambertion>(perlin_texture)));
+
+    auto diffuse_light = pro::make_proxy_shared<Material, DiffuseLight>(Vec3d {4.0, 4.0, 4.0});
+    world.add(pro::make_proxy_shared<Hittable, Sphere>(Vec3d {0.0, 7.0, 0.0}, 2.0, diffuse_light));
+    world.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {3.0, 1.0, -2.0}, Vec3d {2.0, 0.0, 0.0},
+        Vec3d {0.0, 2.0, 0.0}, diffuse_light));
+
+    pro::proxy<Hittable> world_as_hittable = &world;
+
+    // Camera
+    Camera cam;
+    cam.aspect_ratio = 16.0 / 9.0;
+    cam.image_width = 1280;
+    cam.samples_per_pixel = 500;
+    cam.max_depth = 50;
+    cam.background = {0.0, 0.0, 0.0};
+
+    cam.vfov = 20.0;
+    cam.lookfrom = {26.0, 3.0, 6.0};
+    cam.lookat = {0.0, 2.0, 0.0};
+    cam.vup = {0.0, 1.0, 0.0};
+
+    cam.defocus_angle = 0.0;
+
+    cam.render(world_as_hittable);
+
+    // cv::imshow("output image", cam.img);
+    // cv::waitKey();
+    cv::imwrite(fmt::format("output.{}", output_image_format), cam.img);
+}
+
 int main(int argc, const char* argv[]) {
 
     const std::string version_string = fmt::format("{}.{}.{}.{}", CORE_MAJOR_VERSION,
@@ -270,8 +308,9 @@ int main(int argc, const char* argv[]) {
             "checkered_spheres", //
             "earth_sphere",      //
             "perlin_spheres",    //
-            "quads")
-        .default_value("quads")
+            "quads",             //
+            "simple_light")
+        .default_value("simple_light")
         .store_into(scene_to_render);
 
     try {
@@ -295,6 +334,8 @@ int main(int argc, const char* argv[]) {
         render_perlin_spheres(output_image_format);
     } else if (scene_to_render == "quads") {
         render_quads(output_image_format);
+    } else if (scene_to_render == "simple_light") {
+        render_simple_light(output_image_format);
     } else {
         fmt::print(stderr, "Invalid scene to render: '{}' !!!\n", scene_to_render);
         return EXIT_FAILURE;

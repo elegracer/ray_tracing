@@ -8,11 +8,13 @@
 
 struct HitRecord;
 
+PRO_DEF_MEM_DISPATCH(MemEmitted, emitted);
 PRO_DEF_MEM_DISPATCH(MemScatter, scatter);
 
-struct Material                                         //
-    : pro::facade_builder                               //
-      ::support_copy<pro::constraint_level::nontrivial> //
+struct Material                                                                                 //
+    : pro::facade_builder                                                                       //
+      ::support_copy<pro::constraint_level::nontrivial>                                         //
+      ::add_convention<MemEmitted, Vec3d(const double u, const double v, const Vec3d& p) const> //
       ::add_convention<MemScatter, bool(const Ray& ray_in, const HitRecord& hit_rec,
                                        Vec3d& attenuation, Ray& scattered) const> //
       ::build {};
@@ -40,6 +42,8 @@ struct Lambertion {
         : m_tex(pro::make_proxy_shared<Texture, SolidColor>(albedo)) {}
     explicit Lambertion(const pro::proxy<Texture>& tex) : m_tex(tex) {}
 
+    Vec3d emitted(const double u, const double v, const Vec3d& p) const { return {0.0, 0.0, 0.0}; }
+
     bool scatter(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation,
         Ray& scattered) const {
         Vec3d scatter_direction = hit_rec.normal + random_unit_vector();
@@ -60,6 +64,8 @@ private:
 struct Metal {
     Metal(const Vec3d& albedo, const double fuzz) : albedo(albedo), fuzz(fuzz < 1.0 ? fuzz : 1.0) {}
 
+    Vec3d emitted(const double u, const double v, const Vec3d& p) const { return {0.0, 0.0, 0.0}; }
+
     bool scatter(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation,
         Ray& scattered) const {
         Vec3d reflected = reflect(ray_in.direction(), hit_rec.normal);
@@ -77,6 +83,8 @@ private:
 
 struct Dielectric {
     Dielectric(const double refraction_index) : refraction_index(refraction_index) {}
+
+    Vec3d emitted(const double u, const double v, const Vec3d& p) const { return {0.0, 0.0, 0.0}; }
 
     bool scatter(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation,
         Ray& scattered) const {
@@ -108,4 +116,21 @@ private:
         const double r0sq = r0 * r0;
         return r0sq + (1.0 - r0sq) * std::pow(1.0 - cosine, 5);
     }
+};
+
+struct DiffuseLight {
+    explicit DiffuseLight(const Vec3d& emit)
+        : m_tex(pro::make_proxy_shared<Texture, SolidColor>(emit)) {}
+    explicit DiffuseLight(const pro::proxy<Texture>& tex) : m_tex(tex) {}
+
+    Vec3d emitted(const double u, const double v, const Vec3d& p) const {
+        return m_tex->value(u, v, p);
+    }
+
+    bool scatter(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation,
+        Ray& scattered) const {
+        return false;
+    }
+
+    pro::proxy<Texture> m_tex;
 };
