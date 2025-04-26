@@ -19,6 +19,10 @@ struct Perlin {
         const double v = p.y() - std::floor(p.y());
         const double w = p.z() - std::floor(p.z());
 
+        const double hermit_u = u * u * (3.0 - 2.0 * u);
+        const double hermit_v = v * v * (3.0 - 2.0 * v);
+        const double hermit_w = w * w * (3.0 - 2.0 * w);
+
         const int i = int(std::floor(p.x()));
         const int j = int(std::floor(p.y()));
         const int k = int(std::floor(p.z()));
@@ -33,7 +37,7 @@ struct Perlin {
             }
         }
 
-        return trilinear_interp(c, u, v, w);
+        return trilinear_interp(c, hermit_u, hermit_v, hermit_w);
     }
 
 private:
