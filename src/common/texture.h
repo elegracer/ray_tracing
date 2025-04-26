@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/perlin.h"
 #include "common/rtw_image.h"
 #include "proxy/proxy.h"
 
@@ -70,4 +71,14 @@ struct ImageTexture {
     }
 
     RTWImage m_image;
+};
+
+struct NoiseTexture {
+    NoiseTexture() = default;
+
+    Vec3d value(const double u, const double v, const Vec3d& p) const {
+        return Vec3d {1.0, 1.0, 1.0} * m_noise.noise(p);
+    }
+
+    Perlin m_noise;
 };
