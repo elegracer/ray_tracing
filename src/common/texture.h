@@ -74,11 +74,12 @@ struct ImageTexture {
 };
 
 struct NoiseTexture {
-    NoiseTexture() = default;
+    NoiseTexture(const double scale) : m_scale(scale) {}
 
     Vec3d value(const double u, const double v, const Vec3d& p) const {
-        return Vec3d {1.0, 1.0, 1.0} * m_noise.noise(p);
+        return Vec3d {1.0, 1.0, 1.0} * m_noise.noise(m_scale * p);
     }
 
     Perlin m_noise;
+    double m_scale;
 };

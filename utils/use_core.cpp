@@ -166,7 +166,7 @@ void render_perlin_spheres(const std::string& output_image_format) {
     // World
     HittableList world;
 
-    auto perlin_texture = pro::make_proxy_shared<Texture, NoiseTexture>();
+    auto perlin_texture = pro::make_proxy_shared<Texture, NoiseTexture>(4.0);
     world.add(pro::make_proxy_shared<Hittable, Sphere>(Vec3d {0.0, -1000.0, 0.0}, 1000.0,
         pro::make_proxy_shared<Material, Lambertion>(perlin_texture)));
     world.add(pro::make_proxy_shared<Hittable, Sphere>(Vec3d {0.0, 2.0, 0.0}, 2.0,
