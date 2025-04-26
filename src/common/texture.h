@@ -77,7 +77,8 @@ struct NoiseTexture {
     NoiseTexture(const double scale) : m_scale(scale) {}
 
     Vec3d value(const double u, const double v, const Vec3d& p) const {
-        return Vec3d {1.0, 1.0, 1.0} * m_noise.turb(p, 7);
+        return Vec3d {0.5, 0.5, 0.5}
+               * (1.0 + std::sin(m_scale * p.z() + 10.0 * m_noise.turb(p, 7)));
     }
 
     Perlin m_noise;
