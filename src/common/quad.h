@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/hittable.h"
+#include "common/hittable_list.h"
 #include "material.h"
 #include "aabb.h"
 
@@ -87,3 +89,33 @@ struct Quad {
     Vec3d m_normal;
     double m_D;
 };
+
+
+inline pro::proxy<Hittable> box(const Vec3d& a, const Vec3d& b, pro::proxy<Material> mat) {
+    // Returns the 3D box (six sides) that contains the two opposite vertices a & b
+
+    auto sides = std::make_shared<HittableList>();
+
+    // Construct the two opposite vertices with the minimum and maximum coordinates.
+    const Vec3d min = a.array().min(b.array()).matrix();
+    const Vec3d max = a.array().max(b.array()).matrix();
+
+    const Vec3d dx {max.x() - min.x(), 0.0, 0.0};
+    const Vec3d dy {0.0, max.y() - min.y(), 0.0};
+    const Vec3d dz {0.0, 0.0, max.z() - min.z()};
+
+    sides->add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {min.x(), min.y(), max.z()}, dx, dy,
+        mat)); // front
+    sides->add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {max.x(), min.y(), max.z()}, -dz, dy,
+        mat)); // right
+    sides->add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {max.x(), min.y(), min.z()}, -dx, dy,
+        mat)); // back
+    sides->add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {min.x(), min.y(), min.z()}, dz, dy,
+        mat)); // left
+    sides->add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {min.x(), max.y(), max.z()}, dx, -dz,
+        mat)); // top
+    sides->add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {min.x(), min.y(), min.z()}, dx, dz,
+        mat)); // bottom
+
+    return sides;
+}
