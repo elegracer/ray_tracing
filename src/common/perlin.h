@@ -36,6 +36,20 @@ struct Perlin {
         return trilinear_interp(c, u, v, w);
     }
 
+    double turb(const Vec3d& p, const int depth) const {
+        double accum = 0.0;
+        Vec3d temp_p = p;
+        double weight = 1.0;
+
+        for (int i = 0; i < depth; ++i) {
+            accum += weight * noise(temp_p);
+            weight *= 0.5;
+            temp_p *= 2.0;
+        }
+
+        return std::abs(accum);
+    }
+
 private:
     static constexpr int s_point_count = 256;
     std::array<Vec3d, s_point_count> m_rand_vec;
