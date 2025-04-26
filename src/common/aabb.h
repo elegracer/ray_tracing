@@ -12,7 +12,9 @@ struct AABB {
     // The default AABB is empty, since intervals are empty by default
     AABB() = default;
 
-    AABB(const Interval& x, const Interval& y, const Interval& z) : x(x), y(y), z(z) {}
+    AABB(const Interval& x, const Interval& y, const Interval& z) : x(x), y(y), z(z) {
+        pad_to_minimums();
+    }
 
     AABB(const Vec3d& a, const Vec3d& b) {
         // Treat the two point a and b for extrema for the bounding box,
@@ -20,6 +22,8 @@ struct AABB {
         x = (a.x() <= b.x()) ? Interval {a.x(), b.x()} : Interval {b.x(), a.x()};
         y = (a.y() <= b.y()) ? Interval {a.y(), b.y()} : Interval {b.y(), a.y()};
         z = (a.z() <= b.z()) ? Interval {a.z(), b.z()} : Interval {b.z(), a.z()};
+
+        pad_to_minimums();
     }
 
     AABB(const AABB& box0, const AABB& box1) {
@@ -69,6 +73,22 @@ struct AABB {
 
     static const AABB empty;
     static const AABB universe;
+
+private:
+    void pad_to_minimums() {
+        // Adjust the AABB so that no side is narrower than some delta, padding if necessary.
+
+        const double delta = 0.0001;
+        if (x.size() < delta) {
+            x = x.expand(delta);
+        }
+        if (y.size() < delta) {
+            y = y.expand(delta);
+        }
+        if (z.size() < delta) {
+            z = z.expand(delta);
+        }
+    }
 };
 
 inline const AABB AABB::empty {Interval::empty, Interval::empty, Interval::empty};

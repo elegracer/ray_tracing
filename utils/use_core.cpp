@@ -1,3 +1,4 @@
+#include "common/quad.h"
 #include "common/sphere.h"
 #include "core/version.h"
 
@@ -196,6 +197,52 @@ void render_perlin_spheres(const std::string& output_image_format) {
 }
 
 
+void render_quads(const std::string& output_image_format) {
+    // World
+    HittableList world;
+
+    // Materials
+    auto left_red = pro::make_proxy_shared<Material, Lambertion>(Vec3d {1.0, 0.2, 0.2});
+    auto back_green = pro::make_proxy_shared<Material, Lambertion>(Vec3d {0.2, 1.0, 0.2});
+    auto right_blue = pro::make_proxy_shared<Material, Lambertion>(Vec3d {0.2, 0.2, 1.0});
+    auto upper_orange = pro::make_proxy_shared<Material, Lambertion>(Vec3d {1.0, 0.5, 0.0});
+    auto lower_teal = pro::make_proxy_shared<Material, Lambertion>(Vec3d {0.2, 0.8, 0.8});
+
+    // Quads
+    world.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {-3.0, -2.0, 5.0},
+        Vec3d {0.0, 0.0, -4.0}, Vec3d {0.0, 4.0, 0.0}, left_red));
+    world.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {-2.0, -2.0, 0.0}, Vec3d {4.0, 0.0, 0.0},
+        Vec3d {0.0, 4.0, 0.0}, back_green));
+    world.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {3.0, -2.0, 1.0}, Vec3d {0.0, 0.0, 4.0},
+        Vec3d {0.0, 4.0, 0.0}, right_blue));
+    world.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {-2.0, 3.0, 1.0}, Vec3d {4.0, 0.0, 0.0},
+        Vec3d {0.0, 0.0, 4.0}, upper_orange));
+    world.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {-2.0, -3.0, 5.0}, Vec3d {4.0, 0.0, 0.0},
+        Vec3d {0.0, 0.0, -4.0}, lower_teal));
+
+    pro::proxy<Hittable> world_as_hittable = &world;
+
+    // Camera
+    Camera cam;
+    cam.aspect_ratio = 16.0 / 9.0;
+    cam.image_width = 1280;
+    cam.samples_per_pixel = 500;
+    cam.max_depth = 50;
+
+    cam.vfov = 80.0;
+    cam.lookfrom = {0.0, 0.0, 9.0};
+    cam.lookat = {0.0, 0.0, 0.0};
+    cam.vup = {0.0, 1.0, 0.0};
+
+    cam.defocus_angle = 0.0;
+
+    cam.render(world_as_hittable);
+
+    // cv::imshow("output image", cam.img);
+    // cv::waitKey();
+    cv::imwrite(fmt::format("output.{}", output_image_format), cam.img);
+}
+
 int main(int argc, const char* argv[]) {
 
     const std::string version_string = fmt::format("{}.{}.{}.{}", CORE_MAJOR_VERSION,
@@ -213,8 +260,13 @@ int main(int argc, const char* argv[]) {
 
     program.add_argument("--scene")
         .help("Scene to render")
-        .choices("bouncing_spheres", "checkered_spheres", "earth_sphere", "perlin_spheres")
-        .default_value("perlin_spheres")
+        .choices(                //
+            "bouncing_spheres",  //
+            "checkered_spheres", //
+            "earth_sphere",      //
+            "perlin_spheres",    //
+            "quads")
+        .default_value("quads")
         .store_into(scene_to_render);
 
     try {
@@ -236,6 +288,8 @@ int main(int argc, const char* argv[]) {
         render_earth_sphere(output_image_format);
     } else if (scene_to_render == "perlin_spheres") {
         render_perlin_spheres(output_image_format);
+    } else if (scene_to_render == "quads") {
+        render_quads(output_image_format);
     } else {
         fmt::print(stderr, "Invalid scene to render: '{}' !!!\n", scene_to_render);
         return EXIT_FAILURE;
