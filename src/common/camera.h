@@ -20,6 +20,7 @@ public:
     int image_width = 100;      // Rendered image width in pixel count
     int samples_per_pixel = 10; // Count of random samples for each pixel
     int max_depth = 10;         // Maximum number of ray bounces into scene
+    Vec3d background;           // Scene background color
 
     double vfov = 90;                 // Vertical field of view in degrees
     Vec3d lookfrom = {0.0, 0.0, 0.0}; // Point camera is looking from
@@ -173,17 +174,23 @@ private:
 
         HitRecord hit_rec;
 
-        if (hittable->hit(ray, Interval {0.001, infinity}, hit_rec)) {
-            Ray scattered;
-            Vec3d attenuation;
-            if (hit_rec.mat->scatter(ray, hit_rec, attenuation, scattered)) {
-                return attenuation.array() * ray_color(scattered, depth - 1, hittable).array();
-            }
-            return {0.0, 0.0, 0.0};
+        // If the ray hits nothing, return the background color
+        if (!hittable->hit(ray, Interval {0.001, infinity}, hit_rec)) {
+            return background;
         }
 
-        const Vec3d unit_direction = ray.direction().normalized();
-        const double a = 0.5 * (unit_direction.y() + 1.0);
-        return (1.0 - a) * Vec3d {1.0, 1.0, 1.0} + a * Vec3d {0.5, 0.7, 1.0};
+        Vec3d attenuation;
+        Ray scattered;
+
+        const Vec3d color_from_emission = hit_rec.mat->emitted(hit_rec.u, hit_rec.v, hit_rec.p);
+
+        if (!hit_rec.mat->scatter(ray, hit_rec, attenuation, scattered)) {
+            return color_from_emission;
+        }
+
+        const Vec3d color_from_scatter =
+            attenuation.array() * ray_color(scattered, depth - 1, hittable).array();
+
+        return color_from_emission + color_from_scatter;
     }
 };

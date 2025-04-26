@@ -73,6 +73,7 @@ void render_bouncing_spheres(const std::string& output_image_format) {
     cam.image_width = 1280;
     cam.samples_per_pixel = 500;
     cam.max_depth = 50;
+    cam.background = {0.70, 0.80, 1.00};
 
     cam.vfov = 20.0;
     cam.lookfrom = {13.0, 2.0, 3.0};
@@ -113,6 +114,7 @@ void render_checkered_spheres(const std::string& output_image_format) {
     cam.image_width = 1280;
     cam.samples_per_pixel = 500;
     cam.max_depth = 50;
+    cam.background = {0.70, 0.80, 1.00};
 
     cam.vfov = 20.0;
     cam.lookfrom = {13.0, 2.0, 3.0};
@@ -148,6 +150,7 @@ void render_earth_sphere(const std::string& output_image_format) {
     cam.image_width = 1280;
     cam.samples_per_pixel = 500;
     cam.max_depth = 50;
+    cam.background = {0.70, 0.80, 1.00};
 
     cam.vfov = 20.0;
     cam.lookfrom = {-3.0, 6.0, -10.0};
@@ -181,6 +184,7 @@ void render_perlin_spheres(const std::string& output_image_format) {
     cam.image_width = 1280;
     cam.samples_per_pixel = 500;
     cam.max_depth = 50;
+    cam.background = {0.70, 0.80, 1.00};
 
     cam.vfov = 20.0;
     cam.lookfrom = {13.0, 2.0, 3.0};
@@ -228,6 +232,7 @@ void render_quads(const std::string& output_image_format) {
     cam.image_width = 1280;
     cam.samples_per_pixel = 500;
     cam.max_depth = 50;
+    cam.background = {0.70, 0.80, 1.00};
 
     cam.vfov = 80.0;
     cam.lookfrom = {0.0, 0.0, 9.0};
