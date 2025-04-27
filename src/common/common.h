@@ -78,7 +78,7 @@ inline Vec3d random_on_hemisphere(const Vec3d& normal) {
     }
 }
 
-inline Vec3d random_in_init_disk() {
+inline Vec3d random_in_unit_disk() {
     while (true) {
         if (const Vec3d p = {random_double(-1.0, 1.0), random_double(-1.0, 1.0), 0.0};
             p.squaredNorm() < 1.0) {

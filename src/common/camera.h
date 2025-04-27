@@ -162,7 +162,7 @@ private:
 
     Vec3d defocus_disk_sample() const {
         // Returns a random point in the camera focus disk.
-        const Vec3d p = random_in_init_disk();
+        const Vec3d p = random_in_unit_disk();
         return center + (p.x() * defocus_disk_u) + (p.y() * defocus_disk_v);
     }
 
