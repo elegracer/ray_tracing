@@ -134,3 +134,20 @@ struct DiffuseLight {
 
     pro::proxy<Texture> m_tex;
 };
+
+struct Isotropic {
+    explicit Isotropic(const Vec3d& albedo)
+        : m_tex(pro::make_proxy_shared<Texture, SolidColor>(albedo)) {}
+    explicit Isotropic(const pro::proxy<Texture>& tex) : m_tex(tex) {}
+
+    Vec3d emitted(const double u, const double v, const Vec3d& p) const { return {0.0, 0.0, 0.0}; }
+
+    bool scatter(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation,
+        Ray& scattered) const {
+        scattered = Ray {hit_rec.p, random_unit_vector(), ray_in.time()};
+        attenuation = m_tex->value(hit_rec.u, hit_rec.v, hit_rec.p);
+        return true;
+    }
+
+    pro::proxy<Texture> m_tex;
+};

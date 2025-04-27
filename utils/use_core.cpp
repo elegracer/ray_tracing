@@ -1,3 +1,4 @@
+#include "common/constant_medium.h"
 #include "common/quad.h"
 #include "common/sphere.h"
 #include "core/version.h"
@@ -359,6 +360,64 @@ void render_cornell_box(const std::string& output_image_format) {
     cv::imwrite(fmt::format("output.{}", output_image_format), cam.img);
 }
 
+void render_cornell_smoke(const std::string& output_image_format) {
+    // World
+    HittableList world;
+
+    auto red = pro::make_proxy_shared<Material, Lambertion>(Vec3d {0.65, 0.05, 0.05});
+    auto white = pro::make_proxy_shared<Material, Lambertion>(Vec3d {0.73, 0.73, 0.73});
+    auto green = pro::make_proxy_shared<Material, Lambertion>(Vec3d {0.12, 0.45, 0.15});
+    auto light = pro::make_proxy_shared<Material, DiffuseLight>(Vec3d {15.0, 15.0, 15.0});
+
+    world.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {555.0, 0.0, 0.0},
+        Vec3d {0.0, 555.0, 0.0}, Vec3d {0.0, 0.0, 555.0}, green));
+    world.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {0.0, 0.0, 0.0}, Vec3d {0.0, 555.0, 0.0},
+        Vec3d {0.0, 0.0, 555.0}, red));
+    world.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {343.0, 554.0, 332.0},
+        Vec3d {-130.0, 0.0, 0.0}, Vec3d {0.0, 0.0, -105.0}, light));
+    world.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {0.0, 0.0, 0.0}, Vec3d {555.0, 0.0, 0.0},
+        Vec3d {0.0, 0.0, 555.0}, white));
+    world.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {555.0, 555.0, 555.0},
+        Vec3d {-555.0, 0.0, 0.0}, Vec3d {0.0, 0.0, -555.0}, white));
+    world.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {0.0, 0.0, 555.0},
+        Vec3d {555.0, 0.0, 0.0}, Vec3d {0.0, 555.0, 0.0}, white));
+
+    auto box1 = box(Vec3d {0.0, 0.0, 0.0}, Vec3d {165.0, 330.0, 165.0}, white);
+    box1 = pro::make_proxy_shared<Hittable, RotateY>(box1, 15.0);
+    box1 = pro::make_proxy_shared<Hittable, Translate>(box1, Vec3d {265.0, 0.0, 295.0});
+
+    auto box2 = box(Vec3d {0.0, 0.0, 0.0}, Vec3d {165.0, 165.0, 165.0}, white);
+    box2 = pro::make_proxy_shared<Hittable, RotateY>(box2, -18.0);
+    box2 = pro::make_proxy_shared<Hittable, Translate>(box2, Vec3d {130.0, 0.0, 65.0});
+
+    world.add(pro::make_proxy_shared<Hittable, ConstantMedium>(box1, 0.01, Vec3d {0.0, 0.0, 0.0}));
+    world.add(pro::make_proxy_shared<Hittable, ConstantMedium>(box2, 0.01, Vec3d {1.0, 1.0, 1.0}));
+
+    pro::proxy<Hittable> world_as_hittable = &world;
+
+    // Camera
+    Camera cam;
+    cam.aspect_ratio = 16.0 / 9.0;
+    cam.image_width = 1280;
+    cam.samples_per_pixel = 500;
+    cam.max_depth = 50;
+    cam.background = {0.0, 0.0, 0.0};
+
+    cam.vfov = 40.0;
+    cam.lookfrom = {278.0, 278.0, -800.0};
+    cam.lookat = {278.0, 278.0, 0.0};
+    cam.vup = {0.0, 1.0, 0.0};
+
+    cam.defocus_angle = 0.0;
+
+    cam.render(world_as_hittable);
+
+    // cv::imshow("output image", cam.img);
+    // cv::waitKey();
+    cv::imwrite(fmt::format("output.{}", output_image_format), cam.img);
+}
+
+
 int main(int argc, const char* argv[]) {
 
     const std::string version_string = fmt::format("{}.{}.{}.{}", CORE_MAJOR_VERSION,
@@ -383,8 +442,9 @@ int main(int argc, const char* argv[]) {
             "perlin_spheres",    //
             "quads",             //
             "simple_light",      //
-            "cornell_box")
-        .default_value("cornell_box")
+            "cornell_box",       //
+            "cornell_smoke")
+        .default_value("cornell_smoke")
         .store_into(scene_to_render);
 
     try {
@@ -419,6 +479,9 @@ int main(int argc, const char* argv[]) {
         } break;
         case "cornell_box"_hash: {
             render_cornell_box(output_image_format);
+        } break;
+        case "cornell_smoke"_hash: {
+            render_cornell_smoke(output_image_format);
         } break;
         default: {
             fmt::print(stderr, "Invalid scene to render: '{}' !!!\n", scene_to_render);
