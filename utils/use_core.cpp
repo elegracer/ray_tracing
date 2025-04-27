@@ -417,6 +417,98 @@ void render_cornell_smoke(const std::string& output_image_format) {
     cv::imwrite(fmt::format("output.{}", output_image_format), cam.img);
 }
 
+void render_final_scene(const std::string& output_image_format, const int samples_per_pixel = 500) {
+    // World
+    HittableList world;
+
+    HittableList boxes1;
+    auto ground = pro::make_proxy_shared<Material, Lambertion>(Vec3d {0.48, 0.83, 0.53});
+    constexpr int boxes_per_side = 20;
+    for (int i = 0; i < boxes_per_side; ++i) {
+        for (int j = 0; j < boxes_per_side; ++j) {
+            constexpr double w = 100.0;
+            const double x0 = -1000.0 + i * w;
+            const double y0 = 0.0;
+            const double z0 = -1000.0 + j * w;
+            const double x1 = x0 + w;
+            const double y1 = random_double(1.0, 101.0);
+            const double z1 = z0 + w;
+
+            boxes1.add(box(Vec3d {x0, y0, z0}, Vec3d {x1, y1, z1}, ground));
+        }
+    }
+    world.add(pro::make_proxy_shared<Hittable, BVHNode>(boxes1));
+
+    auto light = pro::make_proxy_shared<Material, DiffuseLight>(Vec3d {7.0, 7.0, 7.0});
+    world.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {123.0, 554.0, 147.0},
+        Vec3d {300.0, 0.0, 0.0}, Vec3d {0.0, 0.0, 265.0}, light));
+
+    const Vec3d center1 {400.0, 400.0, 200.0};
+    const Vec3d center2 = center1 + Vec3d {30.0, 0.0, 0.0};
+    auto sphere_material = pro::make_proxy_shared<Material, Lambertion>(Vec3d {0.7, 0.3, 0.1});
+    world.add(pro::make_proxy_shared<Hittable, Sphere>(center1, center2, 50.0, sphere_material));
+
+    world.add(pro::make_proxy_shared<Hittable, Sphere>(Vec3d {260.0, 150.0, 45.0}, 50.0,
+        pro::make_proxy_shared<Material, Dielectric>(1.5)));
+    world.add(pro::make_proxy_shared<Hittable, Sphere>(Vec3d {0.0, 150.0, 145.0}, 50.0,
+        pro::make_proxy_shared<Material, Metal>(Vec3d {0.8, 0.8, 0.9}, 1.0)));
+
+    auto boundary = pro::make_proxy_shared<Hittable, Sphere>(Vec3d {360.0, 150.0, 145.0}, 70.0,
+        pro::make_proxy_shared<Material, Dielectric>(1.5));
+    world.add(boundary);
+    world.add(
+        pro::make_proxy_shared<Hittable, ConstantMedium>(boundary, 0.2, Vec3d {0.2, 0.4, 0.9}));
+    boundary = pro::make_proxy_shared<Hittable, Sphere>(Vec3d {0.0, 0.0, 0.0}, 5000.0,
+        pro::make_proxy_shared<Material, Dielectric>(1.5));
+    world.add(
+        pro::make_proxy_shared<Hittable, ConstantMedium>(boundary, 0.0001, Vec3d {1.0, 1.0, 1.0}));
+
+    auto emissive_mat = pro::make_proxy_shared<Material, Lambertion>(
+        pro::make_proxy_shared<Texture, ImageTexture>("earthmap.jpg"));
+    world.add(
+        pro::make_proxy_shared<Hittable, Sphere>(Vec3d {400.0, 200.0, 400.0}, 100.0, emissive_mat));
+    auto perlin_texture = pro::make_proxy_shared<Texture, NoiseTexture>(0.2);
+    world.add(pro::make_proxy_shared<Hittable, Sphere>(Vec3d {220.0, 280.0, 300.0}, 80.0,
+        pro::make_proxy_shared<Material, Lambertion>(perlin_texture)));
+
+    HittableList boxes2;
+    auto white = pro::make_proxy_shared<Material, Lambertion>(Vec3d {0.73, 0.73, 0.73});
+    constexpr int ns = 1000;
+    for (int j = 0; j < ns; ++j) {
+        const Vec3d random_vec = 0.5 * 165.0 * (Vec3d::Random().array() + 1.0);
+        boxes2.add(pro::make_proxy_shared<Hittable, Sphere>(random_vec, 10.0, white));
+    }
+
+    world.add(                                                     //
+        pro::make_proxy_shared<Hittable, Translate>(               //
+            pro::make_proxy_shared<Hittable, RotateY>(             //
+                pro::make_proxy_shared<Hittable, BVHNode>(boxes2), //
+                15.0),
+            Vec3d {-100.0, 270.0, 395.0}));
+
+    pro::proxy<Hittable> world_as_hittable = &world;
+
+    // Camera
+    Camera cam;
+    cam.aspect_ratio = 16.0 / 9.0;
+    cam.image_width = 1280;
+    cam.samples_per_pixel = samples_per_pixel;
+    cam.max_depth = 50;
+    cam.background = {0.0, 0.0, 0.0};
+
+    cam.vfov = 40.0;
+    cam.lookfrom = {478.0, 278.0, -600.0};
+    cam.lookat = {278.0, 278.0, 0.0};
+    cam.vup = {0.0, 1.0, 0.0};
+
+    cam.defocus_angle = 0.0;
+
+    cam.render(world_as_hittable);
+
+    // cv::imshow("output image", cam.img);
+    // cv::waitKey();
+    cv::imwrite(fmt::format("output.{}", output_image_format), cam.img);
+}
 
 int main(int argc, const char* argv[]) {
 
@@ -443,8 +535,10 @@ int main(int argc, const char* argv[]) {
             "quads",             //
             "simple_light",      //
             "cornell_box",       //
-            "cornell_smoke")
-        .default_value("cornell_smoke")
+            "cornell_smoke",     //
+            "final_scene",       //
+            "final_scene_extreme")
+        .default_value("final_scene")
         .store_into(scene_to_render);
 
     try {
@@ -482,6 +576,12 @@ int main(int argc, const char* argv[]) {
         } break;
         case "cornell_smoke"_hash: {
             render_cornell_smoke(output_image_format);
+        } break;
+        case "final_scene"_hash: {
+            render_final_scene(output_image_format);
+        } break;
+        case "final_scene_extreme"_hash: {
+            render_final_scene(output_image_format, 10000);
         } break;
         default: {
             fmt::print(stderr, "Invalid scene to render: '{}' !!!\n", scene_to_render);

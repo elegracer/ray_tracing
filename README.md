@@ -1,3 +1,3 @@
-# Ray Tracing in One Weekend
+# Ray Tracing: The Next Week
 
 ![](./output.png)
