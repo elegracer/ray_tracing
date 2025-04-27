@@ -85,3 +85,14 @@ target_link_libraries(use_core
     PRIVATE
         core
 )
+
+
+add_executable(use_pi)
+target_sources(use_pi
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/utils/use_pi.cpp
+)
+target_link_libraries(use_pi
+    PRIVATE
+        core
+)
