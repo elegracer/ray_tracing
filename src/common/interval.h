@@ -36,3 +36,11 @@ public:
 
 inline const Interval Interval::empty = Interval {+infinity, -infinity};
 inline const Interval Interval::universe = Interval {-infinity, +infinity};
+
+inline Interval operator+(const Interval& interval, const double displacement) {
+    return Interval {interval.min + displacement, interval.max + displacement};
+}
+
+inline Interval operator+(const double displacement, const Interval& interval) {
+    return interval + displacement;
+}

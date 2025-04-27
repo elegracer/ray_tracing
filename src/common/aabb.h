@@ -93,3 +93,11 @@ private:
 
 inline const AABB AABB::empty {Interval::empty, Interval::empty, Interval::empty};
 inline const AABB AABB::universe {Interval::universe, Interval::universe, Interval::universe};
+
+inline AABB operator+(const AABB& bbox, const Vec3d& offset) {
+    return AABB {bbox.x + offset.x(), bbox.y + offset.y(), bbox.z + offset.z()};
+}
+
+inline AABB operator+(const Vec3d& offset, const AABB& bbox) {
+    return bbox + offset;
+}
