@@ -417,7 +417,8 @@ void render_cornell_smoke(const std::string& output_image_format) {
     cv::imwrite(fmt::format("output.{}", output_image_format), cam.img);
 }
 
-void render_final_scene(const std::string& output_image_format, const int samples_per_pixel = 500) {
+void render_rttnw_final_scene(const std::string& output_image_format,
+    const int samples_per_pixel = 500) {
     // World
     HittableList world;
 
@@ -536,9 +537,9 @@ int main(int argc, const char* argv[]) {
             "simple_light",      //
             "cornell_box",       //
             "cornell_smoke",     //
-            "final_scene",       //
-            "final_scene_extreme")
-        .default_value("final_scene")
+            "rttnw_final_scene", //
+            "rttnw_final_scene_extreme")
+        .default_value("cornell_box")
         .store_into(scene_to_render);
 
     try {
@@ -577,11 +578,11 @@ int main(int argc, const char* argv[]) {
         case "cornell_smoke"_hash: {
             render_cornell_smoke(output_image_format);
         } break;
-        case "final_scene"_hash: {
-            render_final_scene(output_image_format);
+        case "rttnw_final_scene"_hash: {
+            render_rttnw_final_scene(output_image_format);
         } break;
-        case "final_scene_extreme"_hash: {
-            render_final_scene(output_image_format, 10000);
+        case "rttnw_final_scene_extreme"_hash: {
+            render_rttnw_final_scene(output_image_format, 10000);
         } break;
         default: {
             fmt::print(stderr, "Invalid scene to render: '{}' !!!\n", scene_to_render);
