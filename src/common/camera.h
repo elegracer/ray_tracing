@@ -58,9 +58,11 @@ public:
                         const Vec3d ray_direction = pixel_center - center;
 
                         Vec3d pixel_color = {0.0, 0.0, 0.0};
-                        for (int sample = 0; sample < samples_per_pixel; ++sample) {
-                            Ray ray = get_ray(x, y);
-                            pixel_color += ray_color(ray, max_depth, world);
+                        for (int s_y = 0; s_y < sqrt_spp; ++s_y) {
+                            for (int s_x = 0; s_x < sqrt_spp; ++s_x) {
+                                Ray ray = get_ray(x, y, s_x, s_y);
+                                pixel_color += ray_color(ray, max_depth, world);
+                            }
                         }
                         pixel_color *= pixel_samples_scale;
 
@@ -92,6 +94,8 @@ public:
 private:
     int image_height;               // Rendered image height
     double pixel_samples_scale;     // Color scale factor for a sum of pixel samples
+    int sqrt_spp;                   // Square root of number of samples per pixel
+    double recip_sqrt_spp;          // 1 / sqrt_spp
     Vec3d center = {0.0, 0.0, 0.0}; // Camera center
     Vec3d u, v, w;                  // Camera frame basis vectors
     Vec3d pixel_delta_u;            // Offset to pixel to the right
@@ -103,7 +107,9 @@ private:
     void initialize() {
         image_height = std::max(int(image_width / aspect_ratio), 1);
 
-        pixel_samples_scale = 1.0 / samples_per_pixel;
+        sqrt_spp = int(std::sqrt(samples_per_pixel));
+        recip_sqrt_spp = 1.0 / sqrt_spp;
+        pixel_samples_scale = recip_sqrt_spp * recip_sqrt_spp;
 
         center = lookfrom;
 
@@ -141,10 +147,11 @@ private:
         rendered_pixel_count = 0;
     }
 
-    Ray get_ray(const int x, const int y) const {
+    Ray get_ray(const int x, const int y, const int s_x, const int s_y) const {
         // Construct a camera ray originating from the defocus disk and directed at randomly
-        // sampled point around the pixel location i, j
-        const Vec3d offset = sample_square();
+        // sampled point around the pixel location x, y for stratified sample square s_x, s_y
+
+        const Vec3d offset = sample_square_stratified(s_x, s_y);
         const Vec3d pixel_sample =
             pixel00_loc + ((x + offset.x()) * pixel_delta_u) + ((y + offset.y()) * pixel_delta_v);
 
@@ -153,6 +160,16 @@ private:
         const double ray_time = random_double();
 
         return Ray(ray_origin, ray_direction, ray_time);
+    }
+
+    Vec3d sample_square_stratified(const int s_x, const int s_y) const {
+        // Returns the vector to a random point in the square sub-pixel specified by grid
+        // indices s_i and s_j, for an idealized unit square pixel [-0.5,-0.5] to [+0.5,+0.5]
+
+        const double px = ((s_x + random_double()) * recip_sqrt_spp) - 0.5;
+        const double py = ((s_y + random_double()) * recip_sqrt_spp) - 0.5;
+
+        return {px, py, 0.0};
     }
 
     Vec3d sample_square() const {
