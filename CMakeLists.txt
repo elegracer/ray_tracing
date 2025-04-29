@@ -91,3 +91,7 @@ target_link_libraries(integrate_x_sq PRIVATE core)
 add_executable(render_scene)
 target_sources(render_scene PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/utils/render_scene.cpp)
 target_link_libraries(render_scene PRIVATE core)
+
+add_executable(sphere_importance)
+target_sources(sphere_importance PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/utils/sphere_importance.cpp)
+target_link_libraries(sphere_importance PRIVATE core)
