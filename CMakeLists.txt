@@ -76,23 +76,11 @@ target_link_libraries(core
 )
 
 # utils
-add_executable(use_core)
-target_sources(use_core
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/utils/use_core.cpp
-)
-target_link_libraries(use_core
-    PRIVATE
-        core
-)
+add_executable(render_scene)
+target_sources(render_scene PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/utils/render_scene.cpp)
+target_link_libraries(render_scene PRIVATE core)
 
 
-add_executable(use_pi)
-target_sources(use_pi
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/utils/use_pi.cpp
-)
-target_link_libraries(use_pi
-    PRIVATE
-        core
-)
+add_executable(estimate_pi)
+target_sources(estimate_pi PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/utils/estimate_pi.cpp)
+target_link_libraries(estimate_pi PRIVATE core)
