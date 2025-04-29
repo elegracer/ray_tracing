@@ -4,16 +4,16 @@
 #include "common/common.h"
 
 inline double icd(const double d) {
-    return std::sqrt(4.0 * d);
+    return 8.0 * std::pow(d, 1.0 / 3.0);
 }
 
 inline double pdf(const double x) {
-    return 0.5 * x;
+    return (3.0 / 8.0) * x * x;
 }
 
 int main(int argc, const char* argv[]) {
 
-    constexpr int sample_count_sqrt = 1000;
+    constexpr int sample_count_sqrt = 1;
     constexpr int sample_count = sample_count_sqrt * sample_count_sqrt;
 
     double sum = 0.0;
