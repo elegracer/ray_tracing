@@ -4,11 +4,11 @@
 #include "common/common.h"
 
 inline double icd(const double d) {
-    return 2.0 * d;
+    return std::sqrt(4.0 * d);
 }
 
 inline double pdf(const double x) {
-    return 0.5;
+    return 0.5 * x;
 }
 
 int main(int argc, const char* argv[]) {
@@ -19,7 +19,12 @@ int main(int argc, const char* argv[]) {
     double sum = 0.0;
 
     for (int i = 0; i < sample_count; ++i) {
-        const double x = icd(random_double());
+        const double z = random_double();
+        if (z < 1e-12) {
+            continue;
+        }
+
+        const double x = icd(z);
         sum += x * x / pdf(x);
     }
 
