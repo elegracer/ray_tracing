@@ -76,11 +76,18 @@ target_link_libraries(core
 )
 
 # utils
-add_executable(render_scene)
-target_sources(render_scene PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/utils/render_scene.cpp)
-target_link_libraries(render_scene PRIVATE core)
-
+add_executable(estimate_halfway)
+target_sources(estimate_halfway PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/utils/estimate_halfway.cpp)
+target_link_libraries(estimate_halfway PRIVATE core)
 
 add_executable(estimate_pi)
 target_sources(estimate_pi PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/utils/estimate_pi.cpp)
 target_link_libraries(estimate_pi PRIVATE core)
+
+add_executable(integrate_x_sq)
+target_sources(integrate_x_sq PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/utils/integrate_x_sq.cpp)
+target_link_libraries(integrate_x_sq PRIVATE core)
+
+add_executable(render_scene)
+target_sources(render_scene PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/utils/render_scene.cpp)
+target_link_libraries(render_scene PRIVATE core)
