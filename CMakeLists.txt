@@ -99,3 +99,7 @@ target_link_libraries(sphere_importance PRIVATE core)
 add_executable(cos_cubed)
 target_sources(cos_cubed PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/utils/cos_cubed.cpp)
 target_link_libraries(cos_cubed PRIVATE core)
+
+add_executable(cos_density)
+target_sources(cos_density PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/utils/cos_density.cpp)
+target_link_libraries(cos_density PRIVATE core)
