@@ -95,3 +95,7 @@ target_link_libraries(render_scene PRIVATE core)
 add_executable(sphere_importance)
 target_sources(sphere_importance PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/utils/sphere_importance.cpp)
 target_link_libraries(sphere_importance PRIVATE core)
+
+add_executable(cos_cubed)
+target_sources(cos_cubed PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/utils/cos_cubed.cpp)
+target_link_libraries(cos_cubed PRIVATE core)
