@@ -205,8 +205,26 @@ private:
             return color_from_emission;
         }
 
+        // Hard-Coded logic
+        const Vec3d on_light {random_double(213.0, 343.0), 554.0, random_double(227.0, 332.0)};
+        Vec3d to_light = on_light - hit_rec.p;
+        const double distance_sq = to_light.squaredNorm();
+        to_light.normalize();
+
+        if (to_light.dot(hit_rec.normal) < 0.0) {
+            return color_from_emission;
+        }
+
+        const double light_area = (343.0 - 213.0) * (332.0 - 227.0);
+        const double light_cosine = std::abs(to_light.y());
+        if (light_cosine < 0.000001) {
+            return color_from_emission;
+        }
+
+        pdf_value = distance_sq / (light_cosine * light_area);
+        scattered = Ray {hit_rec.p, to_light, ray.time()};
+
         const double scattering_pdf = hit_rec.mat->scattering_pdf(ray, hit_rec, scattered);
-        pdf_value = scattering_pdf;
 
         const Vec3d color_from_scatter =                        //
             attenuation.array()                                 //
