@@ -6,12 +6,13 @@
 
 #include "common.h"
 
-PRO_DEF_MEM_DISPATCH(MemValue, value);
+PRO_DEF_MEM_DISPATCH(TextureMemValue, value);
 
-struct Texture                                                                                //
-    : pro::facade_builder                                                                     //
-      ::support_copy<pro::constraint_level::nontrivial>                                       //
-      ::add_convention<MemValue, Vec3d(const double u, const double v, const Vec3d& p) const> //
+struct Texture                                          //
+    : pro::facade_builder                               //
+      ::support_copy<pro::constraint_level::nontrivial> //
+      ::add_convention<TextureMemValue,
+          Vec3d(const double u, const double v, const Vec3d& p) const> //
       ::build {};
 
 struct SolidColor {

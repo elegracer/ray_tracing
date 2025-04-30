@@ -1,26 +1,28 @@
 #pragma once
 
-#include "common/onb.h"
 #include "proxy/proxy.h"
 
+#include "onb.h"
 #include "common.h"
 #include "ray.h"
 #include "texture.h"
 
 struct HitRecord;
 
-PRO_DEF_MEM_DISPATCH(MemEmitted, emitted);
-PRO_DEF_MEM_DISPATCH(MemScatter, scatter);
-PRO_DEF_MEM_DISPATCH(MemScatteringPDF, scattering_pdf);
+PRO_DEF_MEM_DISPATCH(MaterialMemEmitted, emitted);
+PRO_DEF_MEM_DISPATCH(MaterialMemScatter, scatter);
+PRO_DEF_MEM_DISPATCH(MaterialMemScatteringPDF, scattering_pdf);
 
 struct Material                                         //
     : pro::facade_builder                               //
       ::support_copy<pro::constraint_level::nontrivial> //
-      ::add_convention<MemEmitted, Vec3d(const Ray& ray_in, const HitRecord& hit_rec,
-                                       const double u, const double v, const Vec3d& p) const> //
-      ::add_convention<MemScatter, bool(const Ray& ray_in, const HitRecord& hit_rec,
-                                       Vec3d& attenuation, Ray& scattered, double& pdf) const> //
-      ::add_convention<MemScatteringPDF,
+      ::add_convention<MaterialMemEmitted,
+          Vec3d(const Ray& ray_in, const HitRecord& hit_rec, const double u, const double v,
+              const Vec3d& p) const> //
+      ::add_convention<MaterialMemScatter,
+          bool(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation, Ray& scattered,
+              double& pdf) const> //
+      ::add_convention<MaterialMemScatteringPDF,
           double(const Ray& ray_in, const HitRecord& hit_rec, const Ray& scattered) const> //
       ::build {};
 

@@ -342,7 +342,7 @@ void render_cornell_box(const std::string& output_image_format) {
     Camera cam;
     cam.aspect_ratio = 16.0 / 9.0;
     cam.image_width = 1280;
-    cam.samples_per_pixel = 10;
+    cam.samples_per_pixel = 1000;
     cam.max_depth = 50;
     cam.background = {0.0, 0.0, 0.0};
 
