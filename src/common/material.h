@@ -166,11 +166,12 @@ struct Isotropic {
         double& pdf) const {
         scattered = Ray {hit_rec.p, random_unit_vector(), ray_in.time()};
         attenuation = m_tex->value(hit_rec.u, hit_rec.v, hit_rec.p);
+        pdf = 1.0 / (4.0 * pi);
         return true;
     }
 
     double scattering_pdf(const Ray& ray_in, const HitRecord& hit_rec, const Ray& scattered) const {
-        return 0.0;
+        return 1.0 / (4.0 * pi);
     }
 
     pro::proxy<Texture> m_tex;
