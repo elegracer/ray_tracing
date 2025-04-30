@@ -10,6 +10,7 @@ struct HitRecord;
 
 PRO_DEF_MEM_DISPATCH(MemEmitted, emitted);
 PRO_DEF_MEM_DISPATCH(MemScatter, scatter);
+PRO_DEF_MEM_DISPATCH(MemScatteringPDF, scattering_pdf);
 
 struct Material                                                                                 //
     : pro::facade_builder                                                                       //
@@ -17,6 +18,8 @@ struct Material                                                                 
       ::add_convention<MemEmitted, Vec3d(const double u, const double v, const Vec3d& p) const> //
       ::add_convention<MemScatter, bool(const Ray& ray_in, const HitRecord& hit_rec,
                                        Vec3d& attenuation, Ray& scattered) const> //
+      ::add_convention<MemScatteringPDF,
+          double(const Ray& ray_in, const HitRecord& hit_rec, const Ray& scattered) const> //
       ::build {};
 
 struct HitRecord {
@@ -56,6 +59,11 @@ struct Lambertion {
         return true;
     }
 
+    double scattering_pdf(const Ray& ray_in, const HitRecord& hit_rec, const Ray& scattered) const {
+        const double cos_theta = hit_rec.normal.dot(scattered.direction().normalized());
+        return std::max(0.0, cos_theta / pi);
+    }
+
 private:
     pro::proxy<Texture> m_tex;
 };
@@ -73,6 +81,10 @@ struct Metal {
         scattered = Ray(hit_rec.p, reflected, ray_in.time());
         attenuation = albedo;
         return scattered.direction().dot(hit_rec.normal) > 0.0;
+    }
+
+    double scattering_pdf(const Ray& ray_in, const HitRecord& hit_rec, const Ray& scattered) const {
+        return 0.0;
     }
 
 private:
@@ -105,6 +117,10 @@ struct Dielectric {
         return true;
     }
 
+    double scattering_pdf(const Ray& ray_in, const HitRecord& hit_rec, const Ray& scattered) const {
+        return 0.0;
+    }
+
 private:
     // Refractive index in vaccum or air, or the ratio of the material's refractive index onver the
     // refractive index of the enclosing media
@@ -132,6 +148,10 @@ struct DiffuseLight {
         return false;
     }
 
+    double scattering_pdf(const Ray& ray_in, const HitRecord& hit_rec, const Ray& scattered) const {
+        return 0.0;
+    }
+
     pro::proxy<Texture> m_tex;
 };
 
@@ -147,6 +167,10 @@ struct Isotropic {
         scattered = Ray {hit_rec.p, random_unit_vector(), ray_in.time()};
         attenuation = m_tex->value(hit_rec.u, hit_rec.v, hit_rec.p);
         return true;
+    }
+
+    double scattering_pdf(const Ray& ray_in, const HitRecord& hit_rec, const Ray& scattered) const {
+        return 0.0;
     }
 
     pro::proxy<Texture> m_tex;

@@ -205,8 +205,14 @@ private:
             return color_from_emission;
         }
 
-        const Vec3d color_from_scatter =
-            attenuation.array() * ray_color(scattered, depth - 1, hittable).array();
+        const double scattering_pdf = hit_rec.mat->scattering_pdf(ray, hit_rec, scattered);
+        const double pdf_value = scattering_pdf;
+
+        const Vec3d color_from_scatter =                        //
+            attenuation.array()                                 //
+            * scattering_pdf                                    //
+            * ray_color(scattered, depth - 1, hittable).array() //
+            / pdf_value;
 
         return color_from_emission + color_from_scatter;
     }
