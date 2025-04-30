@@ -49,7 +49,7 @@ struct Lambertion {
 
     bool scatter(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation,
         Ray& scattered) const {
-        Vec3d scatter_direction = hit_rec.normal + random_unit_vector();
+        Vec3d scatter_direction = random_on_hemisphere(hit_rec.normal);
         if (scatter_direction.isZero(1e-8)) {
             scatter_direction = hit_rec.normal;
         }
@@ -61,7 +61,7 @@ struct Lambertion {
 
     double scattering_pdf(const Ray& ray_in, const HitRecord& hit_rec, const Ray& scattered) const {
         const double cos_theta = hit_rec.normal.dot(scattered.direction().normalized());
-        return std::max(0.0, cos_theta / pi);
+        return 1.0 / (2.0 * pi);
     }
 
 private:
