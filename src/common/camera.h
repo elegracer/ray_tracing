@@ -206,8 +206,7 @@ private:
         }
 
         const double scattering_pdf = hit_rec.mat->scattering_pdf(ray, hit_rec, scattered);
-        // const double pdf_value = scattering_pdf;
-        const double pdf_value = 1.0 / (2.0 * pi);
+        const double pdf_value = scattering_pdf;
 
         const Vec3d color_from_scatter =                        //
             attenuation.array()                                 //
