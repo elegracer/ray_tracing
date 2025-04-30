@@ -32,9 +32,8 @@ using Vec3i = Eigen::Vector3i;
 
 inline double random_double() {
     // Returns a random real in [0,1)
-    static std::uniform_real_distribution<double> distribution(0.0, 1.0);
     static std::mt19937 generator;
-    return distribution(generator);
+    return std::uniform_real_distribution<double> {0.0, 1.0}(generator);
 }
 
 inline double random_double(const double min, const double max) {
@@ -44,9 +43,8 @@ inline double random_double(const double min, const double max) {
 
 inline int random_int(const int min, const int max) {
     // Returns a random int in [min, max]
-    static std::uniform_int_distribution<int> distribution {};
     static std::mt19937 generator;
-    return min + distribution(generator) % (max - min + 1);
+    return min + std::uniform_int_distribution<int> {}(generator) % (max - min + 1);
 }
 
 inline Vec3d random_vec3d() {
