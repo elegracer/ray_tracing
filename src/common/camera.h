@@ -198,15 +198,15 @@ private:
 
         Vec3d attenuation;
         Ray scattered;
-
+        double pdf_value;
         const Vec3d color_from_emission = hit_rec.mat->emitted(hit_rec.u, hit_rec.v, hit_rec.p);
 
-        if (!hit_rec.mat->scatter(ray, hit_rec, attenuation, scattered)) {
+        if (!hit_rec.mat->scatter(ray, hit_rec, attenuation, scattered, pdf_value)) {
             return color_from_emission;
         }
 
         const double scattering_pdf = hit_rec.mat->scattering_pdf(ray, hit_rec, scattered);
-        const double pdf_value = scattering_pdf;
+        pdf_value = scattering_pdf;
 
         const Vec3d color_from_scatter =                        //
             attenuation.array()                                 //

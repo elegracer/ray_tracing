@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/onb.h"
 #include "proxy/proxy.h"
 
 #include "common.h"
@@ -17,7 +18,7 @@ struct Material                                                                 
       ::support_copy<pro::constraint_level::nontrivial>                                         //
       ::add_convention<MemEmitted, Vec3d(const double u, const double v, const Vec3d& p) const> //
       ::add_convention<MemScatter, bool(const Ray& ray_in, const HitRecord& hit_rec,
-                                       Vec3d& attenuation, Ray& scattered) const> //
+                                       Vec3d& attenuation, Ray& scattered, double& pdf) const> //
       ::add_convention<MemScatteringPDF,
           double(const Ray& ray_in, const HitRecord& hit_rec, const Ray& scattered) const> //
       ::build {};
@@ -47,15 +48,14 @@ struct Lambertion {
 
     Vec3d emitted(const double u, const double v, const Vec3d& p) const { return {0.0, 0.0, 0.0}; }
 
-    bool scatter(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation,
-        Ray& scattered) const {
-        Vec3d scatter_direction = random_on_hemisphere(hit_rec.normal);
-        if (scatter_direction.isZero(1e-8)) {
-            scatter_direction = hit_rec.normal;
-        }
+    bool scatter(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation, Ray& scattered,
+        double& pdf) const {
+        ONB uvw {hit_rec.normal};
+        const Vec3d scatter_direction = uvw.from_basis(random_cosine_direction());
 
         scattered = Ray(hit_rec.p, scatter_direction, ray_in.time());
         attenuation = m_tex->value(hit_rec.u, hit_rec.v, hit_rec.p);
+        pdf = uvw.w().dot(scattered.direction().normalized()) / pi;
         return true;
     }
 
@@ -74,8 +74,8 @@ struct Metal {
 
     Vec3d emitted(const double u, const double v, const Vec3d& p) const { return {0.0, 0.0, 0.0}; }
 
-    bool scatter(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation,
-        Ray& scattered) const {
+    bool scatter(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation, Ray& scattered,
+        double& pdf) const {
         Vec3d reflected = reflect(ray_in.direction(), hit_rec.normal);
         reflected = reflected.normalized() + (fuzz * random_unit_vector());
         scattered = Ray(hit_rec.p, reflected, ray_in.time());
@@ -98,8 +98,8 @@ struct Dielectric {
 
     Vec3d emitted(const double u, const double v, const Vec3d& p) const { return {0.0, 0.0, 0.0}; }
 
-    bool scatter(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation,
-        Ray& scattered) const {
+    bool scatter(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation, Ray& scattered,
+        double& pdf) const {
         attenuation = {1.0, 1.0, 1.0};
         const double ri = hit_rec.front_face ? (1.0 / refraction_index) : refraction_index;
 
@@ -143,8 +143,8 @@ struct DiffuseLight {
         return m_tex->value(u, v, p);
     }
 
-    bool scatter(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation,
-        Ray& scattered) const {
+    bool scatter(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation, Ray& scattered,
+        double& pdf) const {
         return false;
     }
 
@@ -162,8 +162,8 @@ struct Isotropic {
 
     Vec3d emitted(const double u, const double v, const Vec3d& p) const { return {0.0, 0.0, 0.0}; }
 
-    bool scatter(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation,
-        Ray& scattered) const {
+    bool scatter(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation, Ray& scattered,
+        double& pdf) const {
         scattered = Ray {hit_rec.p, random_unit_vector(), ray_in.time()};
         attenuation = m_tex->value(hit_rec.u, hit_rec.v, hit_rec.p);
         return true;
