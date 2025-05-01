@@ -1,31 +1,11 @@
 #pragma once
 
-#include "proxy/proxy.h"
+#include "traits.h"
 
 #include "common.h"
 #include "ray.h"
 #include "texture.h"
 #include "pdf.h"
-
-struct HitRecord;
-struct ScatterRecord;
-
-PRO_DEF_MEM_DISPATCH(MaterialMemEmitted, emitted);
-PRO_DEF_MEM_DISPATCH(MaterialMemScatter, scatter);
-PRO_DEF_MEM_DISPATCH(MaterialMemScatteringPDF, scattering_pdf);
-
-struct Material                                         //
-    : pro::facade_builder                               //
-      ::support_copy<pro::constraint_level::nontrivial> //
-      ::add_convention<MaterialMemEmitted,
-          Vec3d(const Ray& ray_in, const HitRecord& hit_rec, const double u, const double v,
-              const Vec3d& p) const> //
-      ::add_convention<MaterialMemScatter,
-          bool(const Ray& ray_in, const HitRecord& hit_rec, ScatterRecord& scatter_rec) const> //
-      ::add_convention<MaterialMemScatteringPDF,
-          double(const Ray& ray_in, const HitRecord& hit_rec, const Ray& scattered) const> //
-      ::build {};
-
 
 struct HitRecord {
     Vec3d p;
@@ -43,7 +23,6 @@ struct HitRecord {
         normal = front_face ? outward_normal : -outward_normal;
     }
 };
-
 
 struct ScatterRecord {
     Vec3d attenuation;

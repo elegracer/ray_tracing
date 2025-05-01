@@ -1,6 +1,7 @@
 #pragma once
 
-#include "common/common.h"
+#include "common.h"
+
 #include <opencv2/opencv.hpp>
 #include <fmt/core.h>
 

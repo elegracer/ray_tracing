@@ -1,19 +1,11 @@
 #pragma once
 
-#include "common/perlin.h"
-#include "common/rtw_image.h"
-#include "proxy/proxy.h"
+#include "traits.h"
 
 #include "common.h"
+#include "perlin.h"
+#include "rtw_image.h"
 
-PRO_DEF_MEM_DISPATCH(TextureMemValue, value);
-
-struct Texture                                          //
-    : pro::facade_builder                               //
-      ::support_copy<pro::constraint_level::nontrivial> //
-      ::add_convention<TextureMemValue,
-          Vec3d(const double u, const double v, const Vec3d& p) const> //
-      ::build {};
 
 struct SolidColor {
     SolidColor(const Vec3d& albedo) : m_albedo(albedo) {}

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "common/interval.h"
-#include "common/ray.h"
+#include "interval.h"
+#include "ray.h"
 
 struct AABB {
 

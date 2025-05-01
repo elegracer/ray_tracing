@@ -1,6 +1,10 @@
 #pragma once
 
-#include "hittable.h"
+#include "traits.h"
+
+#include "material.h"
+#include "interval.h"
+#include "aabb.h"
 
 struct ConstantMedium {
 
@@ -54,6 +58,10 @@ struct ConstantMedium {
     }
 
     AABB bounding_box() const { return m_boundary->bounding_box(); }
+
+    double pdf_value(const Vec3d& origin, const Vec3d& direction) const { return 0.0; }
+
+    Vec3d random(const Vec3d& origin) const { return {1.0, 0.0, 0.0}; }
 
     pro::proxy<Hittable> m_boundary;
     double m_neg_inv_density;

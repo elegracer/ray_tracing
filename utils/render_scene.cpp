@@ -1,7 +1,10 @@
+#include "core/version.h"
+
+#include "common/common.h"
+#include "common/hittable_list.h"
 #include "common/constant_medium.h"
 #include "common/quad.h"
 #include "common/sphere.h"
-#include "core/version.h"
 
 #include <fmt/core.h>
 #include <fmt/ostream.h>

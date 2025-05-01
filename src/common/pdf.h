@@ -1,19 +1,10 @@
 #pragma once
 
-#include "proxy/proxy.h"
+#include "traits.h"
 
 #include "common.h"
 #include "onb.h"
 
-PRO_DEF_MEM_DISPATCH(PDFMemValue, value);
-PRO_DEF_MEM_DISPATCH(PDFMemGenerate, generate);
-
-struct PDF                                                                //
-    : pro::facade_builder                                                 //
-      ::support_copy<pro::constraint_level::nontrivial>                   //
-      ::add_convention<PDFMemValue, double(const Vec3d& direction) const> //
-      ::add_convention<PDFMemGenerate, Vec3d() const>                     //
-      ::build {};
 
 struct SpherePDF {
     double value(const Vec3d& direction) const { return 1.0 / (4.0 * pi); }
@@ -41,4 +32,17 @@ struct UniformHemispherePDF {
     Vec3d generate() const { return m_uvw.from_basis(random_uniform_hemisphere_direction()); }
 
     ONB m_uvw;
+};
+
+struct HittablePDF {
+    HittablePDF(const pro::proxy<Hittable>& objects, const Vec3d& origin)
+        : m_objects(objects),
+          m_origin(origin) {}
+
+    double value(const Vec3d& direction) const { return m_objects->pdf_value(m_origin, direction); }
+
+    Vec3d generate() const { return m_objects->random(m_origin); }
+
+    pro::proxy<Hittable> m_objects;
+    Vec3d m_origin;
 };

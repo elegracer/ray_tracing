@@ -1,22 +1,11 @@
 #pragma once
 
-#include "proxy/proxy.h"
+#include "traits.h"
 
 #include "ray.h"
 #include "interval.h"
 #include "material.h"
 #include "aabb.h"
-
-PRO_DEF_MEM_DISPATCH(HittableMemHit, hit);
-PRO_DEF_MEM_DISPATCH(HittableMemBB, bounding_box);
-
-struct Hittable                                         //
-    : pro::facade_builder                               //
-      ::support_copy<pro::constraint_level::nontrivial> //
-      ::add_convention<HittableMemHit,
-          bool(const Ray& ray, const Interval& ray_t, HitRecord& hit_rec) const> //
-      ::add_convention<HittableMemBB, AABB() const>                              //
-      ::build {};
 
 
 struct Translate {
@@ -42,6 +31,10 @@ struct Translate {
     }
 
     AABB bounding_box() const { return m_bbox; }
+
+    double pdf_value(const Vec3d& origin, const Vec3d& direction) const { return 0.0; }
+
+    Vec3d random(const Vec3d& origin) const { return {1.0, 0.0, 0.0}; }
 
     pro::proxy<Hittable> m_object;
     Vec3d m_offset;
@@ -116,6 +109,10 @@ struct RotateY {
     }
 
     AABB bounding_box() const { return m_bbox; }
+
+    double pdf_value(const Vec3d& origin, const Vec3d& direction) const { return 0.0; }
+
+    Vec3d random(const Vec3d& origin) const { return {1.0, 0.0, 0.0}; }
 
     pro::proxy<Hittable> m_object;
     double m_cos_theta;

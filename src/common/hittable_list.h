@@ -1,9 +1,10 @@
 #pragma once
 
-#include "hittable.h"
-#include "interval.h"
+#include "traits.h"
 
-#include <vector>
+#include "material.h"
+#include "interval.h"
+#include "aabb.h"
 
 class HittableList {
 public:
@@ -34,6 +35,10 @@ public:
     }
 
     AABB bounding_box() const { return m_bbox; }
+
+    double pdf_value(const Vec3d& origin, const Vec3d& direction) const { return 0.0; }
+
+    Vec3d random(const Vec3d& origin) const { return {1.0, 0.0, 0.0}; }
 
     std::vector<pro::proxy<Hittable>> m_objects;
 

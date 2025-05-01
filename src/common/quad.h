@@ -1,7 +1,8 @@
 #pragma once
 
-#include "common/hittable.h"
-#include "common/hittable_list.h"
+#include "traits.h"
+
+#include "hittable_list.h"
 #include "material.h"
 #include "aabb.h"
 
@@ -18,6 +19,8 @@ struct Quad {
         m_D = m_normal.dot(m_Q);
         m_w = n / n.dot(n);
 
+        m_area = n.norm();
+
         set_bounding_box();
     }
 
@@ -29,6 +32,23 @@ struct Quad {
     }
 
     AABB bounding_box() const { return m_bbox; }
+
+    double pdf_value(const Vec3d& origin, const Vec3d& direction) const {
+        HitRecord hit_rec;
+        if (!hit(Ray {origin, direction}, Interval {0.001, infinity}, hit_rec)) {
+            return 0.0;
+        }
+
+        const double distance_sq = hit_rec.t * hit_rec.t * direction.squaredNorm();
+        const double cosine = std::abs(direction.normalized().dot(hit_rec.normal));
+
+        return distance_sq / (cosine * m_area);
+    }
+
+    Vec3d random(const Vec3d& origin) const {
+        const Vec3d p = m_Q + (random_double() * m_u) + (random_double() * m_v);
+        return p - origin;
+    }
 
     bool hit(const Ray& ray, const Interval& ray_t, HitRecord& hit_rec) const {
         const double denominator = m_normal.dot(ray.direction());
@@ -88,6 +108,7 @@ struct Quad {
     // plane parameters
     Vec3d m_normal;
     double m_D;
+    double m_area;
 };
 
 

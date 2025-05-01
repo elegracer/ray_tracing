@@ -33,6 +33,10 @@ public:
 
     AABB bounding_box() const { return m_bbox; }
 
+    double pdf_value(const Vec3d& origin, const Vec3d& direction) const { return 0.0; }
+
+    Vec3d random(const Vec3d& origin) const { return {1.0, 0.0, 0.0}; }
+
     bool hit(const Ray& ray, const Interval& ray_t, HitRecord& hit_rec) const {
         const Vec3d current_center = m_center.at(ray.time());
         const Vec3d oc = current_center - ray.origin();

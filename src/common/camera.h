@@ -187,7 +187,7 @@ private:
         return center + (p.x() * defocus_disk_u) + (p.y() * defocus_disk_v);
     }
 
-    Vec3d ray_color(const Ray& ray, const int depth, const pro::proxy<Hittable>& hittable) {
+    Vec3d ray_color(const Ray& ray, const int depth, const pro::proxy<Hittable>& world) {
         // If we've exceeded the ray bounce limit, no more light is gathered
         if (depth <= 0) {
             return {0.0, 0.0, 0.0};
@@ -196,7 +196,7 @@ private:
         HitRecord hit_rec;
 
         // If the ray hits nothing, return the background color
-        if (!hittable->hit(ray, Interval {0.001, infinity}, hit_rec)) {
+        if (!world->hit(ray, Interval {0.001, infinity}, hit_rec)) {
             return background;
         }
 
@@ -210,7 +210,7 @@ private:
 
         if (scatter_rec.skip_pdf) {
             return scatter_rec.attenuation.array()
-                   * ray_color(scatter_rec.skip_pdf_ray, depth - 1, hittable).array();
+                   * ray_color(scatter_rec.skip_pdf_ray, depth - 1, world).array();
         }
 
         const Ray scattered {hit_rec.p, scatter_rec.pdf->generate(), ray.time()};
@@ -218,7 +218,7 @@ private:
 
         const double scattering_pdf = hit_rec.mat->scattering_pdf(ray, hit_rec, scattered);
 
-        const Vec3d sample_color = ray_color(scattered, depth - 1, hittable);
+        const Vec3d sample_color = ray_color(scattered, depth - 1, world);
 
         const Vec3d color_from_scatter =    //
             scatter_rec.attenuation.array() //

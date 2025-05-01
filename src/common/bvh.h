@@ -1,5 +1,7 @@
 #pragma once
 
+#include "traits.h"
+
 #include "hittable_list.h"
 
 struct BVHNode {
@@ -52,6 +54,11 @@ struct BVHNode {
     }
 
     AABB bounding_box() const { return m_bbox; }
+
+    double pdf_value(const Vec3d& origin, const Vec3d& direction) const { return 0.0; }
+
+    Vec3d random(const Vec3d& origin) const { return {1.0, 0.0, 0.0}; }
+
 
     pro::proxy<Hittable> m_left;
     pro::proxy<Hittable> m_right;
