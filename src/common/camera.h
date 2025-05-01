@@ -210,10 +210,6 @@ private:
             return color_from_emission;
         }
 
-        const CosinePDF surface_pdf {hit_rec.normal};
-        scattered = Ray {hit_rec.p, surface_pdf.generate(), ray.time()};
-        pdf_value = surface_pdf.value(scattered.direction());
-
         const double scattering_pdf = hit_rec.mat->scattering_pdf(ray, hit_rec, scattered);
 
         const Vec3d color_from_scatter =                        //

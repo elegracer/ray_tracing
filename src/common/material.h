@@ -2,10 +2,10 @@
 
 #include "proxy/proxy.h"
 
-#include "onb.h"
 #include "common.h"
 #include "ray.h"
 #include "texture.h"
+#include "pdf.h"
 
 struct HitRecord;
 
@@ -56,18 +56,18 @@ struct Lambertion {
 
     bool scatter(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation, Ray& scattered,
         double& pdf) const {
-        ONB uvw {hit_rec.normal};
-        const Vec3d scatter_direction = uvw.from_basis(random_cosine_direction());
+        const CosinePDF surface_pdf {hit_rec.normal};
+        const Vec3d scatter_direction = surface_pdf.generate().normalized();
 
         scattered = Ray(hit_rec.p, scatter_direction, ray_in.time());
         attenuation = m_tex->value(hit_rec.u, hit_rec.v, hit_rec.p);
-        pdf = uvw.w().dot(scattered.direction().normalized()) / pi;
+        pdf = surface_pdf.value(scatter_direction);
         return true;
     }
 
     double scattering_pdf(const Ray& ray_in, const HitRecord& hit_rec, const Ray& scattered) const {
         const double cos_theta = hit_rec.normal.dot(scattered.direction().normalized());
-        return 1.0 / (2.0 * pi);
+        return std::max(1e-8, cos_theta / pi);
     }
 
 private:

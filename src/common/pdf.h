@@ -25,7 +25,7 @@ struct CosinePDF {
 
     double value(const Vec3d& direction) const {
         const double cosine_theta = direction.normalized().dot(m_uvw.w());
-        return std::max(0.0, cosine_theta / pi);
+        return std::max(1e-8, cosine_theta / pi);
     }
 
     Vec3d generate() const { return m_uvw.from_basis(random_cosine_direction()); }
