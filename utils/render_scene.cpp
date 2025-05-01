@@ -329,24 +329,26 @@ void render_cornell_box(const std::string& output_image_format) {
     world.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {0.0, 0.0, 555.0},
         Vec3d {555.0, 0.0, 0.0}, Vec3d {0.0, 555.0, 0.0}, white));
 
-    auto aluminum = pro::make_proxy_shared<Material, Metal>(Vec3d {0.8, 0.85, 0.88}, 0.0);
-    auto box1 = box(Vec3d {0.0, 0.0, 0.0}, Vec3d {165.0, 330.0, 165.0}, aluminum);
+    auto box1 = box(Vec3d {0.0, 0.0, 0.0}, Vec3d {165.0, 330.0, 165.0}, white);
     box1 = pro::make_proxy_shared<Hittable, RotateY>(box1, 15.0);
     box1 = pro::make_proxy_shared<Hittable, Translate>(box1, Vec3d {265.0, 0.0, 295.0});
 
-    auto box2 = box(Vec3d {0.0, 0.0, 0.0}, Vec3d {165.0, 165.0, 165.0}, white);
-    box2 = pro::make_proxy_shared<Hittable, RotateY>(box2, -18.0);
-    box2 = pro::make_proxy_shared<Hittable, Translate>(box2, Vec3d {130.0, 0.0, 65.0});
+    auto glass = pro::make_proxy_shared<Material, Dielectric>(1.5);
+    auto sphere = pro::make_proxy_shared<Hittable, Sphere>(Vec3d {190.0, 90.0, 190.0}, 90.0, glass);
 
     world.add(box1);
-    world.add(box2);
+    world.add(sphere);
 
     // Light sources
     auto empty_material = pro::make_proxy_shared<Material, EmptyMaterial>();
-    auto lights = pro::make_proxy_shared<Hittable, Quad>(Vec3d {343.0, 554.0, 332.0},
-        Vec3d {-130.0, 0.0, 0.0}, Vec3d {0.0, 0.0, -105.0}, empty_material);
+    HittableList lights;
+    lights.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {343.0, 554.0, 332.0},
+        Vec3d {-130.0, 0.0, 0.0}, Vec3d {0.0, 0.0, -105.0}, empty_material));
+    lights.add(
+        pro::make_proxy_shared<Hittable, Sphere>(Vec3d {190.0, 90.0, 190.0}, 90.0, empty_material));
 
     pro::proxy<Hittable> world_as_hittable = &world;
+    pro::proxy<Hittable> lights_as_hittable = &lights;
 
     // Camera
     Camera cam;
@@ -363,7 +365,7 @@ void render_cornell_box(const std::string& output_image_format) {
 
     cam.defocus_angle = 0.0;
 
-    cam.render(world_as_hittable, lights);
+    cam.render(world_as_hittable, lights_as_hittable);
 
     // cv::imshow("output image", cam.img);
     // cv::waitKey();

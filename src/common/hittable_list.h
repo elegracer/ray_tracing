@@ -36,9 +36,21 @@ public:
 
     AABB bounding_box() const { return m_bbox; }
 
-    double pdf_value(const Vec3d& origin, const Vec3d& direction) const { return 0.0; }
+    double pdf_value(const Vec3d& origin, const Vec3d& direction) const {
+        const double weight = 1.0 / (double)m_objects.size();
+        double sum = 0.0;
 
-    Vec3d random(const Vec3d& origin) const { return {1.0, 0.0, 0.0}; }
+        for (const auto& object : m_objects) {
+            sum += weight * object->pdf_value(origin, direction);
+        }
+
+        return sum;
+    }
+
+    Vec3d random(const Vec3d& origin) const {
+        const int num_objects = (int)m_objects.size();
+        return m_objects[random_int(0, num_objects - 1)]->random(origin);
+    }
 
     std::vector<pro::proxy<Hittable>> m_objects;
 

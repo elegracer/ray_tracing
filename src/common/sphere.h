@@ -33,9 +33,27 @@ public:
 
     AABB bounding_box() const { return m_bbox; }
 
-    double pdf_value(const Vec3d& origin, const Vec3d& direction) const { return 0.0; }
+    double pdf_value(const Vec3d& origin, const Vec3d& direction) const {
+        // This method only works for stationary spheres
 
-    Vec3d random(const Vec3d& origin) const { return {1.0, 0.0, 0.0}; }
+        HitRecord hit_rec;
+        if (!hit(Ray {origin, direction}, Interval {0.001, infinity}, hit_rec)) {
+            return 0.0;
+        }
+
+        const double distance_sq = (m_center.at(0.0) - origin).squaredNorm();
+        const double cos_theta_max = std::sqrt(1.0 - m_radius * m_radius / distance_sq);
+        const double solid_angle = 2.0 * pi * (1.0 - cos_theta_max);
+
+        return std::max(1e-8, 1.0 / solid_angle);
+    }
+
+    Vec3d random(const Vec3d& origin) const {
+        const Vec3d direction = m_center.at(0.0) - origin;
+        const double distance_sq = direction.squaredNorm();
+        const ONB uvw {direction};
+        return uvw.from_basis(random_to_sphere(m_radius, distance_sq));
+    }
 
     bool hit(const Ray& ray, const Interval& ray_t, HitRecord& hit_rec) const {
         const Vec3d current_center = m_center.at(ray.time());
@@ -83,6 +101,19 @@ public:
 
         u = phi / (2.0 * pi);
         v = theta / pi;
+    }
+
+    static Vec3d random_to_sphere(const double radius, const double distance_sq) {
+        const double r1 = random_double();
+        const double r2 = random_double();
+
+        const double z = 1.0 + r2 * (std::sqrt(1.0 - radius * radius / distance_sq) - 1.0);
+
+        const double phi = 2.0 * pi * r1;
+        const double x = std::cos(phi) * std::sqrt(1.0 - z * z);
+        const double y = std::sin(phi) * std::sqrt(1.0 - z * z);
+
+        return {x, y, z};
     }
 
 private:
