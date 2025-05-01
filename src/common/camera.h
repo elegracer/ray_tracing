@@ -51,7 +51,7 @@ public:
             option::ForegroundColor {Color::white},                        //
             option::FontStyles {std::vector<FontStyle> {FontStyle::bold}}, //
             option::MaxProgress {total_pixel_count},                       //
-            option::BarWidth {60}                                          //
+            option::BarWidth {40}                                          //
         };
 
         tbb::parallel_for(tbb::blocked_range2d<int>(0, image_height, 0, image_width),

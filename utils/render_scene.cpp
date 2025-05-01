@@ -33,7 +33,7 @@ constexpr uint64_t operator""_hash(const char* str, size_t len) {
 }
 
 
-void render_bouncing_spheres(const std::string& output_image_format) {
+cv::Mat render_bouncing_spheres(const std::optional<int> spp = {}) {
 
     // World
     HittableList world;
@@ -89,7 +89,7 @@ void render_bouncing_spheres(const std::string& output_image_format) {
     Camera cam;
     cam.aspect_ratio = 16.0 / 9.0;
     cam.image_width = 1280;
-    cam.samples_per_pixel = 500;
+    cam.samples_per_pixel = spp ? *spp : 500;
     cam.max_depth = 50;
     cam.background = {0.70, 0.80, 1.00};
 
@@ -104,12 +104,10 @@ void render_bouncing_spheres(const std::string& output_image_format) {
     // Render
     cam.render(world_as_hittable);
 
-    // cv::imshow("output image", cam.img);
-    // cv::waitKey();
-    cv::imwrite(fmt::format("output.{}", output_image_format), cam.img);
+    return cam.img.clone();
 }
 
-void render_checkered_spheres(const std::string& output_image_format) {
+cv::Mat render_checkered_spheres(const std::optional<int> spp = {}) {
 
     // World
     HittableList world;
@@ -130,7 +128,7 @@ void render_checkered_spheres(const std::string& output_image_format) {
     Camera cam;
     cam.aspect_ratio = 16.0 / 9.0;
     cam.image_width = 1280;
-    cam.samples_per_pixel = 500;
+    cam.samples_per_pixel = spp ? *spp : 500;
     cam.max_depth = 50;
     cam.background = {0.70, 0.80, 1.00};
 
@@ -144,12 +142,10 @@ void render_checkered_spheres(const std::string& output_image_format) {
     // Render
     cam.render(world_as_hittable);
 
-    // cv::imshow("output image", cam.img);
-    // cv::waitKey();
-    cv::imwrite(fmt::format("output.{}", output_image_format), cam.img);
+    return cam.img.clone();
 }
 
-void render_earth_sphere(const std::string& output_image_format) {
+cv::Mat render_earth_sphere(const std::optional<int> spp = {}) {
     // World
     HittableList world;
 
@@ -166,7 +162,7 @@ void render_earth_sphere(const std::string& output_image_format) {
     Camera cam;
     cam.aspect_ratio = 16.0 / 9.0;
     cam.image_width = 1280;
-    cam.samples_per_pixel = 500;
+    cam.samples_per_pixel = spp ? *spp : 500;
     cam.max_depth = 50;
     cam.background = {0.70, 0.80, 1.00};
 
@@ -179,12 +175,10 @@ void render_earth_sphere(const std::string& output_image_format) {
 
     cam.render(world_as_hittable);
 
-    // cv::imshow("output image", cam.img);
-    // cv::waitKey();
-    cv::imwrite(fmt::format("output.{}", output_image_format), cam.img);
+    return cam.img.clone();
 }
 
-void render_perlin_spheres(const std::string& output_image_format) {
+cv::Mat render_perlin_spheres(const std::optional<int> spp = {}) {
     // World
     HittableList world;
 
@@ -200,7 +194,7 @@ void render_perlin_spheres(const std::string& output_image_format) {
     Camera cam;
     cam.aspect_ratio = 16.0 / 9.0;
     cam.image_width = 1280;
-    cam.samples_per_pixel = 500;
+    cam.samples_per_pixel = spp ? *spp : 500;
     cam.max_depth = 50;
     cam.background = {0.70, 0.80, 1.00};
 
@@ -213,13 +207,11 @@ void render_perlin_spheres(const std::string& output_image_format) {
 
     cam.render(world_as_hittable);
 
-    // cv::imshow("output image", cam.img);
-    // cv::waitKey();
-    cv::imwrite(fmt::format("output.{}", output_image_format), cam.img);
+    return cam.img.clone();
 }
 
 
-void render_quads(const std::string& output_image_format) {
+cv::Mat render_quads(const std::optional<int> spp = {}) {
     // World
     HittableList world;
 
@@ -248,7 +240,7 @@ void render_quads(const std::string& output_image_format) {
     Camera cam;
     cam.aspect_ratio = 16.0 / 9.0;
     cam.image_width = 1280;
-    cam.samples_per_pixel = 500;
+    cam.samples_per_pixel = spp ? *spp : 500;
     cam.max_depth = 50;
     cam.background = {0.70, 0.80, 1.00};
 
@@ -261,13 +253,11 @@ void render_quads(const std::string& output_image_format) {
 
     cam.render(world_as_hittable);
 
-    // cv::imshow("output image", cam.img);
-    // cv::waitKey();
-    cv::imwrite(fmt::format("output.{}", output_image_format), cam.img);
+    return cam.img.clone();
 }
 
 
-void render_simple_light(const std::string& output_image_format) {
+cv::Mat render_simple_light(const std::optional<int> spp = {}) {
     // World
     HittableList world;
 
@@ -288,7 +278,7 @@ void render_simple_light(const std::string& output_image_format) {
     Camera cam;
     cam.aspect_ratio = 16.0 / 9.0;
     cam.image_width = 1280;
-    cam.samples_per_pixel = 500;
+    cam.samples_per_pixel = spp ? *spp : 500;
     cam.max_depth = 50;
     cam.background = {0.0, 0.0, 0.0};
 
@@ -301,13 +291,73 @@ void render_simple_light(const std::string& output_image_format) {
 
     cam.render(world_as_hittable);
 
-    // cv::imshow("output image", cam.img);
-    // cv::waitKey();
-    cv::imwrite(fmt::format("output.{}", output_image_format), cam.img);
+    return cam.img.clone();
 }
 
 
-void render_cornell_box(const std::string& output_image_format) {
+cv::Mat render_cornell_box(const std::optional<int> spp = {}) {
+    // World
+    HittableList world;
+
+    auto red = pro::make_proxy_shared<Material, Lambertion>(Vec3d {0.65, 0.05, 0.05});
+    auto white = pro::make_proxy_shared<Material, Lambertion>(Vec3d {0.73, 0.73, 0.73});
+    auto green = pro::make_proxy_shared<Material, Lambertion>(Vec3d {0.12, 0.45, 0.15});
+    auto light = pro::make_proxy_shared<Material, DiffuseLight>(Vec3d {15.0, 15.0, 15.0});
+
+    world.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {555.0, 0.0, 0.0},
+        Vec3d {0.0, 555.0, 0.0}, Vec3d {0.0, 0.0, 555.0}, green));
+    world.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {0.0, 0.0, 0.0}, Vec3d {0.0, 555.0, 0.0},
+        Vec3d {0.0, 0.0, 555.0}, red));
+    world.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {343.0, 554.0, 332.0},
+        Vec3d {-130.0, 0.0, 0.0}, Vec3d {0.0, 0.0, -105.0}, light));
+    world.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {0.0, 0.0, 0.0}, Vec3d {555.0, 0.0, 0.0},
+        Vec3d {0.0, 0.0, 555.0}, white));
+    world.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {555.0, 555.0, 555.0},
+        Vec3d {-555.0, 0.0, 0.0}, Vec3d {0.0, 0.0, -555.0}, white));
+    world.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {0.0, 0.0, 555.0},
+        Vec3d {555.0, 0.0, 0.0}, Vec3d {0.0, 555.0, 0.0}, white));
+
+    auto box1 = box(Vec3d {0.0, 0.0, 0.0}, Vec3d {165.0, 330.0, 165.0}, white);
+    box1 = pro::make_proxy_shared<Hittable, RotateY>(box1, 15.0);
+    box1 = pro::make_proxy_shared<Hittable, Translate>(box1, Vec3d {265.0, 0.0, 295.0});
+
+    auto box2 = box(Vec3d {0.0, 0.0, 0.0}, Vec3d {165.0, 165.0, 165.0}, white);
+    box2 = pro::make_proxy_shared<Hittable, RotateY>(box2, -18.0);
+    box2 = pro::make_proxy_shared<Hittable, Translate>(box2, Vec3d {130.0, 0.0, 65.0});
+
+    world.add(box1);
+    world.add(box2);
+
+    // Light sources
+    auto empty_material = pro::make_proxy_shared<Material, EmptyMaterial>();
+    HittableList lights;
+    lights.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {343.0, 554.0, 332.0},
+        Vec3d {-130.0, 0.0, 0.0}, Vec3d {0.0, 0.0, -105.0}, empty_material));
+
+    pro::proxy<Hittable> world_as_hittable = &world;
+    pro::proxy<Hittable> lights_as_hittable = &lights;
+
+    // Camera
+    Camera cam;
+    cam.aspect_ratio = 16.0 / 9.0;
+    cam.image_width = 1280;
+    cam.samples_per_pixel = spp ? *spp : 1000;
+    cam.max_depth = 50;
+    cam.background = {0.0, 0.0, 0.0};
+
+    cam.vfov = 40.0;
+    cam.lookfrom = {278.0, 278.0, -800.0};
+    cam.lookat = {278.0, 278.0, 0.0};
+    cam.vup = {0.0, 1.0, 0.0};
+
+    cam.defocus_angle = 0.0;
+
+    cam.render(world_as_hittable, lights_as_hittable);
+
+    return cam.img.clone();
+}
+
+cv::Mat render_cornell_box_and_sphere(const std::optional<int> spp = {}) {
     // World
     HittableList world;
 
@@ -354,7 +404,7 @@ void render_cornell_box(const std::string& output_image_format) {
     Camera cam;
     cam.aspect_ratio = 16.0 / 9.0;
     cam.image_width = 1280;
-    cam.samples_per_pixel = 1000;
+    cam.samples_per_pixel = spp ? *spp : 1000;
     cam.max_depth = 50;
     cam.background = {0.0, 0.0, 0.0};
 
@@ -367,12 +417,10 @@ void render_cornell_box(const std::string& output_image_format) {
 
     cam.render(world_as_hittable, lights_as_hittable);
 
-    // cv::imshow("output image", cam.img);
-    // cv::waitKey();
-    cv::imwrite(fmt::format("output.{}", output_image_format), cam.img);
+    return cam.img.clone();
 }
 
-void render_cornell_smoke(const std::string& output_image_format) {
+cv::Mat render_cornell_smoke(const std::optional<int> spp = {}) {
     // World
     HittableList world;
 
@@ -411,7 +459,7 @@ void render_cornell_smoke(const std::string& output_image_format) {
     Camera cam;
     cam.aspect_ratio = 16.0 / 9.0;
     cam.image_width = 1280;
-    cam.samples_per_pixel = 500;
+    cam.samples_per_pixel = spp ? *spp : 500;
     cam.max_depth = 50;
     cam.background = {0.0, 0.0, 0.0};
 
@@ -424,13 +472,10 @@ void render_cornell_smoke(const std::string& output_image_format) {
 
     cam.render(world_as_hittable);
 
-    // cv::imshow("output image", cam.img);
-    // cv::waitKey();
-    cv::imwrite(fmt::format("output.{}", output_image_format), cam.img);
+    return cam.img.clone();
 }
 
-void render_rttnw_final_scene(const std::string& output_image_format,
-    const int samples_per_pixel = 500) {
+cv::Mat render_rttnw_final_scene(const std::optional<int> spp = {}) {
     // World
     HittableList world;
 
@@ -505,7 +550,7 @@ void render_rttnw_final_scene(const std::string& output_image_format,
     Camera cam;
     cam.aspect_ratio = 16.0 / 9.0;
     cam.image_width = 1280;
-    cam.samples_per_pixel = samples_per_pixel;
+    cam.samples_per_pixel = spp ? *spp : 500;
     cam.max_depth = 50;
     cam.background = {0.0, 0.0, 0.0};
 
@@ -518,9 +563,7 @@ void render_rttnw_final_scene(const std::string& output_image_format,
 
     cam.render(world_as_hittable);
 
-    // cv::imshow("output image", cam.img);
-    // cv::waitKey();
-    cv::imwrite(fmt::format("output.{}", output_image_format), cam.img);
+    return cam.img.clone();
 }
 
 int main(int argc, const char* argv[]) {
@@ -540,16 +583,20 @@ int main(int argc, const char* argv[]) {
 
     program.add_argument("--scene")
         .help("Scene to render")
-        .choices(                //
-            "bouncing_spheres",  //
-            "checkered_spheres", //
-            "earth_sphere",      //
-            "perlin_spheres",    //
-            "quads",             //
-            "simple_light",      //
-            "cornell_box",       //
-            "cornell_smoke",     //
-            "rttnw_final_scene", //
+        .choices(                             //
+            "bouncing_spheres",               //
+            "checkered_spheres",              //
+            "earth_sphere",                   //
+            "perlin_spheres",                 //
+            "quads",                          //
+            "simple_light",                   //
+            "cornell_smoke",                  //
+            "cornell_smoke_extreme",          //
+            "cornell_box",                    //
+            "cornell_box_extreme",            //
+            "cornell_box_and_sphere",         //
+            "cornell_box_and_sphere_extreme", //
+            "rttnw_final_scene",              //
             "rttnw_final_scene_extreme")
         .default_value("cornell_box")
         .store_into(scene_to_render);
@@ -562,45 +609,33 @@ int main(int argc, const char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    fmt::print("output_image_format: {}\n", output_image_format);
     fmt::print("scene to render: {}\n", scene_to_render);
+    fmt::print("output_image_format: {}\n", output_image_format);
 
-    switch (hash(scene_to_render)) {
-        case "bouncing_spheres"_hash: {
-            render_bouncing_spheres(output_image_format);
-        } break;
-        case "checkered_spheres"_hash: {
-            render_checkered_spheres(output_image_format);
-        } break;
-        case "earth_sphere"_hash: {
-            render_earth_sphere(output_image_format);
-        } break;
-        case "perlin_spheres"_hash: {
-            render_perlin_spheres(output_image_format);
-        } break;
-        case "quads"_hash: {
-            render_quads(output_image_format);
-        } break;
-        case "simple_light"_hash: {
-            render_simple_light(output_image_format);
-        } break;
-        case "cornell_box"_hash: {
-            render_cornell_box(output_image_format);
-        } break;
-        case "cornell_smoke"_hash: {
-            render_cornell_smoke(output_image_format);
-        } break;
-        case "rttnw_final_scene"_hash: {
-            render_rttnw_final_scene(output_image_format);
-        } break;
-        case "rttnw_final_scene_extreme"_hash: {
-            render_rttnw_final_scene(output_image_format, 10000);
-        } break;
-        default: {
-            fmt::print(stderr, "Invalid scene to render: '{}' !!!\n", scene_to_render);
-            return EXIT_FAILURE;
+    cv::Mat img = [&]() {
+        switch (hash(scene_to_render)) {
+            case "bouncing_spheres"_hash: return render_bouncing_spheres();
+            case "checkered_spheres"_hash: return render_checkered_spheres();
+            case "earth_sphere"_hash: return render_earth_sphere();
+            case "perlin_spheres"_hash: return render_perlin_spheres();
+            case "quads"_hash: return render_quads();
+            case "simple_light"_hash: return render_simple_light();
+            case "cornell_smoke"_hash: return render_cornell_smoke();
+            case "cornell_smoke_extreme"_hash: return render_cornell_smoke(10000);
+            case "cornell_box"_hash: return render_cornell_box();
+            case "cornell_box_extreme"_hash: return render_cornell_box(10000);
+            case "cornell_box_and_sphere"_hash: return render_cornell_box_and_sphere();
+            case "cornell_box_and_sphere_extreme"_hash: return render_cornell_box_and_sphere(10000);
+            case "rttnw_final_scene"_hash: return render_rttnw_final_scene();
+            case "rttnw_final_scene_extreme"_hash: return render_rttnw_final_scene(10000);
+            default: {
+                fmt::print(stderr, "Invalid scene to render: '{}' !!!\n", scene_to_render);
+                exit(EXIT_FAILURE);
+            }
         }
-    }
+    }();
+
+    cv::imwrite(fmt::format("{}.{}", scene_to_render, output_image_format), img);
 
     return EXIT_SUCCESS;
 }

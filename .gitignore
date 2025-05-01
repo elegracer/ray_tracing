@@ -213,6 +213,7 @@ cmake-build-relwithdebinfo/
 .idea/
 .vscode/**
 !.vscode/launch.json
+!.vscode/settings.json
 
 *.custom.sh
 *.conf
