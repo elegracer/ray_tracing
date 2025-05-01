@@ -200,22 +200,30 @@ private:
             return background;
         }
 
-        Vec3d attenuation;
-        Ray scattered;
-        double pdf_value;
+        ScatterRecord scatter_rec;
         const Vec3d color_from_emission =
             hit_rec.mat->emitted(ray, hit_rec, hit_rec.u, hit_rec.v, hit_rec.p);
 
-        if (!hit_rec.mat->scatter(ray, hit_rec, attenuation, scattered, pdf_value)) {
+        if (!hit_rec.mat->scatter(ray, hit_rec, scatter_rec)) {
             return color_from_emission;
         }
 
+        if (scatter_rec.skip_pdf) {
+            return scatter_rec.attenuation.array()
+                   * ray_color(scatter_rec.skip_pdf_ray, depth - 1, hittable).array();
+        }
+
+        const Ray scattered {hit_rec.p, scatter_rec.pdf->generate(), ray.time()};
+        const double pdf_value = scatter_rec.pdf->value(scattered.direction());
+
         const double scattering_pdf = hit_rec.mat->scattering_pdf(ray, hit_rec, scattered);
 
-        const Vec3d color_from_scatter =                        //
-            attenuation.array()                                 //
-            * scattering_pdf                                    //
-            * ray_color(scattered, depth - 1, hittable).array() //
+        const Vec3d sample_color = ray_color(scattered, depth - 1, hittable);
+
+        const Vec3d color_from_scatter =    //
+            scatter_rec.attenuation.array() //
+            * scattering_pdf                //
+            * sample_color.array()          //
             / pdf_value;
 
         return color_from_emission + color_from_scatter;

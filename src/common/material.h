@@ -8,6 +8,7 @@
 #include "pdf.h"
 
 struct HitRecord;
+struct ScatterRecord;
 
 PRO_DEF_MEM_DISPATCH(MaterialMemEmitted, emitted);
 PRO_DEF_MEM_DISPATCH(MaterialMemScatter, scatter);
@@ -20,11 +21,11 @@ struct Material                                         //
           Vec3d(const Ray& ray_in, const HitRecord& hit_rec, const double u, const double v,
               const Vec3d& p) const> //
       ::add_convention<MaterialMemScatter,
-          bool(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation, Ray& scattered,
-              double& pdf) const> //
+          bool(const Ray& ray_in, const HitRecord& hit_rec, ScatterRecord& scatter_rec) const> //
       ::add_convention<MaterialMemScatteringPDF,
           double(const Ray& ray_in, const HitRecord& hit_rec, const Ray& scattered) const> //
       ::build {};
+
 
 struct HitRecord {
     Vec3d p;
@@ -44,6 +45,14 @@ struct HitRecord {
 };
 
 
+struct ScatterRecord {
+    Vec3d attenuation;
+    pro::proxy<PDF> pdf;
+    bool skip_pdf;
+    Ray skip_pdf_ray;
+};
+
+
 struct Lambertion {
     explicit Lambertion(const Vec3d& albedo)
         : m_tex(pro::make_proxy_shared<Texture, SolidColor>(albedo)) {}
@@ -54,14 +63,10 @@ struct Lambertion {
         return {0.0, 0.0, 0.0};
     }
 
-    bool scatter(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation, Ray& scattered,
-        double& pdf) const {
-        const UniformHemispherePDF surface_pdf {hit_rec.normal};
-        const Vec3d scatter_direction = surface_pdf.generate().normalized();
-
-        scattered = Ray(hit_rec.p, scatter_direction, ray_in.time());
-        attenuation = m_tex->value(hit_rec.u, hit_rec.v, hit_rec.p);
-        pdf = surface_pdf.value(scatter_direction);
+    bool scatter(const Ray& ray_in, const HitRecord& hit_rec, ScatterRecord& scatter_rec) const {
+        scatter_rec.attenuation = m_tex->value(hit_rec.u, hit_rec.v, hit_rec.p);
+        scatter_rec.pdf = pro::make_proxy_shared<PDF, CosinePDF>(hit_rec.normal);
+        scatter_rec.skip_pdf = false;
         return true;
     }
 
@@ -83,13 +88,16 @@ struct Metal {
         return {0.0, 0.0, 0.0};
     }
 
-    bool scatter(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation, Ray& scattered,
-        double& pdf) const {
-        Vec3d reflected = reflect(ray_in.direction(), hit_rec.normal);
-        reflected = reflected.normalized() + (fuzz * random_unit_vector());
-        scattered = Ray(hit_rec.p, reflected, ray_in.time());
-        attenuation = albedo;
-        return scattered.direction().dot(hit_rec.normal) > 0.0;
+    bool scatter(const Ray& ray_in, const HitRecord& hit_rec, ScatterRecord& scatter_rec) const {
+        const Vec3d reflected = reflect(ray_in.direction(), hit_rec.normal).normalized()
+                                + (fuzz * random_unit_vector());
+
+        scatter_rec.attenuation = albedo;
+        scatter_rec.pdf = nullptr;
+        scatter_rec.skip_pdf = true;
+        scatter_rec.skip_pdf_ray = Ray(hit_rec.p, reflected, ray_in.time());
+
+        return true;
     }
 
     double scattering_pdf(const Ray& ray_in, const HitRecord& hit_rec, const Ray& scattered) const {
@@ -110,9 +118,11 @@ struct Dielectric {
         return {0.0, 0.0, 0.0};
     }
 
-    bool scatter(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation, Ray& scattered,
-        double& pdf) const {
-        attenuation = {1.0, 1.0, 1.0};
+    bool scatter(const Ray& ray_in, const HitRecord& hit_rec, ScatterRecord& scatter_rec) const {
+        scatter_rec.attenuation = {1.0, 1.0, 1.0};
+        scatter_rec.pdf = nullptr;
+        scatter_rec.skip_pdf = true;
+
         const double ri = hit_rec.front_face ? (1.0 / refraction_index) : refraction_index;
 
         const Vec3d unit_direction = ray_in.direction().normalized();
@@ -125,7 +135,7 @@ struct Dielectric {
                 ? reflect(unit_direction, hit_rec.normal)
                 : refract(unit_direction, hit_rec.normal, ri);
 
-        scattered = Ray(hit_rec.p, direction, ray_in.time());
+        scatter_rec.skip_pdf_ray = Ray(hit_rec.p, direction, ray_in.time());
         return true;
     }
 
@@ -159,8 +169,7 @@ struct DiffuseLight {
         return m_tex->value(u, v, p);
     }
 
-    bool scatter(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation, Ray& scattered,
-        double& pdf) const {
+    bool scatter(const Ray& ray_in, const HitRecord& hit_rec, ScatterRecord& scatter_rec) const {
         return false;
     }
 
@@ -181,11 +190,10 @@ struct Isotropic {
         return {0.0, 0.0, 0.0};
     }
 
-    bool scatter(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation, Ray& scattered,
-        double& pdf) const {
-        scattered = Ray {hit_rec.p, random_unit_vector(), ray_in.time()};
-        attenuation = m_tex->value(hit_rec.u, hit_rec.v, hit_rec.p);
-        pdf = 1.0 / (4.0 * pi);
+    bool scatter(const Ray& ray_in, const HitRecord& hit_rec, ScatterRecord& scatter_rec) const {
+        scatter_rec.attenuation = m_tex->value(hit_rec.u, hit_rec.v, hit_rec.p);
+        scatter_rec.pdf = pro::make_proxy_shared<PDF, SpherePDF>();
+        scatter_rec.skip_pdf = false;
         return true;
     }
 
