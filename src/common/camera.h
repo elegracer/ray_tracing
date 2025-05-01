@@ -1,8 +1,9 @@
 #pragma once
 
-#include "pdf.h"
-#include "hittable.h"
 #include "color.h"
+#include "interval.h"
+#include "pdf.h"
+#include "material.h"
 
 #include <fmt/core.h>
 #include <fmt/format.h>
@@ -218,9 +219,10 @@ private:
         double pdf_value;
 
         if (lights.has_value()) {
-            const HittablePDF light_pdf {lights, hit_rec.p};
-            scattered = Ray {hit_rec.p, light_pdf.generate(), ray.time()};
-            pdf_value = light_pdf.value(scattered.direction());
+            const MixturePDF mixture_pdf {scatter_rec.pdf,
+                pro::make_proxy_shared<PDF, HittablePDF>(lights, hit_rec.p)};
+            scattered = Ray {hit_rec.p, mixture_pdf.generate(), ray.time()};
+            pdf_value = mixture_pdf.value(scattered.direction());
         } else {
             scattered = Ray {hit_rec.p, scatter_rec.pdf->generate(), ray.time()};
             pdf_value = scatter_rec.pdf->value(scattered.direction());

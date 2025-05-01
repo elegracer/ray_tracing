@@ -46,3 +46,20 @@ struct HittablePDF {
     pro::proxy<Hittable> m_objects;
     Vec3d m_origin;
 };
+
+struct MixturePDF {
+    MixturePDF(const pro::proxy<PDF>& pdf0, const pro::proxy<PDF>& pdf1)
+        : m_pdf0(pdf0),
+          m_pdf1(pdf1) {}
+
+    double value(const Vec3d& direction) const {
+        return 0.5 * m_pdf0->value(direction) + 0.5 * m_pdf1->value(direction);
+    }
+
+    Vec3d generate() const {
+        return (random_double() < 0.5) ? m_pdf0->generate() : m_pdf1->generate();
+    }
+
+    pro::proxy<PDF> m_pdf0;
+    pro::proxy<PDF> m_pdf1;
+};
