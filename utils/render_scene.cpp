@@ -329,7 +329,8 @@ void render_cornell_box(const std::string& output_image_format) {
     world.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {0.0, 0.0, 555.0},
         Vec3d {555.0, 0.0, 0.0}, Vec3d {0.0, 555.0, 0.0}, white));
 
-    auto box1 = box(Vec3d {0.0, 0.0, 0.0}, Vec3d {165.0, 330.0, 165.0}, white);
+    auto aluminum = pro::make_proxy_shared<Material, Metal>(Vec3d {0.8, 0.85, 0.88}, 0.0);
+    auto box1 = box(Vec3d {0.0, 0.0, 0.0}, Vec3d {165.0, 330.0, 165.0}, aluminum);
     box1 = pro::make_proxy_shared<Hittable, RotateY>(box1, 15.0);
     box1 = pro::make_proxy_shared<Hittable, Translate>(box1, Vec3d {265.0, 0.0, 295.0});
 
