@@ -37,7 +37,7 @@ public:
     int total_pixel_count;
 
 public:
-    void render(const pro::proxy<Hittable>& world) {
+    void render(const pro::proxy<Hittable>& world, const pro::proxy<Hittable>& lights = {}) {
         initialize();
 
         img = cv::Mat(image_height, image_width, CV_8UC3);
@@ -65,7 +65,7 @@ public:
                         for (int s_y = 0; s_y < sqrt_spp; ++s_y) {
                             for (int s_x = 0; s_x < sqrt_spp; ++s_x) {
                                 Ray ray = get_ray(x, y, s_x, s_y);
-                                pixel_color += ray_color(ray, max_depth, world);
+                                pixel_color += ray_color(ray, max_depth, world, lights);
                             }
                         }
                         pixel_color *= pixel_samples_scale;
@@ -187,7 +187,8 @@ private:
         return center + (p.x() * defocus_disk_u) + (p.y() * defocus_disk_v);
     }
 
-    Vec3d ray_color(const Ray& ray, const int depth, const pro::proxy<Hittable>& world) {
+    Vec3d ray_color(const Ray& ray, const int depth, const pro::proxy<Hittable>& world,
+        const pro::proxy<Hittable>& lights) {
         // If we've exceeded the ray bounce limit, no more light is gathered
         if (depth <= 0) {
             return {0.0, 0.0, 0.0};
@@ -210,15 +211,24 @@ private:
 
         if (scatter_rec.skip_pdf) {
             return scatter_rec.attenuation.array()
-                   * ray_color(scatter_rec.skip_pdf_ray, depth - 1, world).array();
+                   * ray_color(scatter_rec.skip_pdf_ray, depth - 1, world, lights).array();
         }
 
-        const Ray scattered {hit_rec.p, scatter_rec.pdf->generate(), ray.time()};
-        const double pdf_value = scatter_rec.pdf->value(scattered.direction());
+        Ray scattered;
+        double pdf_value;
+
+        if (lights.has_value()) {
+            const HittablePDF light_pdf {lights, hit_rec.p};
+            scattered = Ray {hit_rec.p, light_pdf.generate(), ray.time()};
+            pdf_value = light_pdf.value(scattered.direction());
+        } else {
+            scattered = Ray {hit_rec.p, scatter_rec.pdf->generate(), ray.time()};
+            pdf_value = scatter_rec.pdf->value(scattered.direction());
+        }
 
         const double scattering_pdf = hit_rec.mat->scattering_pdf(ray, hit_rec, scattered);
 
-        const Vec3d sample_color = ray_color(scattered, depth - 1, world);
+        const Vec3d sample_color = ray_color(scattered, depth - 1, world, lights);
 
         const Vec3d color_from_scatter =    //
             scatter_rec.attenuation.array() //

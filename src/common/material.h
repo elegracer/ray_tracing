@@ -32,6 +32,23 @@ struct ScatterRecord {
 };
 
 
+struct EmptyMaterial {
+
+    Vec3d emitted(const Ray& ray_in, const HitRecord& hit_rec, const double u, const double v,
+        const Vec3d& p) const {
+        return {0.0, 0.0, 0.0};
+    }
+
+    bool scatter(const Ray& ray_in, const HitRecord& hit_rec, ScatterRecord& scatter_rec) const {
+        return false;
+    }
+
+    double scattering_pdf(const Ray& ray_in, const HitRecord& hit_rec, const Ray& scattered) const {
+        return 0.0;
+    }
+};
+
+
 struct Lambertion {
     explicit Lambertion(const Vec3d& albedo)
         : m_tex(pro::make_proxy_shared<Texture, SolidColor>(albedo)) {}

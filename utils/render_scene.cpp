@@ -339,13 +339,18 @@ void render_cornell_box(const std::string& output_image_format) {
     world.add(box1);
     world.add(box2);
 
+    // Light sources
+    auto empty_material = pro::make_proxy_shared<Material, EmptyMaterial>();
+    auto lights = pro::make_proxy_shared<Hittable, Quad>(Vec3d {343.0, 554.0, 332.0},
+        Vec3d {-130.0, 0.0, 0.0}, Vec3d {0.0, 0.0, -105.0}, empty_material);
+
     pro::proxy<Hittable> world_as_hittable = &world;
 
     // Camera
     Camera cam;
     cam.aspect_ratio = 16.0 / 9.0;
     cam.image_width = 1280;
-    cam.samples_per_pixel = 1000;
+    cam.samples_per_pixel = 10;
     cam.max_depth = 50;
     cam.background = {0.0, 0.0, 0.0};
 
@@ -356,7 +361,7 @@ void render_cornell_box(const std::string& output_image_format) {
 
     cam.defocus_angle = 0.0;
 
-    cam.render(world_as_hittable);
+    cam.render(world_as_hittable, lights);
 
     // cv::imshow("output image", cam.img);
     // cv::waitKey();
