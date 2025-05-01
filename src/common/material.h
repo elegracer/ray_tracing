@@ -56,7 +56,7 @@ struct Lambertion {
 
     bool scatter(const Ray& ray_in, const HitRecord& hit_rec, Vec3d& attenuation, Ray& scattered,
         double& pdf) const {
-        const CosinePDF surface_pdf {hit_rec.normal};
+        const UniformHemispherePDF surface_pdf {hit_rec.normal};
         const Vec3d scatter_direction = surface_pdf.generate().normalized();
 
         scattered = Ray(hit_rec.p, scatter_direction, ray_in.time());

@@ -32,3 +32,13 @@ struct CosinePDF {
 
     ONB m_uvw;
 };
+
+struct UniformHemispherePDF {
+    UniformHemispherePDF(const Vec3d& w) : m_uvw(w) {}
+
+    double value(const Vec3d&) const { return 1.0 / (2.0 * pi); }
+
+    Vec3d generate() const { return m_uvw.from_basis(random_uniform_hemisphere_direction()); }
+
+    ONB m_uvw;
+};

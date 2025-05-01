@@ -97,6 +97,18 @@ inline Vec3d random_cosine_direction() {
     return {x, y, z};
 }
 
+inline Vec3d random_uniform_hemisphere_direction() {
+    const double r1 = random_double();
+    const double r2 = random_double();
+
+    const double phi = 2.0 * pi * r1;
+    const double x = std::cos(phi) * 2.0 * std::sqrt(r2 * (1.0 - r2));
+    const double y = std::sin(phi) * 2.0 * std::sqrt(r2 * (1.0 - r2));
+    const double z = 1.0 - r2;
+
+    return {x, y, z};
+}
+
 inline Vec3d reflect(const Vec3d& v, const Vec3d& n) {
     return v - 2.0 * v.dot(n) * n;
 }
