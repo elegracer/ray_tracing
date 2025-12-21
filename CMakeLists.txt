@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.14)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/Modules")
-project(ray_tracing LANGUAGES C CXX VERSION 0.0.1.0)
+project(ray_tracing LANGUAGES C CXX CUDA VERSION 0.0.1.0)
+
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_ARCHITECTURES 75)
+endif()
 
 include(CMakeDependentOption)
 
@@ -17,7 +21,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/bin)
 
 # set global cxx standard
-set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # always generate position independent code, no matter static or shared library
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -64,11 +68,5 @@ target_link_libraries(core
 
 # utils
 add_executable(use_core)
-target_sources(use_core
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/utils/use_core.cpp
-)
-target_link_libraries(use_core
-    PRIVATE
-        core
-)
+target_sources(use_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/utils/use_core.cu)
+target_link_libraries(use_core PRIVATE core)
