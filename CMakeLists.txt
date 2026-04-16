@@ -185,3 +185,17 @@ target_sources(test_optix_path_trace
 )
 target_link_libraries(test_optix_path_trace PRIVATE realtime_gpu)
 add_test(NAME test_optix_path_trace COMMAND test_optix_path_trace)
+
+target_sources(realtime_gpu
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/denoiser.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/realtime_pipeline.cpp
+)
+
+add_executable(test_realtime_pipeline)
+target_sources(test_realtime_pipeline
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_realtime_pipeline.cpp
+)
+target_link_libraries(test_realtime_pipeline PRIVATE realtime_gpu)
+add_test(NAME test_realtime_pipeline COMMAND test_realtime_pipeline)
