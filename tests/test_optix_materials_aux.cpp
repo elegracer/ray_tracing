@@ -4,10 +4,17 @@
 #include "realtime/scene_description.h"
 #include "test_support.h"
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
 namespace {
+
+struct MeanRgb {
+    double r = 0.0;
+    double g = 0.0;
+    double b = 0.0;
+};
 
 bool has_variation(const std::vector<float>& values, float epsilon) {
     if (values.empty()) {
@@ -22,20 +29,41 @@ bool has_variation(const std::vector<float>& values, float epsilon) {
     return false;
 }
 
-bool has_rgb_variation_in_rgba(const std::vector<float>& rgba, float epsilon) {
-    if (rgba.size() < 4) {
-        return false;
-    }
-    const float r0 = rgba[0];
-    const float g0 = rgba[1];
-    const float b0 = rgba[2];
-    for (std::size_t i = 4; i + 2 < rgba.size(); i += 4) {
-        if (std::abs(rgba[i + 0] - r0) > epsilon || std::abs(rgba[i + 1] - g0) > epsilon
-            || std::abs(rgba[i + 2] - b0) > epsilon) {
-            return true;
+MeanRgb window_mean_rgb(const std::vector<float>& rgba, int width, int height,
+    int center_x, int center_y, int half_window) {
+    MeanRgb mean {};
+    int samples = 0;
+    for (int dy = -half_window; dy <= half_window; ++dy) {
+        const int y = center_y + dy;
+        if (y < 0 || y >= height) {
+            continue;
+        }
+        for (int dx = -half_window; dx <= half_window; ++dx) {
+            const int x = center_x + dx;
+            if (x < 0 || x >= width) {
+                continue;
+            }
+            const std::size_t base = static_cast<std::size_t>((y * width + x) * 4);
+            mean.r += rgba[base + 0];
+            mean.g += rgba[base + 1];
+            mean.b += rgba[base + 2];
+            ++samples;
         }
     }
-    return false;
+    if (samples > 0) {
+        const double inv = 1.0 / static_cast<double>(samples);
+        mean.r *= inv;
+        mean.g *= inv;
+        mean.b *= inv;
+    }
+    return mean;
+}
+
+double rgb_distance(const MeanRgb& a, const MeanRgb& b) {
+    const double dr = a.r - b.r;
+    const double dg = a.g - b.g;
+    const double db = a.b - b.b;
+    return std::sqrt(dr * dr + dg * dg + db * db);
 }
 
 }  // namespace
@@ -68,8 +96,22 @@ int main() {
     expect_true(!frame.albedo_rgba.empty(), "albedo buffer present");
     expect_true(!frame.depth.empty(), "depth buffer present");
     expect_true(frame.normal_rgba != frame.beauty_rgba, "normal differs from beauty");
-    expect_true(has_rgb_variation_in_rgba(frame.albedo_rgba, 1e-6f),
-        "albedo varies across different materials");
+
+    const int y = static_cast<int>(std::round(frame.height * 0.55));
+    const int left_x = static_cast<int>(std::round(frame.width * 0.34));
+    const int center_x = static_cast<int>(std::round(frame.width * 0.50));
+    const int right_x = static_cast<int>(std::round(frame.width * 0.66));
+    const int half_window = std::max(2, frame.width / 24);
+
+    const MeanRgb left = window_mean_rgb(frame.albedo_rgba, frame.width, frame.height, left_x, y, half_window);
+    const MeanRgb center = window_mean_rgb(frame.albedo_rgba, frame.width, frame.height, center_x, y, half_window);
+    const MeanRgb right = window_mean_rgb(frame.albedo_rgba, frame.width, frame.height, right_x, y, half_window);
+
+    const double max_material_delta = std::max(
+        rgb_distance(left, center),
+        std::max(rgb_distance(left, right), rgb_distance(center, right)));
+    expect_true(max_material_delta > 1e-3, "sphere regions show material-distinguishing albedo");
+
     expect_true(has_variation(frame.depth, 1e-6f), "depth varies across the frame");
     return 0;
 }
