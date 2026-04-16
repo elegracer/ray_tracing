@@ -12,6 +12,8 @@ void launch_direction_debug_kernel(std::uint8_t* rgba, int width, int height, cu
 
 namespace {
 
+constexpr float kPlaceholderRadianceValue = 0.14f;
+
 void throw_cuda_error(cudaError_t error, const char* expr) {
     if (error != cudaSuccess) {
         throw std::runtime_error(std::string("CUDA runtime failure at ") + expr + ": "
@@ -178,7 +180,8 @@ int OptixRenderer::last_launch_height(int camera_index) const {
 
 std::vector<float> OptixRenderer::download_beauty(int camera_index) const {
     (void)camera_index;
-    return std::vector<float>(static_cast<std::size_t>(last_width_ * last_height_ * 4), 0.25f);
+    return std::vector<float>(static_cast<std::size_t>(last_width_ * last_height_ * 4),
+        kPlaceholderRadianceValue);
 }
 
 std::vector<float> OptixRenderer::download_normal(int camera_index) const {

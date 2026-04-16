@@ -199,3 +199,11 @@ target_sources(test_realtime_pipeline
 )
 target_link_libraries(test_realtime_pipeline PRIVATE realtime_gpu)
 add_test(NAME test_realtime_pipeline COMMAND test_realtime_pipeline)
+
+add_executable(test_reference_vs_realtime)
+target_sources(test_reference_vs_realtime
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_reference_vs_realtime.cpp
+)
+target_link_libraries(test_reference_vs_realtime PRIVATE realtime_gpu core)
+add_test(NAME test_reference_vs_realtime COMMAND test_reference_vs_realtime)
