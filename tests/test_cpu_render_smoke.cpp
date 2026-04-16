@@ -6,12 +6,16 @@
 
 #include <Eigen/Geometry>
 #include <opencv2/opencv.hpp>
+#include <tbb/global_control.h>
 
 #include <cstdlib>
 #include <algorithm>
 #include <iostream>
 
 int main() {
+    tbb::global_control render_threads(
+        tbb::global_control::max_allowed_parallelism, 1);
+
     HittableList world;
     HittableList lights;
 
@@ -65,7 +69,7 @@ int main() {
 
     const int non_black_pixels = cv::countNonZero(gray);
     if (non_black_pixels < 96 || non_black_pixels > 420) {
-        std::cerr << "too few lit pixels: " << non_black_pixels << "\n";
+        std::cerr << "lit pixel count out of expected range: " << non_black_pixels << "\n";
         return EXIT_FAILURE;
     }
 
