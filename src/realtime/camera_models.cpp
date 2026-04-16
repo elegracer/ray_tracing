@@ -9,6 +9,8 @@ namespace rt {
 namespace {
 
 constexpr double kEpsilon = 1e-12;
+constexpr int kPinholeUndistortMaxIterations = 24;
+constexpr double kPinholeUndistortResidualThresholdSq = 1e-20;
 
 Eigen::Vector2d distort_pinhole_normalized(const Pinhole32Params& params, const Eigen::Vector2d& xy) {
     const double x = xy.x();
@@ -209,9 +211,9 @@ Eigen::Vector3d unproject_pinhole32(const Pinhole32Params& params, const Eigen::
         (pixel.y() - params.cy) / params.fy);
 
     Eigen::Vector2d xy = xy_distorted;
-    for (int iter = 0; iter < 8; ++iter) {
+    for (int iter = 0; iter < kPinholeUndistortMaxIterations; ++iter) {
         const Eigen::Vector2d error = xy_distorted - distort_pinhole_normalized(params, xy);
-        if (error.squaredNorm() < kEpsilon * kEpsilon) {
+        if (error.squaredNorm() < kPinholeUndistortResidualThresholdSq) {
             break;
         }
 

@@ -28,6 +28,14 @@ int main() {
                 < 1e-12,
         "pinhole center project roundtrip");
 
+    const Pinhole32Params pinhole_hard{
+        300.0, 315.0, 158.0, 121.0,
+        0.8, -0.7, 0.25, 0.03, -0.025,
+    };
+    expect_vec3_near(
+        unproject_pinhole32(pinhole_hard, project_pinhole32(pinhole_hard, Eigen::Vector3d {1.28, -0.96, 1.0})),
+        Eigen::Vector3d {1.28, -0.96, 1.0}.normalized(), 1e-12, "pinhole hard off-axis roundtrip");
+
     const Equi62Lut1DParams equi = make_equi62_lut1d_params(640, 480, 280.0, 282.0, 320.0, 240.0,
         std::array<double, 6> {0.02, -0.005, 0.001, -0.0002, 0.00005, -0.00001},
         Eigen::Vector2d {0.0012, -0.0009});
