@@ -72,6 +72,7 @@ target_sources(core
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/core.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/camera_models.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/camera_rig.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/profiling/benchmark_report.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/scene_description.cpp
 )
 target_include_directories(core
@@ -159,6 +160,14 @@ add_executable(test_render_profile)
 target_sources(test_render_profile PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_render_profile.cpp)
 target_link_libraries(test_render_profile PRIVATE core)
 add_test(NAME test_render_profile COMMAND test_render_profile)
+
+add_executable(test_realtime_benchmark_report)
+target_sources(test_realtime_benchmark_report
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_realtime_benchmark_report.cpp
+)
+target_link_libraries(test_realtime_benchmark_report PRIVATE core)
+add_test(NAME test_realtime_benchmark_report COMMAND test_realtime_benchmark_report)
 
 add_library(realtime_gpu STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/optix_renderer.cpp
