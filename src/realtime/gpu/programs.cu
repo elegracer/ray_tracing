@@ -46,6 +46,17 @@ constexpr float kRayEpsilon = 1e-3f;
 constexpr float kRayFar = 1e30f;
 constexpr float kShadowScale = 0.8f;
 
+struct DeviceActiveCamera {
+    float3 origin;
+    float3 basis_x;
+    float3 basis_y;
+    float3 basis_z;
+    float cx;
+    float cy;
+};
+
+__device__ __constant__ DeviceActiveCamera g_active_camera;
+
 __device__ std::uint32_t hash_u32(std::uint32_t x) {
     x ^= x >> 16;
     x *= 0x7feb352du;
@@ -87,6 +98,31 @@ __device__ float3 random_unit_vector(std::uint32_t& rng) {
 __device__ float3 vector3f_to_float3(const Eigen::Vector3f& v) {
     const float* ptr = v.data();
     return make_float3(ptr[0], ptr[1], ptr[2]);
+}
+
+__device__ float3 unproject_camera_ray(int width_px, int height_px, float pixel_x, float pixel_y) {
+    const float width = width_px > 0 ? static_cast<float>(width_px) : 1.0f;
+    const float height = height_px > 0 ? static_cast<float>(height_px) : 1.0f;
+    const float aspect = width / height;
+    return normalize3(make_float3(
+        2.0f * (pixel_x - g_active_camera.cx) * aspect / width,
+        2.0f * (pixel_y - g_active_camera.cy) / height,
+        1.0f));
+}
+
+__device__ float3 transform_direction(const float3& dir_camera) {
+    return normalize3(add3(
+        add3(mul3(g_active_camera.basis_x, dir_camera.x), mul3(g_active_camera.basis_y, dir_camera.y)),
+        mul3(g_active_camera.basis_z, dir_camera.z)));
+}
+
+__device__ float3 sample_sphere_light_point(const PackedSphere& sphere, const float3& surface_point) {
+    const float3 center = vector3f_to_float3(sphere.center);
+    float3 to_surface = sub3(surface_point, center);
+    if (length_sq3(to_surface) <= 1e-8f) {
+        to_surface = make_float3(0.0f, 1.0f, 0.0f);
+    }
+    return add3(center, mul3(normalize3(to_surface), sphere.radius));
 }
 
 __device__ float reflectance(float cosine, float refraction_index) {
@@ -361,13 +397,11 @@ __device__ PathState trace_primary_ray(const LaunchParams& params, int x, int y)
     state.radiance = make_float3(0.0f, 0.0f, 0.0f);
     state.alive = true;
 
-    const float width = params.width > 0 ? static_cast<float>(params.width) : 1.0f;
-    const float height = params.height > 0 ? static_cast<float>(params.height) : 1.0f;
-    const float aspect = width / height;
-    const float ndc_x = ((static_cast<float>(x) + 0.5f) / width) * 2.0f - 1.0f;
-    const float ndc_y = ((static_cast<float>(y) + 0.5f) / height) * 2.0f - 1.0f;
-    state.ray.origin = make_float3(0.0f, 0.0f, 0.0f);
-    state.ray.direction = normalize3(make_float3(ndc_x * aspect, -ndc_y, -1.0f));
+    const float pixel_x = static_cast<float>(x) + 0.5f;
+    const float pixel_y = static_cast<float>(y) + 0.5f;
+    const float3 dir_camera = unproject_camera_ray(params.width, params.height, pixel_x, pixel_y);
+    state.ray.origin = g_active_camera.origin;
+    state.ray.direction = transform_direction(dir_camera);
     return state;
 }
 
@@ -389,7 +423,7 @@ __device__ void accumulate_direct_light(const LaunchParams& params, const HitInf
             continue;
         }
         const float3 emission = vector3f_to_float3(material.emission);
-        const float3 light_pos = vector3f_to_float3(sphere.center);
+        const float3 light_pos = sample_sphere_light_point(sphere, surface_point);
         const float3 to_light = sub3(light_pos, surface_point);
         const float dist_sq = fmaxf(length_sq3(to_light), 1e-6f);
         const float dist = sqrtf(dist_sq);
@@ -505,12 +539,43 @@ void launch_direction_debug_kernel(std::uint8_t* rgba, int width, int height, cu
     throw_cuda_error(cudaGetLastError(), "cudaGetLastError()");
 }
 
+void upload_active_camera(const PackedCameraRig& rig, int camera_index, cudaStream_t stream) {
+    const PackedCamera& camera = rig.cameras[camera_index];
+    DeviceActiveCamera active {};
+    active.origin = make_float3(
+        static_cast<float>(camera.T_rc(0, 3)),
+        static_cast<float>(camera.T_rc(1, 3)),
+        static_cast<float>(camera.T_rc(2, 3)));
+    active.basis_x = make_float3(
+        static_cast<float>(camera.T_rc(0, 0)),
+        static_cast<float>(camera.T_rc(1, 0)),
+        static_cast<float>(camera.T_rc(2, 0)));
+    active.basis_y = make_float3(
+        static_cast<float>(camera.T_rc(0, 1)),
+        static_cast<float>(camera.T_rc(1, 1)),
+        static_cast<float>(camera.T_rc(2, 1)));
+    active.basis_z = make_float3(
+        static_cast<float>(camera.T_rc(0, 2)),
+        static_cast<float>(camera.T_rc(1, 2)),
+        static_cast<float>(camera.T_rc(2, 2)));
+    if (camera.model == CameraModelType::pinhole32) {
+        active.cx = static_cast<float>(camera.pinhole.cx);
+        active.cy = static_cast<float>(camera.pinhole.cy);
+    } else {
+        active.cx = static_cast<float>(camera.equi.cx);
+        active.cy = static_cast<float>(camera.equi.cy);
+    }
+    throw_cuda_error(cudaMemcpyToSymbolAsync(
+        g_active_camera, &active, sizeof(active), 0, cudaMemcpyHostToDevice, stream), "cudaMemcpyToSymbolAsync()");
+}
+
 void launch_radiance_kernel(const LaunchParams& params, cudaStream_t stream) {
     LaunchParams* device_params = nullptr;
     throw_cuda_error(cudaMalloc(reinterpret_cast<void**>(&device_params), sizeof(LaunchParams)), "cudaMalloc()");
     try {
         throw_cuda_error(cudaMemcpyAsync(
             device_params, &params, sizeof(LaunchParams), cudaMemcpyHostToDevice, stream), "cudaMemcpyAsync()");
+        upload_active_camera(params.rig, params.camera_index, stream);
         const dim3 block_size(8, 8, 1);
         radiance_kernel<<<make_grid(params.width, params.height, block_size), block_size, 0, stream>>>(device_params);
         throw_cuda_error(cudaGetLastError(), "cudaGetLastError()");

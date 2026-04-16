@@ -3,6 +3,8 @@
 #include <optix_function_table_definition.h>
 #include <optix_stubs.h>
 
+#include <algorithm>
+#include <cmath>
 #include <stdexcept>
 #include <string>
 
@@ -387,7 +389,10 @@ std::vector<float> OptixRenderer::download_depth() const {
 double OptixRenderer::compute_average_luminance(const std::vector<float>& rgba) const {
     double sum = 0.0;
     for (std::size_t i = 0; i < rgba.size(); i += 4) {
-        sum += static_cast<double>(rgba[i + 0] + rgba[i + 1] + rgba[i + 2]) / 3.0;
+        const double r = std::clamp(std::sqrt(static_cast<double>(std::max(0.0f, rgba[i + 0]))), 0.0, 0.999);
+        const double g = std::clamp(std::sqrt(static_cast<double>(std::max(0.0f, rgba[i + 1]))), 0.0, 0.999);
+        const double b = std::clamp(std::sqrt(static_cast<double>(std::max(0.0f, rgba[i + 2]))), 0.0, 0.999);
+        sum += (r + g + b) / 3.0;
     }
     return rgba.empty() ? 0.0 : sum / static_cast<double>(rgba.size() / 4);
 }
