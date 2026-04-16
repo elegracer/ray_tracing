@@ -3,14 +3,6 @@
 
 #include <array>
 
-namespace {
-
-Eigen::Vector3d normalized_camera_ray(const Eigen::Vector3d& dir_cam) {
-    return Eigen::Vector3d {dir_cam.x() / dir_cam.z(), dir_cam.y() / dir_cam.z(), 1.0};
-}
-
-}  // namespace
-
 int main() {
     using rt::Equi62Lut1DParams;
     using rt::Pinhole32Params;
@@ -27,9 +19,8 @@ int main() {
 
     expect_vec3_near(unproject_pinhole32(pinhole, Eigen::Vector2d {160.0, 120.0}),
         Eigen::Vector3d {0.0, 0.0, 1.0}, 1e-12, "pinhole center unproject");
-    expect_vec3_near(normalized_camera_ray(unproject_pinhole32(pinhole, project_pinhole32(pinhole,
-                         Eigen::Vector3d {0.23, -0.17, 1.0}))),
-        Eigen::Vector3d {0.23, -0.17, 1.0}, 1e-9, "pinhole off-axis roundtrip");
+    expect_vec3_near(unproject_pinhole32(pinhole, project_pinhole32(pinhole, Eigen::Vector3d {0.23, -0.17, 1.0})),
+        Eigen::Vector3d {0.23, -0.17, 1.0}.normalized(), 1e-9, "pinhole off-axis roundtrip");
     expect_true((project_pinhole32(pinhole, unproject_pinhole32(pinhole, Eigen::Vector2d {160.0, 120.0}))
                     - Eigen::Vector2d {160.0, 120.0})
                     .cwiseAbs()
@@ -43,9 +34,8 @@ int main() {
 
     expect_vec3_near(unproject_equi62_lut1d(equi, Eigen::Vector2d {320.0, 240.0}),
         Eigen::Vector3d {0.0, 0.0, 1.0}, 1e-12, "equi center unproject");
-    expect_vec3_near(normalized_camera_ray(unproject_equi62_lut1d(equi, project_equi62_lut1d(equi,
-                         Eigen::Vector3d {0.21, 0.08, 1.0}))),
-        Eigen::Vector3d {0.21, 0.08, 1.0}, 2e-6, "equi off-axis roundtrip");
+    expect_vec3_near(unproject_equi62_lut1d(equi, project_equi62_lut1d(equi, Eigen::Vector3d {0.21, 0.08, 1.0})),
+        Eigen::Vector3d {0.21, 0.08, 1.0}.normalized(), 2e-6, "equi off-axis roundtrip");
 
     return 0;
 }

@@ -219,7 +219,7 @@ Eigen::Vector3d unproject_pinhole32(const Pinhole32Params& params, const Eigen::
         xy += delta;
     }
 
-    return Eigen::Vector3d {xy.x(), xy.y(), 1.0};
+    return Eigen::Vector3d {xy.x(), xy.y(), 1.0}.normalized();
 }
 
 Eigen::Vector2d project_equi62_lut1d(const Equi62Lut1DParams& params, const Eigen::Vector3d& dir_cam) {
@@ -253,7 +253,7 @@ Eigen::Vector3d unproject_equi62_lut1d(const Equi62Lut1DParams& params, const Ei
 
     const double theta = interpolate_lut_theta(params, rd);
     const double scale = std::tan(theta) / rd;
-    return Eigen::Vector3d {xy_radial.x() * scale, xy_radial.y() * scale, 1.0};
+    return Eigen::Vector3d {xy_radial.x() * scale, xy_radial.y() * scale, 1.0}.normalized();
 }
 
 }  // namespace rt
