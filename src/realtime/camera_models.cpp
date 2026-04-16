@@ -130,39 +130,40 @@ Eigen::Matrix2d equi_tangential_jacobian(const Eigen::Vector2d& xy, const Eigen:
     return jacobian;
 }
 
-Eigen::Vector2d remove_equi_tangential(const Eigen::Vector2d& xy_distorted, const Eigen::Vector2d& tangential) {
+Eigen::Vector2d remove_equi_tangential_single_step(
+    const Eigen::Vector2d& xy_distorted, const Eigen::Vector2d& tangential) {
     Eigen::Vector2d xy = xy_distorted;
-    for (int iter = 0; iter < 8; ++iter) {
-        const Eigen::Vector2d error = xy_distorted - apply_equi_tangential(xy, tangential);
-        if (error.squaredNorm() < kEpsilon * kEpsilon) {
-            break;
-        }
-
-        const Eigen::Matrix2d jacobian = equi_tangential_jacobian(xy, tangential);
-        Eigen::Vector2d delta;
-        if (!solve_2x2(jacobian, error, delta)) {
-            break;
-        }
-
-        xy += delta;
+    const Eigen::Vector2d distorted = apply_equi_tangential(xy, tangential);
+    const Eigen::Matrix2d jacobian = equi_tangential_jacobian(xy, tangential);
+    Eigen::Vector2d delta;
+    if (!solve_2x2(jacobian, xy_distorted - distorted, delta)) {
+        return xy;
     }
+
+    xy += delta;
     return xy;
 }
 
-double interpolate_lut_theta(const Equi62Lut1DParams& params, double rd) {
+bool interpolate_lut_theta(const Equi62Lut1DParams& params, double rd, double& theta) {
     if (rd <= 0.0 || params.lut_step <= 0.0) {
-        return 0.0;
+        theta = 0.0;
+        return true;
     }
 
     const double position = rd / params.lut_step;
     const double max_index = static_cast<double>(params.lut.size() - 1);
     if (position >= max_index) {
-        return params.lut.back();
+        return false;
     }
 
     const std::size_t index = static_cast<std::size_t>(position);
     const double alpha = position - static_cast<double>(index);
-    return (1.0 - alpha) * params.lut[index] + alpha * params.lut[index + 1];
+    theta = (1.0 - alpha) * params.lut[index] + alpha * params.lut[index + 1];
+    return true;
+}
+
+Eigen::Vector3d normalized_fallback_ray(const Eigen::Vector2d& xy) {
+    return Eigen::Vector3d {xy.x(), xy.y(), 1.0}.normalized();
 }
 
 }  // namespace
@@ -238,20 +239,24 @@ Eigen::Vector2d project_equi62_lut1d(const Equi62Lut1DParams& params, const Eige
 }
 
 Eigen::Vector3d unproject_equi62_lut1d(const Equi62Lut1DParams& params, const Eigen::Vector2d& pixel) {
-    const Eigen::Vector2d xy_distorted(
+    const Eigen::Vector2d xy(
         (pixel.x() - params.cx) / params.fx,
         (pixel.y() - params.cy) / params.fy);
-    if (xy_distorted.squaredNorm() < kEpsilon * kEpsilon) {
+    if (xy.squaredNorm() < kEpsilon * kEpsilon) {
         return Eigen::Vector3d {0.0, 0.0, 1.0};
     }
 
-    const Eigen::Vector2d xy_radial = remove_equi_tangential(xy_distorted, params.tangential);
+    const Eigen::Vector2d xy_radial = remove_equi_tangential_single_step(xy, params.tangential);
     const double rd = xy_radial.norm();
     if (rd < kEpsilon) {
         return Eigen::Vector3d {0.0, 0.0, 1.0};
     }
 
-    const double theta = interpolate_lut_theta(params, rd);
+    double theta = 0.0;
+    if (!interpolate_lut_theta(params, rd, theta)) {
+        return normalized_fallback_ray(xy);
+    }
+
     const double scale = std::tan(theta) / rd;
     return Eigen::Vector3d {xy_radial.x() * scale, xy_radial.y() * scale, 1.0}.normalized();
 }
