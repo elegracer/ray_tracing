@@ -77,12 +77,13 @@ int main() {
     scene.add_sphere(rt::SpherePrimitive {glass, Eigen::Vector3d {0.8, -0.2, -3.5}, 0.5, false});
 
     rt::CameraRig rig;
-    rig.add_pinhole(rt::Pinhole32Params {220.0, 220.0, 48.0, 48.0, 0.0, 0.0, 0.0, 0.0, 0.0},
+    rig.add_pinhole(rt::Pinhole32Params {80.0, 80.0, 48.0, 48.0, 0.0, 0.0, 0.0, 0.0, 0.0},
         Eigen::Isometry3d::Identity(), 96, 96);
+    const rt::PackedCameraRig packed_rig = rig.pack();
 
     rt::OptixRenderer renderer;
     const rt::RadianceFrame frame = renderer.render_radiance(
-        scene.pack(), rig.pack(), rt::RenderProfile::quality(), 0);
+        scene.pack(), packed_rig, rt::RenderProfile::quality(), 0);
 
     expect_true(frame.average_luminance > 0.02, "beauty is lit");
     expect_true(!frame.normal_rgba.empty(), "normal buffer present");
@@ -93,10 +94,18 @@ int main() {
         * static_cast<std::size_t>(frame.height) * 4U;
     expect_true(frame.albedo_rgba.size() >= expected_albedo_size, "albedo has expected rgba size");
 
-    const int y = static_cast<int>(std::round(frame.height * 0.55));
-    const int left_x = static_cast<int>(std::round(frame.width * 0.34));
-    const int center_x = static_cast<int>(std::round(frame.width * 0.50));
-    const int right_x = static_cast<int>(std::round(frame.width * 0.66));
+    const rt::PackedCamera& camera = packed_rig.cameras[0];
+    const Eigen::Matrix3d R_rc = camera.T_rc.block<3, 3>(0, 0);
+    const Eigen::Vector3d t_rc = camera.T_rc.block<3, 1>(0, 3);
+    const auto project_renderer_point = [&](const Eigen::Vector3d& point_renderer) {
+        const Eigen::Vector3d point_camera = R_rc.transpose() * (point_renderer - t_rc);
+        return rt::project_pinhole32(camera.pinhole, point_camera);
+    };
+
+    const int y = static_cast<int>(std::round(project_renderer_point(Eigen::Vector3d {0.0, -0.2, -3.5}).y()));
+    const int left_x = static_cast<int>(std::round(project_renderer_point(Eigen::Vector3d {-0.8, -0.2, -3.5}).x()));
+    const int center_x = static_cast<int>(std::round(project_renderer_point(Eigen::Vector3d {0.0, -0.2, -3.5}).x()));
+    const int right_x = static_cast<int>(std::round(project_renderer_point(Eigen::Vector3d {0.8, -0.2, -3.5}).x()));
     const int half_window = std::max(2, frame.width / 24);
 
     const MeanRgb left = window_mean_rgb(frame.albedo_rgba, frame.width, frame.height, left_x, y, half_window);

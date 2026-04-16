@@ -90,6 +90,51 @@ MaterialSample pack_material(const MaterialDesc& material) {
     return sample;
 }
 
+DeviceActiveCamera make_active_camera(const PackedCamera& camera) {
+    DeviceActiveCamera active {};
+    active.width = camera.width;
+    active.height = camera.height;
+    active.model = camera.model;
+
+    active.origin[0] = camera.T_rc(0, 3);
+    active.origin[1] = camera.T_rc(1, 3);
+    active.origin[2] = camera.T_rc(2, 3);
+
+    for (int row = 0; row < 3; ++row) {
+        active.basis_x[row] = camera.T_rc(row, 0);
+        active.basis_y[row] = camera.T_rc(row, 1);
+        active.basis_z[row] = camera.T_rc(row, 2);
+    }
+
+    active.pinhole.fx = camera.pinhole.fx;
+    active.pinhole.fy = camera.pinhole.fy;
+    active.pinhole.cx = camera.pinhole.cx;
+    active.pinhole.cy = camera.pinhole.cy;
+    active.pinhole.k1 = camera.pinhole.k1;
+    active.pinhole.k2 = camera.pinhole.k2;
+    active.pinhole.k3 = camera.pinhole.k3;
+    active.pinhole.p1 = camera.pinhole.p1;
+    active.pinhole.p2 = camera.pinhole.p2;
+
+    active.equi.width = camera.equi.width;
+    active.equi.height = camera.equi.height;
+    active.equi.fx = camera.equi.fx;
+    active.equi.fy = camera.equi.fy;
+    active.equi.cx = camera.equi.cx;
+    active.equi.cy = camera.equi.cy;
+    active.equi.tangential[0] = camera.equi.tangential.x();
+    active.equi.tangential[1] = camera.equi.tangential.y();
+    active.equi.lut_step = camera.equi.lut_step;
+    for (int i = 0; i < 6; ++i) {
+        active.equi.radial[i] = camera.equi.radial[static_cast<std::size_t>(i)];
+    }
+    for (int i = 0; i < 1024; ++i) {
+        active.equi.lut[i] = camera.equi.lut[static_cast<std::size_t>(i)];
+    }
+
+    return active;
+}
+
 void free_device_ptr(void* ptr) {
     if (ptr != nullptr) {
         cudaFree(ptr);
@@ -265,9 +310,9 @@ void OptixRenderer::launch_radiance(const PackedCameraRig& rig, const RenderProf
 void OptixRenderer::launch_radiance_pipeline(const PackedScene& scene, const PackedCameraRig& rig,
     const RenderProfile& profile, int camera_index) {
     LaunchParams params {};
-    params.camera_index = camera_index;
     params.width = rig.cameras[camera_index].width;
     params.height = rig.cameras[camera_index].height;
+    params.active_camera = make_active_camera(rig.cameras[camera_index]);
     allocate_frame_buffers(params.width, params.height);
     params.frame = device_frame_;
     params.scene.spheres = device_spheres_;
@@ -276,7 +321,6 @@ void OptixRenderer::launch_radiance_pipeline(const PackedScene& scene, const Pac
     params.scene.sphere_count = scene.sphere_count;
     params.scene.quad_count = scene.quad_count;
     params.scene.material_count = scene.material_count;
-    params.rig = rig;
     params.samples_per_pixel = profile.samples_per_pixel;
     params.max_bounces = profile.max_bounces;
     params.rr_start_bounce = profile.rr_start_bounce;

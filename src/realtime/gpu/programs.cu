@@ -45,17 +45,14 @@ namespace {
 constexpr float kRayEpsilon = 1e-3f;
 constexpr float kRayFar = 1e30f;
 constexpr float kShadowScale = 0.8f;
+constexpr double kCameraEpsilon = 1e-12;
+constexpr int kPinholeUndistortMaxIterations = 24;
+constexpr double kPinholeUndistortResidualThresholdSq = 1e-20;
 
-struct DeviceActiveCamera {
-    float3 origin;
-    float3 basis_x;
-    float3 basis_y;
-    float3 basis_z;
-    float cx;
-    float cy;
+struct Double2 {
+    double x = 0.0;
+    double y = 0.0;
 };
-
-__device__ __constant__ DeviceActiveCamera g_active_camera;
 
 __device__ std::uint32_t hash_u32(std::uint32_t x) {
     x ^= x >> 16;
@@ -100,20 +97,178 @@ __device__ float3 vector3f_to_float3(const Eigen::Vector3f& v) {
     return make_float3(ptr[0], ptr[1], ptr[2]);
 }
 
-__device__ float3 unproject_camera_ray(int width_px, int height_px, float pixel_x, float pixel_y) {
-    const float width = width_px > 0 ? static_cast<float>(width_px) : 1.0f;
-    const float height = height_px > 0 ? static_cast<float>(height_px) : 1.0f;
-    const float aspect = width / height;
+__device__ Double2 make_double2_xy(double x, double y) {
+    return Double2 {x, y};
+}
+
+__device__ Double2 distort_pinhole_normalized(const DevicePinhole32Params& params, const Double2& xy) {
+    const double x = xy.x;
+    const double y = xy.y;
+    const double x2 = x * x;
+    const double y2 = y * y;
+    const double xy_term = x * y;
+    const double r2 = x2 + y2;
+    const double r4 = r2 * r2;
+    const double r6 = r4 * r2;
+    const double radial = 1.0 + params.k1 * r2 + params.k2 * r4 + params.k3 * r6;
+    return make_double2_xy(
+        x * radial + params.p2 * (r2 + 2.0 * x2) + 2.0 * params.p1 * xy_term,
+        y * radial + params.p1 * (r2 + 2.0 * y2) + 2.0 * params.p2 * xy_term);
+}
+
+__device__ bool solve_2x2(
+    double a00, double a01, double a10, double a11, const Double2& rhs, Double2& delta) {
+    const double det = a00 * a11 - a01 * a10;
+    if (fabs(det) < kCameraEpsilon) {
+        return false;
+    }
+    const double inv_det = 1.0 / det;
+    delta.x = (a11 * rhs.x - a01 * rhs.y) * inv_det;
+    delta.y = (-a10 * rhs.x + a00 * rhs.y) * inv_det;
+    return true;
+}
+
+__device__ float3 unproject_pinhole32(const DevicePinhole32Params& params, double pixel_x, double pixel_y) {
+    const Double2 xy_distorted = make_double2_xy(
+        (pixel_x - params.cx) / params.fx,
+        (pixel_y - params.cy) / params.fy);
+    Double2 xy = xy_distorted;
+    for (int iter = 0; iter < kPinholeUndistortMaxIterations; ++iter) {
+        const Double2 distorted = distort_pinhole_normalized(params, xy);
+        const Double2 error = make_double2_xy(xy_distorted.x - distorted.x, xy_distorted.y - distorted.y);
+        const double error_sq = error.x * error.x + error.y * error.y;
+        if (error_sq < kPinholeUndistortResidualThresholdSq) {
+            break;
+        }
+
+        const double x = xy.x;
+        const double y = xy.y;
+        const double r2 = x * x + y * y;
+        const double r4 = r2 * r2;
+        const double r6 = r4 * r2;
+        const double radial = 1.0 + params.k1 * r2 + params.k2 * r4 + params.k3 * r6;
+        const double d_radial_dx = 2.0 * x * (params.k1 + 2.0 * params.k2 * r2 + 3.0 * params.k3 * r4);
+        const double d_radial_dy = 2.0 * y * (params.k1 + 2.0 * params.k2 * r2 + 3.0 * params.k3 * r4);
+
+        Double2 delta {};
+        if (!solve_2x2(
+                radial + x * d_radial_dx + 6.0 * params.p2 * x + 2.0 * params.p1 * y,
+                x * d_radial_dy + 2.0 * params.p1 * x + 2.0 * params.p2 * y,
+                y * d_radial_dx + 2.0 * params.p1 * x + 2.0 * params.p2 * y,
+                radial + y * d_radial_dy + 6.0 * params.p1 * y + 2.0 * params.p2 * x,
+                error, delta)) {
+            break;
+        }
+        xy.x += delta.x;
+        xy.y += delta.y;
+    }
+
+    return normalize3(make_float3(static_cast<float>(xy.x), static_cast<float>(xy.y), 1.0f));
+}
+
+__device__ Double2 apply_equi_tangential(const Double2& xy, const double tangential[2]) {
+    const double xr = xy.x;
+    const double yr = xy.y;
+    const double xr2 = xr * xr;
+    const double yr2 = yr * yr;
+    const double xryr = xr * yr;
+    const double p1 = tangential[0];
+    const double p2 = tangential[1];
+    return make_double2_xy(
+        xr + 2.0 * p1 * xryr + p2 * (xr2 + yr2 + 2.0 * xr2),
+        yr + p1 * (xr2 + yr2 + 2.0 * yr2) + 2.0 * p2 * xryr);
+}
+
+__device__ Double2 remove_equi_tangential_single_step(const Double2& xy_distorted, const double tangential[2]) {
+    const Double2 distorted = apply_equi_tangential(xy_distorted, tangential);
+    Double2 delta {};
+    if (!solve_2x2(
+            1.0 + 2.0 * tangential[0] * xy_distorted.y + 6.0 * tangential[1] * xy_distorted.x,
+            2.0 * tangential[0] * xy_distorted.x + 2.0 * tangential[1] * xy_distorted.y,
+            2.0 * tangential[0] * xy_distorted.x + 2.0 * tangential[1] * xy_distorted.y,
+            1.0 + 6.0 * tangential[0] * xy_distorted.y + 2.0 * tangential[1] * xy_distorted.x,
+            make_double2_xy(xy_distorted.x - distorted.x, xy_distorted.y - distorted.y), delta)) {
+        return xy_distorted;
+    }
+    return make_double2_xy(xy_distorted.x + delta.x, xy_distorted.y + delta.y);
+}
+
+__device__ bool interpolate_lut_theta(const DeviceEqui62Lut1DParams& params, double rd, double& theta) {
+    if (rd <= 0.0 || params.lut_step <= 0.0) {
+        theta = 0.0;
+        return true;
+    }
+    const double position = rd / params.lut_step;
+    const double max_index = 1023.0;
+    if (position > max_index) {
+        return false;
+    }
+    if (position >= max_index) {
+        theta = params.lut[1023];
+        return true;
+    }
+    const int index = static_cast<int>(position);
+    const double alpha = position - static_cast<double>(index);
+    theta = (1.0 - alpha) * params.lut[index] + alpha * params.lut[index + 1];
+    return true;
+}
+
+__device__ float3 normalized_fallback_ray(const Double2& xy) {
+    return normalize3(make_float3(static_cast<float>(xy.x), static_cast<float>(xy.y), 1.0f));
+}
+
+__device__ float3 unproject_equi62_lut1d(const DeviceEqui62Lut1DParams& params, double pixel_x, double pixel_y) {
+    const Double2 xy = make_double2_xy(
+        (pixel_x - params.cx) / params.fx,
+        (pixel_y - params.cy) / params.fy);
+    if (xy.x * xy.x + xy.y * xy.y < kCameraEpsilon * kCameraEpsilon) {
+        return make_float3(0.0f, 0.0f, 1.0f);
+    }
+
+    const Double2 xy_radial = remove_equi_tangential_single_step(xy, params.tangential);
+    const double rd = sqrt(xy_radial.x * xy_radial.x + xy_radial.y * xy_radial.y);
+    if (rd < kCameraEpsilon) {
+        return make_float3(0.0f, 0.0f, 1.0f);
+    }
+
+    double theta = 0.0;
+    if (!interpolate_lut_theta(params, rd, theta)) {
+        return normalized_fallback_ray(xy);
+    }
+
+    const double scale = tan(theta) / rd;
     return normalize3(make_float3(
-        2.0f * (pixel_x - g_active_camera.cx) * aspect / width,
-        2.0f * (pixel_y - g_active_camera.cy) / height,
+        static_cast<float>(xy_radial.x * scale),
+        static_cast<float>(xy_radial.y * scale),
         1.0f));
 }
 
-__device__ float3 transform_direction(const float3& dir_camera) {
+__device__ float3 unproject_camera_ray(const DeviceActiveCamera& camera, double pixel_x, double pixel_y) {
+    if (camera.model == CameraModelType::equi62_lut1d) {
+        return unproject_equi62_lut1d(camera.equi, pixel_x, pixel_y);
+    }
+    return unproject_pinhole32(camera.pinhole, pixel_x, pixel_y);
+}
+
+__device__ float3 transform_direction(const DeviceActiveCamera& camera, const float3& dir_camera) {
     return normalize3(add3(
-        add3(mul3(g_active_camera.basis_x, dir_camera.x), mul3(g_active_camera.basis_y, dir_camera.y)),
-        mul3(g_active_camera.basis_z, dir_camera.z)));
+        add3(
+            mul3(make_float3(static_cast<float>(camera.basis_x[0]), static_cast<float>(camera.basis_x[1]),
+                     static_cast<float>(camera.basis_x[2])),
+                dir_camera.x),
+            mul3(make_float3(static_cast<float>(camera.basis_y[0]), static_cast<float>(camera.basis_y[1]),
+                     static_cast<float>(camera.basis_y[2])),
+                dir_camera.y)),
+        mul3(make_float3(static_cast<float>(camera.basis_z[0]), static_cast<float>(camera.basis_z[1]),
+                 static_cast<float>(camera.basis_z[2])),
+            dir_camera.z)));
+}
+
+__device__ float3 camera_origin(const DeviceActiveCamera& camera) {
+    return make_float3(
+        static_cast<float>(camera.origin[0]),
+        static_cast<float>(camera.origin[1]),
+        static_cast<float>(camera.origin[2]));
 }
 
 __device__ float3 sample_sphere_light_point(const PackedSphere& sphere, const float3& surface_point) {
@@ -399,9 +554,10 @@ __device__ PathState trace_primary_ray(const LaunchParams& params, int x, int y)
 
     const float pixel_x = static_cast<float>(x) + 0.5f;
     const float pixel_y = static_cast<float>(y) + 0.5f;
-    const float3 dir_camera = unproject_camera_ray(params.width, params.height, pixel_x, pixel_y);
-    state.ray.origin = g_active_camera.origin;
-    state.ray.direction = transform_direction(dir_camera);
+    const DeviceActiveCamera& camera = params.active_camera;
+    const float3 dir_camera = unproject_camera_ray(camera, pixel_x, pixel_y);
+    state.ray.origin = camera_origin(camera);
+    state.ray.direction = transform_direction(camera, dir_camera);
     return state;
 }
 
@@ -539,43 +695,12 @@ void launch_direction_debug_kernel(std::uint8_t* rgba, int width, int height, cu
     throw_cuda_error(cudaGetLastError(), "cudaGetLastError()");
 }
 
-void upload_active_camera(const PackedCameraRig& rig, int camera_index, cudaStream_t stream) {
-    const PackedCamera& camera = rig.cameras[camera_index];
-    DeviceActiveCamera active {};
-    active.origin = make_float3(
-        static_cast<float>(camera.T_rc(0, 3)),
-        static_cast<float>(camera.T_rc(1, 3)),
-        static_cast<float>(camera.T_rc(2, 3)));
-    active.basis_x = make_float3(
-        static_cast<float>(camera.T_rc(0, 0)),
-        static_cast<float>(camera.T_rc(1, 0)),
-        static_cast<float>(camera.T_rc(2, 0)));
-    active.basis_y = make_float3(
-        static_cast<float>(camera.T_rc(0, 1)),
-        static_cast<float>(camera.T_rc(1, 1)),
-        static_cast<float>(camera.T_rc(2, 1)));
-    active.basis_z = make_float3(
-        static_cast<float>(camera.T_rc(0, 2)),
-        static_cast<float>(camera.T_rc(1, 2)),
-        static_cast<float>(camera.T_rc(2, 2)));
-    if (camera.model == CameraModelType::pinhole32) {
-        active.cx = static_cast<float>(camera.pinhole.cx);
-        active.cy = static_cast<float>(camera.pinhole.cy);
-    } else {
-        active.cx = static_cast<float>(camera.equi.cx);
-        active.cy = static_cast<float>(camera.equi.cy);
-    }
-    throw_cuda_error(cudaMemcpyToSymbolAsync(
-        g_active_camera, &active, sizeof(active), 0, cudaMemcpyHostToDevice, stream), "cudaMemcpyToSymbolAsync()");
-}
-
 void launch_radiance_kernel(const LaunchParams& params, cudaStream_t stream) {
     LaunchParams* device_params = nullptr;
     throw_cuda_error(cudaMalloc(reinterpret_cast<void**>(&device_params), sizeof(LaunchParams)), "cudaMalloc()");
     try {
         throw_cuda_error(cudaMemcpyAsync(
             device_params, &params, sizeof(LaunchParams), cudaMemcpyHostToDevice, stream), "cudaMemcpyAsync()");
-        upload_active_camera(params.rig, params.camera_index, stream);
         const dim3 block_size(8, 8, 1);
         radiance_kernel<<<make_grid(params.width, params.height, block_size), block_size, 0, stream>>>(device_params);
         throw_cuda_error(cudaGetLastError(), "cudaGetLastError()");
