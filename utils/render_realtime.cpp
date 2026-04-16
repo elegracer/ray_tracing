@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -87,6 +88,29 @@ void write_frame_image(const std::filesystem::path& output_dir, int frame_index,
     }
 }
 
+bool resolve_render_profile(const std::string& profile_name, rt::RenderProfile& profile) {
+    if (profile_name == "quality") {
+        profile = rt::RenderProfile::quality();
+        return true;
+    }
+    if (profile_name == "balanced") {
+        profile = rt::RenderProfile::balanced();
+        return true;
+    }
+    if (profile_name == "realtime") {
+        profile = rt::RenderProfile::realtime();
+        return true;
+    }
+    return false;
+}
+
+double compute_p95_frame_ms(std::vector<double> frame_times_ms) {
+    std::sort(frame_times_ms.begin(), frame_times_ms.end());
+    const std::size_t count = frame_times_ms.size();
+    const std::size_t p95_index = static_cast<std::size_t>(std::ceil(0.95 * static_cast<double>(count))) - 1U;
+    return frame_times_ms[p95_index];
+}
+
 }  // namespace
 
 int main(int argc, const char* argv[]) {
@@ -96,6 +120,7 @@ int main(int argc, const char* argv[]) {
     int camera_count = 4;
     int frames = 1;
     std::string output_dir = "build/realtime-smoke";
+    std::string profile_name = "balanced";
 
     argparse::ArgumentParser program("render_realtime", version_string);
     program.add_argument("--camera-count")
@@ -112,6 +137,10 @@ int main(int argc, const char* argv[]) {
         .help("directory for per-camera png outputs")
         .default_value(output_dir)
         .store_into(output_dir);
+    program.add_argument("--profile")
+        .help("render profile: quality|balanced|realtime")
+        .default_value(profile_name)
+        .store_into(profile_name);
 
     try {
         program.parse_args(argc, argv);
@@ -130,12 +159,17 @@ int main(int argc, const char* argv[]) {
         return EXIT_FAILURE;
     }
 
+    rt::RenderProfile profile;
+    if (!resolve_render_profile(profile_name, profile)) {
+        fmt::print(stderr, "--profile must be one of: quality, balanced, realtime\n");
+        return EXIT_FAILURE;
+    }
+
     const std::filesystem::path output_path = output_dir;
     std::filesystem::create_directories(output_path);
 
     const rt::PackedScene packed_scene = make_smoke_scene().pack();
     const rt::PackedCameraRig packed_rig = make_smoke_rig(camera_count).pack();
-    rt::RenderProfile profile = rt::RenderProfile::realtime_default();
     rt::OptixRenderer renderer;
 
     std::vector<double> frame_times_ms;
@@ -144,27 +178,41 @@ int main(int argc, const char* argv[]) {
     for (int frame_index = 0; frame_index < frames; ++frame_index) {
         const auto frame_begin = std::chrono::steady_clock::now();
         double frame_luminance_sum = 0.0;
+        double render_ms = 0.0;
+        double image_write_ms = 0.0;
 
         for (int camera_index = 0; camera_index < camera_count; ++camera_index) {
+            const auto render_begin = std::chrono::steady_clock::now();
             const rt::RadianceFrame frame =
                 renderer.render_radiance(packed_scene, packed_rig, profile, camera_index);
+            const auto render_end = std::chrono::steady_clock::now();
+            render_ms += std::chrono::duration<double, std::milli>(render_end - render_begin).count();
             frame_luminance_sum += frame.average_luminance;
+
+            const auto image_write_begin = std::chrono::steady_clock::now();
             write_frame_image(output_path, frame_index, camera_index, frame);
+            const auto image_write_end = std::chrono::steady_clock::now();
+            image_write_ms += std::chrono::duration<double, std::milli>(image_write_end - image_write_begin).count();
         }
 
         const auto frame_end = std::chrono::steady_clock::now();
         const double frame_ms = std::chrono::duration<double, std::milli>(frame_end - frame_begin).count();
         frame_times_ms.push_back(frame_ms);
 
-        fmt::print("frame={} cameras={} avg_luminance={:.6f} frame_ms={:.3f}\n",
-            frame_index, camera_count, frame_luminance_sum / static_cast<double>(camera_count), frame_ms);
+        fmt::print("frame={} cameras={} avg_luminance={:.6f} render_ms={:.3f} image_write_ms={:.3f} frame_ms={:.3f}\n",
+            frame_index, camera_count, frame_luminance_sum / static_cast<double>(camera_count), render_ms,
+            image_write_ms, frame_ms);
     }
 
     const double total_ms = std::accumulate(frame_times_ms.begin(), frame_times_ms.end(), 0.0);
     const double avg_frame_ms = total_ms / static_cast<double>(frame_times_ms.size());
+    const double p95_frame_ms = compute_p95_frame_ms(frame_times_ms);
     const double fps = 1000.0 / avg_frame_ms;
 
-    fmt::print("summary frames={} cameras={} resolution={}x{} avg_frame_ms={:.3f} fps={:.2f} output_dir={}\n",
-        frames, camera_count, kDefaultWidth, kDefaultHeight, avg_frame_ms, fps, output_path.string());
+    fmt::print(
+        "summary profile={} frames={} cameras={} resolution={}x{} spp={} max_bounces={} denoise={} avg_frame_ms={:.3f} p95_frame_ms={:.3f} fps={:.2f} output_dir={}\n",
+        profile_name, frames, camera_count, kDefaultWidth, kDefaultHeight, profile.samples_per_pixel,
+        profile.max_bounces, profile.enable_denoise ? "true" : "false", avg_frame_ms, p95_frame_ms, fps,
+        output_path.string());
     return EXIT_SUCCESS;
 }

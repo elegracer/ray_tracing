@@ -13,7 +13,7 @@ VCPKG_ROOT=$HOME/vcpkg_root cmake -S . -B build-clang-vcpkg-settings \
   -DCMAKE_CUDA_HOST_COMPILER=clang++ \
   -DCMAKE_CUDA_ARCHITECTURES=86
 cmake --build build-clang-vcpkg-settings --target render_realtime -j
-./bin/render_realtime --camera-count 4 --frames 2 --output-dir build/realtime-smoke
+./bin/render_realtime --camera-count 4 --frames 2 --profile realtime --output-dir build/realtime-smoke
 ```
 
 The CLI writes one PNG per frame and per active camera under `build/realtime-smoke/` and prints per-frame timing plus an aggregate FPS summary.
