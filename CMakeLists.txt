@@ -199,6 +199,14 @@ target_sources(test_optix_materials_aux
 target_link_libraries(test_optix_materials_aux PRIVATE realtime_gpu)
 add_test(NAME test_optix_materials_aux COMMAND test_optix_materials_aux)
 
+add_executable(test_optix_equi_path_trace)
+target_sources(test_optix_equi_path_trace
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_optix_equi_path_trace.cpp
+)
+target_link_libraries(test_optix_equi_path_trace PRIVATE realtime_gpu)
+add_test(NAME test_optix_equi_path_trace COMMAND test_optix_equi_path_trace)
+
 target_sources(realtime_gpu
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/denoiser.cpp
