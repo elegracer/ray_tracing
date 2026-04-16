@@ -2,19 +2,22 @@
 #include "test_support.h"
 
 int main() {
-    const Vec3d camera_x = camera_to_renderer(Vec3d {1.0, 0.0, 0.0});
-    const Vec3d camera_y = camera_to_renderer(Vec3d {0.0, 1.0, 0.0});
-    const Vec3d camera_z = camera_to_renderer(Vec3d {0.0, 0.0, 1.0});
-    const Vec3d body_x = body_to_renderer(Vec3d {1.0, 0.0, 0.0});
-    const Vec3d body_y = body_to_renderer(Vec3d {0.0, 1.0, 0.0});
-    const Vec3d body_z = body_to_renderer(Vec3d {0.0, 0.0, 1.0});
+    using rt::body_to_renderer;
+    using rt::camera_to_renderer;
 
-    expect_vec3_near(camera_x, Vec3d {1.0, 0.0, 0.0});
-    expect_vec3_near(camera_y, Vec3d {0.0, -1.0, 0.0});
-    expect_vec3_near(camera_z, Vec3d {0.0, 0.0, -1.0});
-    expect_vec3_near(body_x, Vec3d {0.0, 1.0, 0.0});
-    expect_vec3_near(body_y, Vec3d {-1.0, 0.0, 0.0});
-    expect_vec3_near(body_z, Vec3d {0.0, 0.0, 1.0});
+    expect_vec3_near(camera_to_renderer(Eigen::Vector3d {1.0, 0.0, 0.0}),
+        Eigen::Vector3d {1.0, 0.0, 0.0}, 1e-12, "camera x axis");
+    expect_vec3_near(camera_to_renderer(Eigen::Vector3d {0.0, 1.0, 0.0}),
+        Eigen::Vector3d {0.0, -1.0, 0.0}, 1e-12, "camera y axis");
+    expect_vec3_near(camera_to_renderer(Eigen::Vector3d {0.0, 0.0, 1.0}),
+        Eigen::Vector3d {0.0, 0.0, -1.0}, 1e-12, "camera z axis");
+
+    expect_vec3_near(body_to_renderer(Eigen::Vector3d {1.0, 0.0, 0.0}),
+        Eigen::Vector3d {0.0, 1.0, 0.0}, 1e-12, "body x axis");
+    expect_vec3_near(body_to_renderer(Eigen::Vector3d {0.0, 1.0, 0.0}),
+        Eigen::Vector3d {-1.0, 0.0, 0.0}, 1e-12, "body y axis");
+    expect_vec3_near(body_to_renderer(Eigen::Vector3d {0.0, 0.0, 1.0}),
+        Eigen::Vector3d {0.0, 0.0, 1.0}, 1e-12, "body z axis");
 
     return 0;
 }

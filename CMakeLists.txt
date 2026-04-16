@@ -113,9 +113,5 @@ add_test(NAME test_cpu_render_smoke COMMAND test_cpu_render_smoke)
 
 add_executable(test_frame_convention)
 target_sources(test_frame_convention PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_frame_convention.cpp)
-target_include_directories(test_frame_convention PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-)
 target_link_libraries(test_frame_convention PRIVATE core)
 add_test(NAME test_frame_convention COMMAND test_frame_convention)
