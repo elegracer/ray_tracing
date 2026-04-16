@@ -9,6 +9,7 @@
 namespace rt {
 
 void launch_direction_debug_kernel(std::uint8_t* rgba, int width, int height, cudaStream_t stream);
+void launch_radiance_kernel(const LaunchParams& params, cudaStream_t stream);
 
 namespace {
 
@@ -93,6 +94,23 @@ void free_device_ptr(void* ptr) {
     }
 }
 
+void free_frame_buffers(DeviceFrameBuffers& frame) {
+    free_device_ptr(frame.beauty);
+    free_device_ptr(frame.normal);
+    free_device_ptr(frame.albedo);
+    free_device_ptr(frame.depth);
+    frame = DeviceFrameBuffers {};
+}
+
+void free_scene_buffers(PackedSphere*& spheres, PackedQuad*& quads, MaterialSample*& materials) {
+    free_device_ptr(spheres);
+    free_device_ptr(quads);
+    free_device_ptr(materials);
+    spheres = nullptr;
+    quads = nullptr;
+    materials = nullptr;
+}
+
 }  // namespace
 
 OptixRenderer::OptixRenderer() {
@@ -143,7 +161,7 @@ void OptixRenderer::allocate_frame_buffers(int width, int height) {
     if (allocated_width_ == width && allocated_height_ == height) {
         return;
     }
-    free_device_resources();
+    free_frame_buffers(device_frame_);
     const std::size_t pixel_count = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
     RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&device_frame_.beauty), pixel_count * sizeof(float4)));
     RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&device_frame_.normal), pixel_count * sizeof(float4)));
@@ -177,12 +195,7 @@ DirectionDebugFrame OptixRenderer::render_direction_debug(const PackedCameraRig&
 }
 
 void OptixRenderer::upload_scene(const PackedScene& scene) {
-    free_device_ptr(device_spheres_);
-    free_device_ptr(device_quads_);
-    free_device_ptr(device_materials_);
-    device_spheres_ = nullptr;
-    device_quads_ = nullptr;
-    device_materials_ = nullptr;
+    free_scene_buffers(device_spheres_, device_quads_, device_materials_);
 
     if (!scene.spheres.empty()) {
         std::vector<PackedSphere> packed_spheres;
@@ -224,17 +237,8 @@ void OptixRenderer::upload_scene(const PackedScene& scene) {
 }
 
 void OptixRenderer::free_device_resources() {
-    free_device_ptr(device_frame_.beauty);
-    free_device_ptr(device_frame_.normal);
-    free_device_ptr(device_frame_.albedo);
-    free_device_ptr(device_frame_.depth);
-    free_device_ptr(device_spheres_);
-    free_device_ptr(device_quads_);
-    free_device_ptr(device_materials_);
-    device_frame_ = DeviceFrameBuffers {};
-    device_spheres_ = nullptr;
-    device_quads_ = nullptr;
-    device_materials_ = nullptr;
+    free_frame_buffers(device_frame_);
+    free_scene_buffers(device_spheres_, device_quads_, device_materials_);
     allocated_width_ = 0;
     allocated_height_ = 0;
 }
@@ -280,7 +284,7 @@ void OptixRenderer::launch_radiance_pipeline(const PackedScene& scene, const Pac
     RT_CUDA_CHECK(cudaMemset(params.frame.normal, 0, pixel_count * sizeof(float4)));
     RT_CUDA_CHECK(cudaMemset(params.frame.albedo, 0, pixel_count * sizeof(float4)));
     RT_CUDA_CHECK(cudaMemset(params.frame.depth, 0, pixel_count * sizeof(float)));
-    (void)params;
+    launch_radiance_kernel(params, stream_);
     uploaded_scene_ = scene;
     last_width_ = params.width;
     last_height_ = params.height;
@@ -390,7 +394,6 @@ double OptixRenderer::compute_average_luminance(const std::vector<float>& rgba) 
 
 RadianceFrame OptixRenderer::render_radiance(const PackedScene& scene, const PackedCameraRig& rig,
     const RenderProfile& profile, int camera_index) {
-    allocate_frame_buffers(rig.cameras[camera_index].width, rig.cameras[camera_index].height);
     upload_scene(scene);
     build_or_refit_accels(scene);
     launch_radiance(rig, profile, camera_index);
