@@ -192,6 +192,10 @@ target_sources(realtime_gpu
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/realtime_pipeline.cpp
 )
 
+add_executable(render_realtime)
+target_sources(render_realtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/utils/render_realtime.cpp)
+target_link_libraries(render_realtime PRIVATE realtime_gpu core)
+
 add_executable(test_realtime_pipeline)
 target_sources(test_realtime_pipeline
     PRIVATE
