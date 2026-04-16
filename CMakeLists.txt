@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.14)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/Modules")
-project(ray_tracing LANGUAGES C CXX VERSION 0.0.1.0)
+project(ray_tracing LANGUAGES C CXX CUDA VERSION 0.0.1.0)
+
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_ARCHITECTURES 86 89)
+endif()
 
 include(CMakeDependentOption)
 
@@ -19,6 +23,8 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/bin)
 # set global cxx standard
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CUDA_STANDARD 17)
+set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 # always generate position independent code, no matter static or shared library
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # disable cpp extensions
@@ -35,6 +41,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(THIRDPARTY_SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/3rdparty)
 
 find_package(Eigen3 CONFIG REQUIRED)
+find_package(CUDAToolkit REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 find_package(argparse CONFIG REQUIRED)
 find_package(range-v3 CONFIG REQUIRED)
@@ -43,6 +50,11 @@ find_package(OpenCV CONFIG REQUIRED)
 find_path(ICECREAM_CPP_INCLUDE_DIRS "icecream.hpp")
 find_package(TBB CONFIG REQUIRED)
 find_package(indicators CONFIG REQUIRED)
+find_path(OPTIX_INCLUDE_DIR optix.h
+    PATHS ${CMAKE_CURRENT_SOURCE_DIR}/NVIDIA-OptiX-SDK-9.1.0-linux64-x86_64
+    PATH_SUFFIXES include
+    REQUIRED
+)
 
 # options
 option(OPTION_A "..." ON)
@@ -142,3 +154,26 @@ target_sources(test_scene_description
 )
 target_link_libraries(test_scene_description PRIVATE core)
 add_test(NAME test_scene_description COMMAND test_scene_description)
+
+add_library(realtime_gpu STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/optix_renderer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/programs.cu
+)
+target_include_directories(realtime_gpu PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${OPTIX_INCLUDE_DIR}
+)
+target_link_libraries(realtime_gpu PUBLIC
+    core
+    CUDA::cudart
+    CUDA::cuda_driver
+    dl
+)
+
+add_executable(test_optix_direction)
+target_sources(test_optix_direction
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_optix_direction.cpp
+)
+target_link_libraries(test_optix_direction PRIVATE realtime_gpu)
+add_test(NAME test_optix_direction COMMAND test_optix_direction)
