@@ -104,6 +104,26 @@ bool resolve_render_profile(const std::string& profile_name, rt::RenderProfile& 
     return false;
 }
 
+bool render_profiles_equal(const rt::RenderProfile& lhs, const rt::RenderProfile& rhs) {
+    return lhs.samples_per_pixel == rhs.samples_per_pixel && lhs.max_bounces == rhs.max_bounces &&
+        lhs.enable_denoise == rhs.enable_denoise && lhs.rr_start_bounce == rhs.rr_start_bounce &&
+        lhs.accumulation_reset_rotation_deg == rhs.accumulation_reset_rotation_deg &&
+        lhs.accumulation_reset_translation == rhs.accumulation_reset_translation;
+}
+
+std::string render_profile_name(const rt::RenderProfile& profile) {
+    if (render_profiles_equal(profile, rt::RenderProfile::quality())) {
+        return "quality";
+    }
+    if (render_profiles_equal(profile, rt::RenderProfile::balanced())) {
+        return "balanced";
+    }
+    if (render_profiles_equal(profile, rt::RenderProfile::realtime())) {
+        return "realtime";
+    }
+    return "default";
+}
+
 double compute_p95_frame_ms(std::vector<double> frame_times_ms) {
     std::sort(frame_times_ms.begin(), frame_times_ms.end());
     const std::size_t count = frame_times_ms.size();
@@ -120,7 +140,10 @@ int main(int argc, const char* argv[]) {
     int camera_count = 4;
     int frames = 1;
     std::string output_dir = "build/realtime-smoke";
-    std::string profile_name = "balanced";
+    std::string profile_arg;
+
+    rt::RenderProfile profile = rt::RenderProfile::realtime_default();
+    std::string profile_name = render_profile_name(profile);
 
     argparse::ArgumentParser program("render_realtime", version_string);
     program.add_argument("--camera-count")
@@ -139,8 +162,7 @@ int main(int argc, const char* argv[]) {
         .store_into(output_dir);
     program.add_argument("--profile")
         .help("render profile: quality|balanced|realtime")
-        .default_value(profile_name)
-        .store_into(profile_name);
+        .store_into(profile_arg);
 
     try {
         program.parse_args(argc, argv);
@@ -159,10 +181,12 @@ int main(int argc, const char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    rt::RenderProfile profile;
-    if (!resolve_render_profile(profile_name, profile)) {
-        fmt::print(stderr, "--profile must be one of: quality, balanced, realtime\n");
-        return EXIT_FAILURE;
+    if (!profile_arg.empty()) {
+        if (!resolve_render_profile(profile_arg, profile)) {
+            fmt::print(stderr, "--profile must be one of: quality, balanced, realtime\n");
+            return EXIT_FAILURE;
+        }
+        profile_name = profile_arg;
     }
 
     const std::filesystem::path output_path = output_dir;
