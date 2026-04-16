@@ -152,8 +152,12 @@ bool interpolate_lut_theta(const Equi62Lut1DParams& params, double rd, double& t
 
     const double position = rd / params.lut_step;
     const double max_index = static_cast<double>(params.lut.size() - 1);
-    if (position >= max_index) {
+    if (position > max_index) {
         return false;
+    }
+    if (position >= max_index) {
+        theta = params.lut.back();
+        return true;
     }
 
     const std::size_t index = static_cast<std::size_t>(position);

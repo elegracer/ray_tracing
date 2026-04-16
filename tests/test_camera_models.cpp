@@ -43,6 +43,20 @@ int main() {
     expect_vec3_near(unproject_equi62_lut1d(equi_identity, Eigen::Vector2d {320.0 + 280.0 * theta, 240.0}),
         Eigen::Vector3d {std::sin(theta), 0.0, std::cos(theta)}, 1e-12, "equi analytic off-axis unproject");
 
+    Equi62Lut1DParams equi_lut_ceiling = equi_identity;
+    equi_lut_ceiling.width = 1;
+    equi_lut_ceiling.height = 1;
+    equi_lut_ceiling.fx = 1.0;
+    equi_lut_ceiling.fy = 1.0;
+    equi_lut_ceiling.cx = 0.0;
+    equi_lut_ceiling.cy = 0.0;
+    equi_lut_ceiling.lut_step = 0.25;
+    equi_lut_ceiling.lut.fill(0.0);
+    equi_lut_ceiling.lut.back() = 0.3;
+    const double lut_ceiling_radius = equi_lut_ceiling.lut_step * static_cast<double>(equi_lut_ceiling.lut.size() - 1);
+    expect_vec3_near(unproject_equi62_lut1d(equi_lut_ceiling, Eigen::Vector2d {lut_ceiling_radius, 0.0}),
+        Eigen::Vector3d {std::sin(0.3), 0.0, std::cos(0.3)}, 1e-12, "equi lut ceiling sample");
+
     const Eigen::Vector2d lut_out_of_range_pixel {320.0 + 280.0 * 5.0, 240.0 - 280.0 * 1.5};
     expect_vec3_near(unproject_equi62_lut1d(equi_identity, lut_out_of_range_pixel),
         Eigen::Vector3d {5.0, -1.5, 1.0}.normalized(), 1e-12, "equi lut out-of-range fallback");
