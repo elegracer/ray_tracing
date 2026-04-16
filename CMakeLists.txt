@@ -47,6 +47,8 @@ find_package(indicators CONFIG REQUIRED)
 # options
 option(OPTION_A "..." ON)
 
+enable_testing()
+
 # core library
 configure_file(cmake/version.h.in include/core/version.h)
 
@@ -103,3 +105,8 @@ target_link_libraries(cos_cubed PRIVATE core)
 add_executable(cos_density)
 target_sources(cos_density PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/utils/cos_density.cpp)
 target_link_libraries(cos_density PRIVATE core)
+
+add_executable(test_cpu_render_smoke)
+target_sources(test_cpu_render_smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_cpu_render_smoke.cpp)
+target_link_libraries(test_cpu_render_smoke PRIVATE core)
+add_test(NAME test_cpu_render_smoke COMMAND test_cpu_render_smoke)
