@@ -59,13 +59,6 @@ MeanRgb window_mean_rgb(const std::vector<float>& rgba, int width, int height,
     return mean;
 }
 
-double rgb_distance(const MeanRgb& a, const MeanRgb& b) {
-    const double dr = a.r - b.r;
-    const double dg = a.g - b.g;
-    const double db = a.b - b.b;
-    return std::sqrt(dr * dr + dg * dg + db * db);
-}
-
 }  // namespace
 
 int main() {
@@ -96,6 +89,9 @@ int main() {
     expect_true(!frame.albedo_rgba.empty(), "albedo buffer present");
     expect_true(!frame.depth.empty(), "depth buffer present");
     expect_true(frame.normal_rgba != frame.beauty_rgba, "normal differs from beauty");
+    const std::size_t expected_albedo_size = static_cast<std::size_t>(frame.width)
+        * static_cast<std::size_t>(frame.height) * 4U;
+    expect_true(frame.albedo_rgba.size() >= expected_albedo_size, "albedo has expected rgba size");
 
     const int y = static_cast<int>(std::round(frame.height * 0.55));
     const int left_x = static_cast<int>(std::round(frame.width * 0.34));
@@ -107,10 +103,15 @@ int main() {
     const MeanRgb center = window_mean_rgb(frame.albedo_rgba, frame.width, frame.height, center_x, y, half_window);
     const MeanRgb right = window_mean_rgb(frame.albedo_rgba, frame.width, frame.height, right_x, y, half_window);
 
-    const double max_material_delta = std::max(
-        rgb_distance(left, center),
-        std::max(rgb_distance(left, right), rgb_distance(center, right)));
-    expect_true(max_material_delta > 1e-3, "sphere regions show material-distinguishing albedo");
+    const double left_red_bias = left.r - std::max(left.g, left.b);
+    const double right_red_bias = right.r - std::max(right.g, right.b);
+    expect_true(left_red_bias > 0.08, "left sphere albedo is red-dominant");
+    expect_true(std::abs(center.r - center.g) < 0.03 && std::abs(center.r - center.b) < 0.03,
+        "center sphere albedo is near-neutral");
+    expect_true(center.g > left.g + 0.08 && center.b > left.b + 0.08,
+        "center sphere has stronger non-red channels than left sphere");
+    expect_true(right_red_bias < left_red_bias - 0.03,
+        "right sphere is less red-dominant than left sphere");
 
     expect_true(has_variation(frame.depth, 1e-6f), "depth varies across the frame");
     return 0;
