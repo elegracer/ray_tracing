@@ -59,6 +59,7 @@ target_sources(core
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/core.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/core.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/camera_models.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/camera_rig.cpp
 )
 target_include_directories(core
     PUBLIC
@@ -124,3 +125,11 @@ target_sources(test_camera_models
 )
 target_link_libraries(test_camera_models PRIVATE core)
 add_test(NAME test_camera_models COMMAND test_camera_models)
+
+add_executable(test_camera_rig)
+target_sources(test_camera_rig
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_camera_rig.cpp
+)
+target_link_libraries(test_camera_rig PRIVATE core)
+add_test(NAME test_camera_rig COMMAND test_camera_rig)
