@@ -155,6 +155,11 @@ target_sources(test_scene_description
 target_link_libraries(test_scene_description PRIVATE core)
 add_test(NAME test_scene_description COMMAND test_scene_description)
 
+add_executable(test_render_profile)
+target_sources(test_render_profile PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_render_profile.cpp)
+target_link_libraries(test_render_profile PRIVATE core)
+add_test(NAME test_render_profile COMMAND test_render_profile)
+
 add_library(realtime_gpu STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/optix_renderer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/programs.cu
