@@ -21,6 +21,7 @@ int main() {
     const rt::RenderProfile realtime = rt::RenderProfile::realtime();
     expect_true(realtime.samples_per_pixel == 1, "realtime spp");
     expect_true(realtime.max_bounces == 2, "realtime bounce budget");
+    expect_true(realtime.enable_denoise, "realtime denoise enabled");
     expect_true(realtime.rr_start_bounce == 2, "realtime rr start");
     expect_true(realtime.accumulation_reset_rotation_deg == 2.0, "realtime accumulation rotation");
     expect_true(realtime.accumulation_reset_translation == 0.05, "realtime accumulation translation");
