@@ -1,11 +1,18 @@
 #pragma once
 
+#include "realtime/camera_rig.h"
+
 #include <Eigen/Core>
 
 #include <cstdint>
 #include <vector>
+#include <vector_types.h>
 
 namespace rt {
+
+struct PackedSphere;
+struct PackedQuad;
+struct MaterialSample;
 
 struct DirectionDebugFrame {
     int width = 0;
@@ -13,11 +20,32 @@ struct DirectionDebugFrame {
     std::vector<std::uint8_t> rgba;
 };
 
+struct DeviceFrameBuffers {
+    float4* beauty = nullptr;
+    float4* normal = nullptr;
+    float4* albedo = nullptr;
+    float* depth = nullptr;
+};
+
+struct DeviceSceneView {
+    PackedSphere* spheres = nullptr;
+    PackedQuad* quads = nullptr;
+    MaterialSample* materials = nullptr;
+    int sphere_count = 0;
+    int quad_count = 0;
+    int material_count = 0;
+};
+
 struct LaunchParams {
-    std::uint8_t* output_rgba = nullptr;
+    DeviceFrameBuffers frame {};
+    DeviceSceneView scene {};
+    PackedCameraRig rig {};
     int camera_index = 0;
     int width = 0;
     int height = 0;
+    int samples_per_pixel = 1;
+    int max_bounces = 4;
+    int rr_start_bounce = 3;
     int mode = 0;
 };
 

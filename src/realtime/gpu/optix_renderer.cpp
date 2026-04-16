@@ -12,8 +12,6 @@ void launch_direction_debug_kernel(std::uint8_t* rgba, int width, int height, cu
 
 namespace {
 
-constexpr float kPlaceholderRadianceValue = 0.14f;
-
 void throw_cuda_error(cudaError_t error, const char* expr) {
     if (error != cudaSuccess) {
         throw std::runtime_error(std::string("CUDA runtime failure at ") + expr + ": "
@@ -48,6 +46,53 @@ void context_log_cb(unsigned int level, const char* tag, const char* message, vo
     (void)message;
 }
 
+PackedSphere pack_sphere(const SpherePrimitive& sphere) {
+    return PackedSphere {
+        .center = sphere.center.cast<float>(),
+        .radius = static_cast<float>(sphere.radius),
+        .material_index = sphere.material_index,
+    };
+}
+
+PackedQuad pack_quad(const QuadPrimitive& quad) {
+    return PackedQuad {
+        .origin = quad.origin.cast<float>(),
+        .edge_u = quad.edge_u.cast<float>(),
+        .edge_v = quad.edge_v.cast<float>(),
+        .material_index = quad.material_index,
+    };
+}
+
+MaterialSample pack_material(const MaterialDesc& material) {
+    MaterialSample sample {};
+    std::visit(
+        [&](const auto& value) {
+            using T = std::decay_t<decltype(value)>;
+            if constexpr (std::is_same_v<T, LambertianMaterial>) {
+                sample.albedo = value.albedo.template cast<float>();
+                sample.type = 0;
+            } else if constexpr (std::is_same_v<T, MetalMaterial>) {
+                sample.albedo = value.albedo.template cast<float>();
+                sample.fuzz = static_cast<float>(value.fuzz);
+                sample.type = 1;
+            } else if constexpr (std::is_same_v<T, DielectricMaterial>) {
+                sample.ior = static_cast<float>(value.ior);
+                sample.type = 2;
+            } else if constexpr (std::is_same_v<T, DiffuseLightMaterial>) {
+                sample.emission = value.emission.template cast<float>();
+                sample.type = 3;
+            }
+        },
+        material);
+    return sample;
+}
+
+void free_device_ptr(void* ptr) {
+    if (ptr != nullptr) {
+        cudaFree(ptr);
+    }
+}
+
 }  // namespace
 
 OptixRenderer::OptixRenderer() {
@@ -56,6 +101,7 @@ OptixRenderer::OptixRenderer() {
 }
 
 OptixRenderer::~OptixRenderer() {
+    free_device_resources();
     if (optix_context_ != nullptr) {
         optixDeviceContextDestroy(optix_context_);
     }
@@ -93,6 +139,20 @@ void OptixRenderer::launch_direction_debug(const PackedCameraRig&, std::uint8_t*
     launch_direction_debug_kernel(rgba, width, height, stream_);
 }
 
+void OptixRenderer::allocate_frame_buffers(int width, int height) {
+    if (allocated_width_ == width && allocated_height_ == height) {
+        return;
+    }
+    free_device_resources();
+    const std::size_t pixel_count = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+    RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&device_frame_.beauty), pixel_count * sizeof(float4)));
+    RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&device_frame_.normal), pixel_count * sizeof(float4)));
+    RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&device_frame_.albedo), pixel_count * sizeof(float4)));
+    RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&device_frame_.depth), pixel_count * sizeof(float)));
+    allocated_width_ = width;
+    allocated_height_ = height;
+}
+
 DirectionDebugFrame OptixRenderer::render_direction_debug(const PackedCameraRig& rig) {
     DirectionDebugFrame frame {};
     frame.width = rig.cameras[0].width;
@@ -117,7 +177,66 @@ DirectionDebugFrame OptixRenderer::render_direction_debug(const PackedCameraRig&
 }
 
 void OptixRenderer::upload_scene(const PackedScene& scene) {
+    free_device_ptr(device_spheres_);
+    free_device_ptr(device_quads_);
+    free_device_ptr(device_materials_);
+    device_spheres_ = nullptr;
+    device_quads_ = nullptr;
+    device_materials_ = nullptr;
+
+    if (!scene.spheres.empty()) {
+        std::vector<PackedSphere> packed_spheres;
+        packed_spheres.reserve(scene.spheres.size());
+        for (const SpherePrimitive& sphere : scene.spheres) {
+            packed_spheres.push_back(pack_sphere(sphere));
+        }
+        RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&device_spheres_),
+            packed_spheres.size() * sizeof(PackedSphere)));
+        RT_CUDA_CHECK(cudaMemcpy(device_spheres_, packed_spheres.data(),
+            packed_spheres.size() * sizeof(PackedSphere), cudaMemcpyHostToDevice));
+    }
+
+    if (!scene.quads.empty()) {
+        std::vector<PackedQuad> packed_quads;
+        packed_quads.reserve(scene.quads.size());
+        for (const QuadPrimitive& quad : scene.quads) {
+            packed_quads.push_back(pack_quad(quad));
+        }
+        RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&device_quads_),
+            packed_quads.size() * sizeof(PackedQuad)));
+        RT_CUDA_CHECK(cudaMemcpy(device_quads_, packed_quads.data(),
+            packed_quads.size() * sizeof(PackedQuad), cudaMemcpyHostToDevice));
+    }
+
+    if (!scene.materials.empty()) {
+        std::vector<MaterialSample> packed_materials;
+        packed_materials.reserve(scene.materials.size());
+        for (const MaterialDesc& material : scene.materials) {
+            packed_materials.push_back(pack_material(material));
+        }
+        RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&device_materials_),
+            packed_materials.size() * sizeof(MaterialSample)));
+        RT_CUDA_CHECK(cudaMemcpy(device_materials_, packed_materials.data(),
+            packed_materials.size() * sizeof(MaterialSample), cudaMemcpyHostToDevice));
+    }
+
     uploaded_scene_ = scene;
+}
+
+void OptixRenderer::free_device_resources() {
+    free_device_ptr(device_frame_.beauty);
+    free_device_ptr(device_frame_.normal);
+    free_device_ptr(device_frame_.albedo);
+    free_device_ptr(device_frame_.depth);
+    free_device_ptr(device_spheres_);
+    free_device_ptr(device_quads_);
+    free_device_ptr(device_materials_);
+    device_frame_ = DeviceFrameBuffers {};
+    device_spheres_ = nullptr;
+    device_quads_ = nullptr;
+    device_materials_ = nullptr;
+    allocated_width_ = 0;
+    allocated_height_ = 0;
 }
 
 void OptixRenderer::build_or_refit_accels(const PackedScene& scene) {
@@ -143,7 +262,24 @@ void OptixRenderer::launch_radiance_pipeline(const PackedScene& scene, const Pac
     params.camera_index = camera_index;
     params.width = rig.cameras[camera_index].width;
     params.height = rig.cameras[camera_index].height;
+    allocate_frame_buffers(params.width, params.height);
+    params.frame = device_frame_;
+    params.scene.spheres = device_spheres_;
+    params.scene.quads = device_quads_;
+    params.scene.materials = device_materials_;
+    params.scene.sphere_count = scene.sphere_count;
+    params.scene.quad_count = scene.quad_count;
+    params.scene.material_count = scene.material_count;
+    params.rig = rig;
+    params.samples_per_pixel = profile.samples_per_pixel;
+    params.max_bounces = profile.max_bounces;
+    params.rr_start_bounce = profile.rr_start_bounce;
     params.mode = 1;
+    const std::size_t pixel_count = static_cast<std::size_t>(params.width) * static_cast<std::size_t>(params.height);
+    RT_CUDA_CHECK(cudaMemset(params.frame.beauty, 0, pixel_count * sizeof(float4)));
+    RT_CUDA_CHECK(cudaMemset(params.frame.normal, 0, pixel_count * sizeof(float4)));
+    RT_CUDA_CHECK(cudaMemset(params.frame.albedo, 0, pixel_count * sizeof(float4)));
+    RT_CUDA_CHECK(cudaMemset(params.frame.depth, 0, pixel_count * sizeof(float)));
     (void)params;
     uploaded_scene_ = scene;
     last_width_ = params.width;
@@ -160,10 +296,11 @@ RadianceFrame OptixRenderer::download_camera_frame(int camera_index) const {
     RadianceFrame frame {};
     frame.width = last_launch_width(camera_index);
     frame.height = last_launch_height(camera_index);
-    frame.beauty_rgba = download_beauty(camera_index);
-    frame.normal_rgba = download_normal(camera_index);
-    frame.albedo_rgba = download_albedo(camera_index);
-    frame.depth = download_depth(camera_index);
+    RT_CUDA_CHECK(cudaStreamSynchronize(stream_));
+    frame.beauty_rgba = download_beauty();
+    frame.normal_rgba = download_normal();
+    frame.albedo_rgba = download_albedo();
+    frame.depth = download_depth();
     frame.average_luminance = compute_average_luminance(frame.beauty_rgba);
     return frame;
 }
@@ -178,25 +315,69 @@ int OptixRenderer::last_launch_height(int camera_index) const {
     return last_height_;
 }
 
-std::vector<float> OptixRenderer::download_beauty(int camera_index) const {
-    (void)camera_index;
-    return std::vector<float>(static_cast<std::size_t>(last_width_ * last_height_ * 4),
-        kPlaceholderRadianceValue);
+std::vector<float> OptixRenderer::download_beauty() const {
+    const std::size_t pixel_count = static_cast<std::size_t>(last_width_) * static_cast<std::size_t>(last_height_);
+    if (pixel_count == 0 || device_frame_.beauty == nullptr) {
+        return {};
+    }
+    std::vector<float4> host_pixels(pixel_count);
+    RT_CUDA_CHECK(cudaMemcpy(
+        host_pixels.data(), device_frame_.beauty, pixel_count * sizeof(float4), cudaMemcpyDeviceToHost));
+    std::vector<float> rgba(pixel_count * 4U, 0.0f);
+    for (std::size_t i = 0; i < pixel_count; ++i) {
+        rgba[i * 4U + 0] = host_pixels[i].x;
+        rgba[i * 4U + 1] = host_pixels[i].y;
+        rgba[i * 4U + 2] = host_pixels[i].z;
+        rgba[i * 4U + 3] = host_pixels[i].w;
+    }
+    return rgba;
 }
 
-std::vector<float> OptixRenderer::download_normal(int camera_index) const {
-    (void)camera_index;
-    return std::vector<float>(static_cast<std::size_t>(last_width_ * last_height_ * 4), 0.0f);
+std::vector<float> OptixRenderer::download_normal() const {
+    const std::size_t pixel_count = static_cast<std::size_t>(last_width_) * static_cast<std::size_t>(last_height_);
+    if (pixel_count == 0 || device_frame_.normal == nullptr) {
+        return {};
+    }
+    std::vector<float4> host_pixels(pixel_count);
+    RT_CUDA_CHECK(cudaMemcpy(
+        host_pixels.data(), device_frame_.normal, pixel_count * sizeof(float4), cudaMemcpyDeviceToHost));
+    std::vector<float> rgba(pixel_count * 4U, 0.0f);
+    for (std::size_t i = 0; i < pixel_count; ++i) {
+        rgba[i * 4U + 0] = host_pixels[i].x;
+        rgba[i * 4U + 1] = host_pixels[i].y;
+        rgba[i * 4U + 2] = host_pixels[i].z;
+        rgba[i * 4U + 3] = host_pixels[i].w;
+    }
+    return rgba;
 }
 
-std::vector<float> OptixRenderer::download_albedo(int camera_index) const {
-    (void)camera_index;
-    return std::vector<float>(static_cast<std::size_t>(last_width_ * last_height_ * 4), 0.5f);
+std::vector<float> OptixRenderer::download_albedo() const {
+    const std::size_t pixel_count = static_cast<std::size_t>(last_width_) * static_cast<std::size_t>(last_height_);
+    if (pixel_count == 0 || device_frame_.albedo == nullptr) {
+        return {};
+    }
+    std::vector<float4> host_pixels(pixel_count);
+    RT_CUDA_CHECK(cudaMemcpy(
+        host_pixels.data(), device_frame_.albedo, pixel_count * sizeof(float4), cudaMemcpyDeviceToHost));
+    std::vector<float> rgba(pixel_count * 4U, 0.0f);
+    for (std::size_t i = 0; i < pixel_count; ++i) {
+        rgba[i * 4U + 0] = host_pixels[i].x;
+        rgba[i * 4U + 1] = host_pixels[i].y;
+        rgba[i * 4U + 2] = host_pixels[i].z;
+        rgba[i * 4U + 3] = host_pixels[i].w;
+    }
+    return rgba;
 }
 
-std::vector<float> OptixRenderer::download_depth(int camera_index) const {
-    (void)camera_index;
-    return std::vector<float>(static_cast<std::size_t>(last_width_ * last_height_), 1.0f);
+std::vector<float> OptixRenderer::download_depth() const {
+    const std::size_t pixel_count = static_cast<std::size_t>(last_width_) * static_cast<std::size_t>(last_height_);
+    if (pixel_count == 0 || device_frame_.depth == nullptr) {
+        return {};
+    }
+    std::vector<float> depth(pixel_count, 0.0f);
+    RT_CUDA_CHECK(
+        cudaMemcpy(depth.data(), device_frame_.depth, pixel_count * sizeof(float), cudaMemcpyDeviceToHost));
+    return depth;
 }
 
 double OptixRenderer::compute_average_luminance(const std::vector<float>& rgba) const {
@@ -209,6 +390,7 @@ double OptixRenderer::compute_average_luminance(const std::vector<float>& rgba) 
 
 RadianceFrame OptixRenderer::render_radiance(const PackedScene& scene, const PackedCameraRig& rig,
     const RenderProfile& profile, int camera_index) {
+    allocate_frame_buffers(rig.cameras[camera_index].width, rig.cameras[camera_index].height);
     upload_scene(scene);
     build_or_refit_accels(scene);
     launch_radiance(rig, profile, camera_index);

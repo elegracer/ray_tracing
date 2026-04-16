@@ -26,7 +26,9 @@ class OptixRenderer {
     void initialize_optix();
     void create_direction_debug_pipeline();
     void launch_direction_debug(const PackedCameraRig& rig, std::uint8_t* rgba, int width, int height);
+    void allocate_frame_buffers(int width, int height);
     void upload_scene(const PackedScene& scene);
+    void free_device_resources();
     void build_or_refit_accels(const PackedScene& scene);
     void launch_radiance(const PackedCameraRig& rig, const RenderProfile& profile, int camera_index);
     RadianceFrame download_radiance_frame(int camera_index) const;
@@ -36,15 +38,21 @@ class OptixRenderer {
     RadianceFrame download_camera_frame(int camera_index) const;
     int last_launch_width(int camera_index) const;
     int last_launch_height(int camera_index) const;
-    std::vector<float> download_beauty(int camera_index) const;
-    std::vector<float> download_normal(int camera_index) const;
-    std::vector<float> download_albedo(int camera_index) const;
-    std::vector<float> download_depth(int camera_index) const;
+    std::vector<float> download_beauty() const;
+    std::vector<float> download_normal() const;
+    std::vector<float> download_albedo() const;
+    std::vector<float> download_depth() const;
     double compute_average_luminance(const std::vector<float>& rgba) const;
 
     CUcontext cu_context_ = nullptr;
     cudaStream_t stream_ = nullptr;
     OptixDeviceContext optix_context_ = nullptr;
+    DeviceFrameBuffers device_frame_{};
+    PackedSphere* device_spheres_ = nullptr;
+    PackedQuad* device_quads_ = nullptr;
+    MaterialSample* device_materials_ = nullptr;
+    int allocated_width_ = 0;
+    int allocated_height_ = 0;
     PackedScene uploaded_scene_{};
     int last_width_ = 0;
     int last_height_ = 0;
