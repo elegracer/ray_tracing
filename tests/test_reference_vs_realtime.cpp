@@ -83,7 +83,10 @@ int main() {
 
     rt::OptixRenderer renderer;
     const rt::RadianceFrame gpu = renderer.render_radiance(scene.pack(), rig.pack(), profile, 0);
-    expect_true(gpu.average_luminance > 0.01, "gpu frame is lit");
+    expect_true(gpu.average_luminance > 0.02, "gpu frame is lit");
+    expect_true(!gpu.normal_rgba.empty(), "gpu normal buffer downloaded");
+    expect_true(!gpu.albedo_rgba.empty(), "gpu albedo buffer downloaded");
+    expect_true(!gpu.depth.empty(), "gpu depth buffer downloaded");
     const double cpu_mean_luminance = compute_cpu_reference_mean_luminance();
     expect_near(gpu.average_luminance, cpu_mean_luminance, 0.05, "mean luminance agreement");
     return 0;
