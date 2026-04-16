@@ -26,8 +26,6 @@ class RealtimePipeline {
    private:
     RealtimeFrameSet render_profiled_smoke_frame_impl(int active_cameras, const RenderProfile& profile, bool pose_jump);
     std::array<int, 4> history_lengths_{};
-    std::array<double, 4> last_pose_x_{};
-    std::array<int, 4> pose_initialized_{};
     OptixRenderer renderer_;
     OptixDenoiserWrapper denoiser_;
 };

@@ -1,6 +1,5 @@
 #include "realtime/realtime_pipeline.h"
 
-#include <cmath>
 #include <stdexcept>
 
 namespace rt {
@@ -29,7 +28,7 @@ PackedScene make_smoke_scene() {
     return scene.pack();
 }
 
-PackedCameraRig make_smoke_rig(int active_cameras, double pose_jump_translation, std::array<double, 4>& pose_x) {
+PackedCameraRig make_smoke_rig(int active_cameras, double pose_jump_translation) {
     CameraRig rig;
     const Pinhole32Params intrinsics {200.0, 200.0, 32.0, 32.0, 0.0, 0.0, 0.0, 0.0, 0.0};
     constexpr int kWidth = 64;
@@ -39,7 +38,6 @@ PackedCameraRig make_smoke_rig(int active_cameras, double pose_jump_translation,
     for (int i = 0; i < active_cameras; ++i) {
         Eigen::Isometry3d T_bc = Eigen::Isometry3d::Identity();
         T_bc.translation() = Eigen::Vector3d {0.06 * (static_cast<double>(i) - center) + pose_jump_translation, 0.0, 0.0};
-        pose_x[static_cast<std::size_t>(i)] = T_bc.translation().x();
         rig.add_pinhole(intrinsics, T_bc, kWidth, kHeight);
     }
 
@@ -63,21 +61,16 @@ RealtimeFrameSet RealtimePipeline::render_profiled_smoke_frame_impl(
     validate_active_cameras(active_cameras);
 
     const PackedScene scene = make_smoke_scene();
-    std::array<double, 4> pose_x {};
     const double pose_jump_translation = pose_jump ? profile.accumulation_reset_translation * 2.0 : 0.0;
-    const PackedCameraRig rig = make_smoke_rig(active_cameras, pose_jump_translation, pose_x);
+    const PackedCameraRig rig = make_smoke_rig(active_cameras, pose_jump_translation);
 
     RealtimeFrameSet out {};
     out.frames.resize(static_cast<std::size_t>(active_cameras));
     for (int i = 0; i < active_cameras; ++i) {
         const std::size_t idx = static_cast<std::size_t>(i);
-        if (pose_initialized_[idx] != 0
-            && std::abs(pose_x[idx] - last_pose_x_[idx]) > profile.accumulation_reset_translation) {
+        if (pose_jump) {
             history_lengths_[idx] = 0;
         }
-
-        last_pose_x_[idx] = pose_x[idx];
-        pose_initialized_[idx] = 1;
         history_lengths_[idx] += 1;
 
         RealtimeFrame frame {};
