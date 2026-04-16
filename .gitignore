@@ -197,6 +197,9 @@ Icon
 .VolumeIcon.icns
 .com.apple.timemachine.donotpresent
 
+# Local git worktrees
+.worktrees/
+
 # Directories potentially created on remote AFP share
 .AppleDB
 .AppleDesktop
