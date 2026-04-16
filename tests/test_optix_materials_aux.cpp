@@ -22,6 +22,22 @@ bool has_variation(const std::vector<float>& values, float epsilon) {
     return false;
 }
 
+bool has_rgb_variation_in_rgba(const std::vector<float>& rgba, float epsilon) {
+    if (rgba.size() < 4) {
+        return false;
+    }
+    const float r0 = rgba[0];
+    const float g0 = rgba[1];
+    const float b0 = rgba[2];
+    for (std::size_t i = 4; i + 2 < rgba.size(); i += 4) {
+        if (std::abs(rgba[i + 0] - r0) > epsilon || std::abs(rgba[i + 1] - g0) > epsilon
+            || std::abs(rgba[i + 2] - b0) > epsilon) {
+            return true;
+        }
+    }
+    return false;
+}
+
 }  // namespace
 
 int main() {
@@ -52,6 +68,8 @@ int main() {
     expect_true(!frame.albedo_rgba.empty(), "albedo buffer present");
     expect_true(!frame.depth.empty(), "depth buffer present");
     expect_true(frame.normal_rgba != frame.beauty_rgba, "normal differs from beauty");
+    expect_true(has_rgb_variation_in_rgba(frame.albedo_rgba, 1e-6f),
+        "albedo varies across different materials");
     expect_true(has_variation(frame.depth, 1e-6f), "depth varies across the frame");
     return 0;
 }
