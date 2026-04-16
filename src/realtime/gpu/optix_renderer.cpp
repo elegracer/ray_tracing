@@ -158,6 +158,23 @@ void free_scene_buffers(PackedSphere*& spheres, PackedQuad*& quads, MaterialSamp
     materials = nullptr;
 }
 
+void free_host_ptr(void* ptr) {
+    if (ptr != nullptr) {
+        cudaFreeHost(ptr);
+    }
+}
+
+std::vector<float> unpack_rgba_from_float4(const float4* pixels, std::size_t pixel_count) {
+    std::vector<float> rgba(pixel_count * 4U, 0.0f);
+    for (std::size_t i = 0; i < pixel_count; ++i) {
+        rgba[i * 4U + 0] = pixels[i].x;
+        rgba[i * 4U + 1] = pixels[i].y;
+        rgba[i * 4U + 2] = pixels[i].z;
+        rgba[i * 4U + 3] = pixels[i].w;
+    }
+    return rgba;
+}
+
 void validate_radiance_request(const PackedCameraRig& rig, int camera_index) {
     constexpr int kMaxCameraSlots = 4;
     if (rig.active_count < 1 || rig.active_count > kMaxCameraSlots) {
@@ -326,12 +343,13 @@ void OptixRenderer::build_geometry_accels(const PackedScene& scene) {
     tlas_instance_count_ = scene.sphere_count + scene.quad_count;
 }
 
-void OptixRenderer::launch_radiance(const PackedCameraRig& rig, const RenderProfile& profile, int camera_index) {
-    launch_radiance_pipeline(uploaded_scene_, rig, profile, camera_index);
+void OptixRenderer::launch_radiance(const PackedCameraRig& rig, const RenderProfile& profile, int camera_index,
+    RadianceTiming* timing) {
+    launch_radiance_pipeline(uploaded_scene_, rig, profile, camera_index, timing);
 }
 
 void OptixRenderer::launch_radiance_pipeline(const PackedScene& scene, const PackedCameraRig& rig,
-    const RenderProfile& profile, int camera_index) {
+    const RenderProfile& profile, int camera_index, RadianceTiming* timing) {
     LaunchParams params {};
     params.width = rig.cameras[camera_index].width;
     params.height = rig.cameras[camera_index].height;
@@ -353,7 +371,35 @@ void OptixRenderer::launch_radiance_pipeline(const PackedScene& scene, const Pac
     RT_CUDA_CHECK(cudaMemset(params.frame.normal, 0, pixel_count * sizeof(float4)));
     RT_CUDA_CHECK(cudaMemset(params.frame.albedo, 0, pixel_count * sizeof(float4)));
     RT_CUDA_CHECK(cudaMemset(params.frame.depth, 0, pixel_count * sizeof(float)));
-    launch_radiance_kernel(params, stream_);
+    if (timing == nullptr) {
+        launch_radiance_kernel(params, stream_);
+    } else {
+        cudaEvent_t render_start = nullptr;
+        cudaEvent_t render_end = nullptr;
+        RT_CUDA_CHECK(cudaEventCreate(&render_start));
+        try {
+            RT_CUDA_CHECK(cudaEventCreate(&render_end));
+            RT_CUDA_CHECK(cudaEventRecord(render_start, stream_));
+            launch_radiance_kernel(params, stream_);
+            RT_CUDA_CHECK(cudaEventRecord(render_end, stream_));
+            RT_CUDA_CHECK(cudaEventSynchronize(render_end));
+            float elapsed_ms = 0.0f;
+            RT_CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, render_start, render_end));
+            timing->render_ms = elapsed_ms;
+            RT_CUDA_CHECK(cudaEventDestroy(render_end));
+            render_end = nullptr;
+            RT_CUDA_CHECK(cudaEventDestroy(render_start));
+            render_start = nullptr;
+        } catch (...) {
+            if (render_end != nullptr) {
+                cudaEventDestroy(render_end);
+            }
+            if (render_start != nullptr) {
+                cudaEventDestroy(render_start);
+            }
+            throw;
+        }
+    }
     uploaded_scene_ = scene;
     last_width_ = params.width;
     last_height_ = params.height;
@@ -363,6 +409,84 @@ void OptixRenderer::launch_radiance_pipeline(const PackedScene& scene, const Pac
 
 RadianceFrame OptixRenderer::download_radiance_frame(int camera_index) const {
     return download_camera_frame(camera_index);
+}
+
+RadianceFrame OptixRenderer::download_radiance_frame_profiled(int camera_index, RadianceTiming* timing) const {
+    RadianceFrame frame {};
+    frame.width = last_launch_width(camera_index);
+    frame.height = last_launch_height(camera_index);
+
+    const std::size_t pixel_count = static_cast<std::size_t>(frame.width) * static_cast<std::size_t>(frame.height);
+    if (pixel_count == 0 || device_frame_.beauty == nullptr || device_frame_.normal == nullptr
+        || device_frame_.albedo == nullptr || device_frame_.depth == nullptr) {
+        return frame;
+    }
+
+    float4* host_beauty = nullptr;
+    float4* host_normal = nullptr;
+    float4* host_albedo = nullptr;
+    float* host_depth = nullptr;
+    cudaEvent_t download_start = nullptr;
+    cudaEvent_t download_end = nullptr;
+
+    RT_CUDA_CHECK(cudaMallocHost(reinterpret_cast<void**>(&host_beauty), pixel_count * sizeof(float4)));
+    try {
+        RT_CUDA_CHECK(cudaMallocHost(reinterpret_cast<void**>(&host_normal), pixel_count * sizeof(float4)));
+        RT_CUDA_CHECK(cudaMallocHost(reinterpret_cast<void**>(&host_albedo), pixel_count * sizeof(float4)));
+        RT_CUDA_CHECK(cudaMallocHost(reinterpret_cast<void**>(&host_depth), pixel_count * sizeof(float)));
+        RT_CUDA_CHECK(cudaEventCreate(&download_start));
+        RT_CUDA_CHECK(cudaEventCreate(&download_end));
+        RT_CUDA_CHECK(cudaEventRecord(download_start, stream_));
+        RT_CUDA_CHECK(cudaMemcpyAsync(
+            host_beauty, device_frame_.beauty, pixel_count * sizeof(float4), cudaMemcpyDeviceToHost, stream_));
+        RT_CUDA_CHECK(cudaMemcpyAsync(
+            host_normal, device_frame_.normal, pixel_count * sizeof(float4), cudaMemcpyDeviceToHost, stream_));
+        RT_CUDA_CHECK(cudaMemcpyAsync(
+            host_albedo, device_frame_.albedo, pixel_count * sizeof(float4), cudaMemcpyDeviceToHost, stream_));
+        RT_CUDA_CHECK(
+            cudaMemcpyAsync(host_depth, device_frame_.depth, pixel_count * sizeof(float), cudaMemcpyDeviceToHost, stream_));
+        RT_CUDA_CHECK(cudaEventRecord(download_end, stream_));
+        RT_CUDA_CHECK(cudaEventSynchronize(download_end));
+
+        if (timing != nullptr) {
+            float elapsed_ms = 0.0f;
+            RT_CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, download_start, download_end));
+            timing->download_ms = elapsed_ms;
+        }
+
+        frame.beauty_rgba = unpack_rgba_from_float4(host_beauty, pixel_count);
+        frame.normal_rgba = unpack_rgba_from_float4(host_normal, pixel_count);
+        frame.albedo_rgba = unpack_rgba_from_float4(host_albedo, pixel_count);
+        frame.depth.assign(host_depth, host_depth + pixel_count);
+        frame.average_luminance = compute_average_luminance(frame.beauty_rgba);
+
+        RT_CUDA_CHECK(cudaEventDestroy(download_end));
+        download_end = nullptr;
+        RT_CUDA_CHECK(cudaEventDestroy(download_start));
+        download_start = nullptr;
+        free_host_ptr(host_depth);
+        host_depth = nullptr;
+        free_host_ptr(host_albedo);
+        host_albedo = nullptr;
+        free_host_ptr(host_normal);
+        host_normal = nullptr;
+        free_host_ptr(host_beauty);
+        host_beauty = nullptr;
+    } catch (...) {
+        if (download_end != nullptr) {
+            cudaEventDestroy(download_end);
+        }
+        if (download_start != nullptr) {
+            cudaEventDestroy(download_start);
+        }
+        free_host_ptr(host_depth);
+        free_host_ptr(host_albedo);
+        free_host_ptr(host_normal);
+        free_host_ptr(host_beauty);
+        throw;
+    }
+
+    return frame;
 }
 
 RadianceFrame OptixRenderer::download_camera_frame(int camera_index) const {
@@ -471,6 +595,18 @@ RadianceFrame OptixRenderer::render_radiance(const PackedScene& scene, const Pac
     build_or_refit_accels(scene);
     launch_radiance(rig, profile, camera_index);
     return download_radiance_frame(camera_index);
+}
+
+ProfiledRadianceFrame OptixRenderer::render_radiance_profiled(const PackedScene& scene, const PackedCameraRig& rig,
+    const RenderProfile& profile, int camera_index) {
+    validate_radiance_request(rig, camera_index);
+    upload_scene(scene);
+    build_or_refit_accels(scene);
+
+    ProfiledRadianceFrame profiled {};
+    launch_radiance(rig, profile, camera_index, &profiled.timing);
+    profiled.frame = download_radiance_frame_profiled(camera_index, &profiled.timing);
+    return profiled;
 }
 
 }  // namespace rt

@@ -13,6 +13,16 @@
 
 namespace rt {
 
+struct RadianceTiming {
+    float render_ms = 0.0f;
+    float download_ms = 0.0f;
+};
+
+struct ProfiledRadianceFrame {
+    RadianceFrame frame;
+    RadianceTiming timing;
+};
+
 class OptixRenderer {
    public:
     OptixRenderer();
@@ -20,6 +30,8 @@ class OptixRenderer {
 
     DirectionDebugFrame render_direction_debug(const PackedCameraRig& rig);
     RadianceFrame render_radiance(const PackedScene& scene, const PackedCameraRig& rig,
+        const RenderProfile& profile, int camera_index);
+    ProfiledRadianceFrame render_radiance_profiled(const PackedScene& scene, const PackedCameraRig& rig,
         const RenderProfile& profile, int camera_index);
 
    private:
@@ -30,11 +42,13 @@ class OptixRenderer {
     void upload_scene(const PackedScene& scene);
     void free_device_resources();
     void build_or_refit_accels(const PackedScene& scene);
-    void launch_radiance(const PackedCameraRig& rig, const RenderProfile& profile, int camera_index);
+    void launch_radiance(const PackedCameraRig& rig, const RenderProfile& profile, int camera_index,
+        RadianceTiming* timing = nullptr);
     RadianceFrame download_radiance_frame(int camera_index) const;
+    RadianceFrame download_radiance_frame_profiled(int camera_index, RadianceTiming* timing) const;
     void build_geometry_accels(const PackedScene& scene);
     void launch_radiance_pipeline(const PackedScene& scene, const PackedCameraRig& rig,
-        const RenderProfile& profile, int camera_index);
+        const RenderProfile& profile, int camera_index, RadianceTiming* timing = nullptr);
     RadianceFrame download_camera_frame(int camera_index) const;
     int last_launch_width(int camera_index) const;
     int last_launch_height(int camera_index) const;
