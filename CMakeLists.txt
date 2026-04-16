@@ -216,6 +216,13 @@ target_sources(realtime_gpu
 add_executable(render_realtime)
 target_sources(render_realtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/utils/render_realtime.cpp)
 target_link_libraries(render_realtime PRIVATE realtime_gpu core)
+add_test(NAME test_render_realtime_cli
+    COMMAND $<TARGET_FILE:render_realtime>
+        --camera-count 1
+        --frames 1
+        --profile realtime
+        --output-dir ${CMAKE_CURRENT_BINARY_DIR}/test/render_realtime-cli
+)
 
 add_executable(test_realtime_pipeline)
 target_sources(test_realtime_pipeline

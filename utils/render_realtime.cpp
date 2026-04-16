@@ -1,6 +1,7 @@
 #include "core/version.h"
 
 #include "realtime/camera_rig.h"
+#include "realtime/gpu/denoiser.h"
 #include "realtime/gpu/optix_renderer.h"
 #include "realtime/render_profile.h"
 #include "realtime/scene_description.h"
@@ -195,22 +196,33 @@ int main(int argc, const char* argv[]) {
     const rt::PackedScene packed_scene = make_smoke_scene().pack();
     const rt::PackedCameraRig packed_rig = make_smoke_rig(camera_count).pack();
     rt::OptixRenderer renderer;
+    rt::OptixDenoiserWrapper denoiser;
 
     std::vector<double> frame_times_ms;
     frame_times_ms.reserve(static_cast<std::size_t>(frames));
+    std::vector<double> denoise_times_ms;
+    denoise_times_ms.reserve(static_cast<std::size_t>(frames));
 
     for (int frame_index = 0; frame_index < frames; ++frame_index) {
         const auto frame_begin = std::chrono::steady_clock::now();
         double frame_luminance_sum = 0.0;
         double render_ms = 0.0;
+        double denoise_ms = 0.0;
         double image_write_ms = 0.0;
 
         for (int camera_index = 0; camera_index < camera_count; ++camera_index) {
             const auto render_begin = std::chrono::steady_clock::now();
-            const rt::RadianceFrame frame =
+            rt::RadianceFrame frame =
                 renderer.render_radiance(packed_scene, packed_rig, profile, camera_index);
             const auto render_end = std::chrono::steady_clock::now();
             render_ms += std::chrono::duration<double, std::milli>(render_end - render_begin).count();
+
+            if (profile.enable_denoise) {
+                const auto denoise_begin = std::chrono::steady_clock::now();
+                denoiser.run(frame);
+                const auto denoise_end = std::chrono::steady_clock::now();
+                denoise_ms += std::chrono::duration<double, std::milli>(denoise_end - denoise_begin).count();
+            }
             frame_luminance_sum += frame.average_luminance;
 
             const auto image_write_begin = std::chrono::steady_clock::now();
@@ -222,21 +234,25 @@ int main(int argc, const char* argv[]) {
         const auto frame_end = std::chrono::steady_clock::now();
         const double frame_ms = std::chrono::duration<double, std::milli>(frame_end - frame_begin).count();
         frame_times_ms.push_back(frame_ms);
+        denoise_times_ms.push_back(denoise_ms);
 
-        fmt::print("frame={} cameras={} avg_luminance={:.6f} render_ms={:.3f} image_write_ms={:.3f} frame_ms={:.3f}\n",
-            frame_index, camera_count, frame_luminance_sum / static_cast<double>(camera_count), render_ms,
+        fmt::print(
+            "frame={} cameras={} avg_luminance={:.6f} render_ms={:.3f} denoise_ms={:.3f} image_write_ms={:.3f} frame_ms={:.3f}\n",
+            frame_index, camera_count, frame_luminance_sum / static_cast<double>(camera_count), render_ms, denoise_ms,
             image_write_ms, frame_ms);
     }
 
     const double total_ms = std::accumulate(frame_times_ms.begin(), frame_times_ms.end(), 0.0);
     const double avg_frame_ms = total_ms / static_cast<double>(frame_times_ms.size());
     const double p95_frame_ms = compute_p95_frame_ms(frame_times_ms);
+    const double total_denoise_ms = std::accumulate(denoise_times_ms.begin(), denoise_times_ms.end(), 0.0);
+    const double avg_denoise_ms = total_denoise_ms / static_cast<double>(denoise_times_ms.size());
     const double fps = 1000.0 / avg_frame_ms;
 
     fmt::print(
-        "summary profile={} frames={} cameras={} resolution={}x{} spp={} max_bounces={} denoise={} avg_frame_ms={:.3f} p95_frame_ms={:.3f} fps={:.2f} output_dir={}\n",
+        "summary profile={} frames={} cameras={} resolution={}x{} spp={} max_bounces={} denoise={} avg_frame_ms={:.3f} avg_denoise_ms={:.3f} p95_frame_ms={:.3f} fps={:.2f} output_dir={}\n",
         profile_name, frames, camera_count, kDefaultWidth, kDefaultHeight, profile.samples_per_pixel,
-        profile.max_bounces, profile.enable_denoise ? "true" : "false", avg_frame_ms, p95_frame_ms, fps,
+        profile.max_bounces, profile.enable_denoise ? "true" : "false", avg_frame_ms, avg_denoise_ms, p95_frame_ms, fps,
         output_path.string());
     return EXIT_SUCCESS;
 }

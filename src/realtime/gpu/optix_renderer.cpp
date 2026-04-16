@@ -158,6 +158,29 @@ void free_scene_buffers(PackedSphere*& spheres, PackedQuad*& quads, MaterialSamp
     materials = nullptr;
 }
 
+void validate_radiance_request(const PackedCameraRig& rig, int camera_index) {
+    constexpr int kMaxCameraSlots = 4;
+    if (rig.active_count < 1 || rig.active_count > kMaxCameraSlots) {
+        throw std::runtime_error("render_radiance requires rig.active_count in [1, 4], got "
+            + std::to_string(rig.active_count));
+    }
+    if (camera_index < 0 || camera_index >= rig.active_count) {
+        throw std::runtime_error("render_radiance camera_index out of range: camera_index="
+            + std::to_string(camera_index) + ", active_count=" + std::to_string(rig.active_count));
+    }
+
+    const PackedCamera& camera = rig.cameras[static_cast<std::size_t>(camera_index)];
+    if (camera.enabled == 0) {
+        throw std::runtime_error("render_radiance camera slot is disabled at index "
+            + std::to_string(camera_index));
+    }
+    if (camera.width <= 0 || camera.height <= 0) {
+        throw std::runtime_error("render_radiance camera slot has invalid resolution at index "
+            + std::to_string(camera_index) + ": width=" + std::to_string(camera.width) + ", height="
+            + std::to_string(camera.height));
+    }
+}
+
 }  // namespace
 
 OptixRenderer::OptixRenderer() {
@@ -443,6 +466,7 @@ double OptixRenderer::compute_average_luminance(const std::vector<float>& rgba) 
 
 RadianceFrame OptixRenderer::render_radiance(const PackedScene& scene, const PackedCameraRig& rig,
     const RenderProfile& profile, int camera_index) {
+    validate_radiance_request(rig, camera_index);
     upload_scene(scene);
     build_or_refit_accels(scene);
     launch_radiance(rig, profile, camera_index);
