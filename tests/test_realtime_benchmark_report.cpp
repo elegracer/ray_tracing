@@ -8,9 +8,10 @@
 
 int main() {
     namespace profiling = rt::profiling;
+    const std::string tricky_profile = "rt,\"x\"\\path";
 
     profiling::RunReport report {};
-    report.profile = "realtime";
+    report.profile = tricky_profile;
     report.camera_count = 2;
     report.width = 640;
     report.height = 480;
@@ -22,7 +23,7 @@ int main() {
         profiling::FrameStageSample {
             .frame_index = 0,
             .camera_count = 2,
-            .profile = "realtime",
+            .profile = tricky_profile,
             .width = 640,
             .height = 480,
             .samples_per_pixel = 1,
@@ -55,7 +56,7 @@ int main() {
         profiling::FrameStageSample {
             .frame_index = 1,
             .camera_count = 2,
-            .profile = "realtime",
+            .profile = tricky_profile,
             .width = 640,
             .height = 480,
             .samples_per_pixel = 1,
@@ -102,17 +103,40 @@ int main() {
     profiling::write_json(report, json_path);
 
     std::ifstream csv(csv_path);
+    expect_true(csv.is_open(), "csv file is readable");
     const std::string csv_text((std::istreambuf_iterator<char>(csv)), std::istreambuf_iterator<char>());
+    expect_true(!csv_text.empty(), "csv is non-empty");
     expect_true(csv_text.find("frame_index,camera_count,profile,width,height") != std::string::npos, "csv header");
-    expect_true(csv_text.find("0,2,realtime,640,480") != std::string::npos, "csv first row");
+    expect_true(csv_text.find("\"rt,\"\"x\"\"\\path\"") != std::string::npos, "csv quoted profile");
+    expect_true(csv_text.find("0,2,\"rt,\"\"x\"\"\\path\",640,480") != std::string::npos, "csv first row");
 
     std::ifstream json(json_path);
+    expect_true(json.is_open(), "json file is readable");
     const std::string json_text((std::istreambuf_iterator<char>(json)), std::istreambuf_iterator<char>());
+    expect_true(!json_text.empty(), "json is non-empty");
     expect_true(json_text.find("\"metadata\"") != std::string::npos, "json metadata field");
     expect_true(json_text.find("\"aggregate\"") != std::string::npos, "json aggregate field");
     expect_true(json_text.find("\"per-camera\"") != std::string::npos, "json per-camera field");
-    expect_true(json_text.find("\"profile\": \"realtime\"") != std::string::npos, "json metadata");
+    expect_true(json_text.find("\"profile\": \"rt,\\\"x\\\"\\\\path\"") != std::string::npos, "json escaped profile");
     expect_true(json_text.find("\"frame_ms\"") != std::string::npos, "json aggregate");
     expect_true(json_text.find("\"camera_index\": 1") != std::string::npos, "json per camera");
+
+    const std::filesystem::path bad_csv_path = out_dir / "missing-parent" / "benchmark_frames.csv";
+    const std::filesystem::path bad_json_path = out_dir / "missing-parent" / "benchmark_summary.json";
+    bool csv_failed = false;
+    try {
+        profiling::write_csv(report, bad_csv_path);
+    } catch (...) {
+        csv_failed = true;
+    }
+    expect_true(csv_failed, "csv write failure throws");
+
+    bool json_failed = false;
+    try {
+        profiling::write_json(report, bad_json_path);
+    } catch (...) {
+        json_failed = true;
+    }
+    expect_true(json_failed, "json write failure throws");
     return 0;
 }

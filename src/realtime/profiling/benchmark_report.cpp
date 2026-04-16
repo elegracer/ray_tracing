@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <stdexcept>
 #include <vector>
 
 namespace rt::profiling {
@@ -39,6 +40,81 @@ AggregateStats compute_stats(std::vector<double> values) {
 
 const char* bool_text(bool value) {
     return value ? "true" : "false";
+}
+
+std::string escape_csv_field(const std::string& value) {
+    if (value.find_first_of(",\"\n\r") == std::string::npos) {
+        return value;
+    }
+
+    std::string escaped;
+    escaped.reserve(value.size() + 2);
+    escaped.push_back('"');
+    for (char ch : value) {
+        if (ch == '"') {
+            escaped += "\"\"";
+        } else {
+            escaped.push_back(ch);
+        }
+    }
+    escaped.push_back('"');
+    return escaped;
+}
+
+std::string escape_json_string(const std::string& value) {
+    std::string escaped;
+    escaped.reserve(value.size());
+    const char* hex = "0123456789abcdef";
+
+    for (unsigned char ch : value) {
+        switch (ch) {
+            case '"':
+                escaped += "\\\"";
+                break;
+            case '\\':
+                escaped += "\\\\";
+                break;
+            case '\b':
+                escaped += "\\b";
+                break;
+            case '\f':
+                escaped += "\\f";
+                break;
+            case '\n':
+                escaped += "\\n";
+                break;
+            case '\r':
+                escaped += "\\r";
+                break;
+            case '\t':
+                escaped += "\\t";
+                break;
+            default:
+                if (ch < 0x20) {
+                    escaped += "\\u00";
+                    escaped.push_back(hex[ch >> 4]);
+                    escaped.push_back(hex[ch & 0x0F]);
+                } else {
+                    escaped.push_back(static_cast<char>(ch));
+                }
+                break;
+        }
+    }
+    return escaped;
+}
+
+std::ofstream open_output_or_throw(const std::filesystem::path& path, const char* format_name) {
+    std::ofstream out(path);
+    if (!out.is_open()) {
+        throw std::runtime_error("failed to open " + std::string(format_name) + " output file: " + path.string());
+    }
+    return out;
+}
+
+void ensure_write_ok_or_throw(const std::ofstream& out, const std::filesystem::path& path, const char* format_name) {
+    if (!out.good()) {
+        throw std::runtime_error("failed to write " + std::string(format_name) + " output file: " + path.string());
+    }
 }
 
 void write_aggregate_stats(std::ofstream& out, const char* name, const AggregateStats& stats, bool trailing_comma) {
@@ -83,23 +159,25 @@ RunAggregate compute_aggregate(const std::vector<FrameStageSample>& frames) {
 }
 
 void write_csv(const RunReport& report, const std::filesystem::path& path) {
-    std::ofstream out(path);
+    std::ofstream out = open_output_or_throw(path, "csv");
     out << "frame_index,camera_count,profile,width,height,samples_per_pixel,max_bounces,denoise_enabled,"
            "frame_ms,render_ms,denoise_ms,download_ms,image_write_ms,host_overhead_ms,fps\n";
     for (const FrameStageSample& frame : report.frames) {
-        out << frame.frame_index << "," << frame.camera_count << "," << frame.profile << "," << frame.width << ","
+        out << frame.frame_index << "," << frame.camera_count << "," << escape_csv_field(frame.profile) << "," << frame.width << ","
             << frame.height << "," << frame.samples_per_pixel << "," << frame.max_bounces << ","
             << bool_text(frame.denoise_enabled) << "," << frame.frame_ms << "," << frame.render_ms << ","
             << frame.denoise_ms << "," << frame.download_ms << "," << frame.image_write_ms << ","
             << frame.host_overhead_ms << "," << frame.fps << "\n";
     }
+    out.flush();
+    ensure_write_ok_or_throw(out, path, "csv");
 }
 
 void write_json(const RunReport& report, const std::filesystem::path& path) {
-    std::ofstream out(path);
+    std::ofstream out = open_output_or_throw(path, "json");
     out << "{\n";
     out << "  \"metadata\": {\n";
-    out << "    \"profile\": \"" << report.profile << "\",\n";
+    out << "    \"profile\": \"" << escape_json_string(report.profile) << "\",\n";
     out << "    \"camera_count\": " << report.camera_count << ",\n";
     out << "    \"width\": " << report.width << ",\n";
     out << "    \"height\": " << report.height << ",\n";
@@ -135,6 +213,8 @@ void write_json(const RunReport& report, const std::filesystem::path& path) {
     out << "\n";
     out << "  ]\n";
     out << "}\n";
+    out.flush();
+    ensure_write_ok_or_throw(out, path, "json");
 }
 
 }  // namespace rt::profiling
