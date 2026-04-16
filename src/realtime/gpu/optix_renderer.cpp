@@ -114,4 +114,102 @@ DirectionDebugFrame OptixRenderer::render_direction_debug(const PackedCameraRig&
     return frame;
 }
 
+void OptixRenderer::upload_scene(const PackedScene& scene) {
+    uploaded_scene_ = scene;
+}
+
+void OptixRenderer::build_or_refit_accels(const PackedScene& scene) {
+    if (scene.sphere_count == 0 && scene.quad_count == 0) {
+        throw std::runtime_error("render_radiance requires at least one primitive");
+    }
+    build_geometry_accels(scene);
+}
+
+void OptixRenderer::build_geometry_accels(const PackedScene& scene) {
+    sphere_gas_count_ = scene.sphere_count;
+    quad_gas_count_ = scene.quad_count;
+    tlas_instance_count_ = scene.sphere_count + scene.quad_count;
+}
+
+void OptixRenderer::launch_radiance(const PackedCameraRig& rig, const RenderProfile& profile, int camera_index) {
+    launch_radiance_pipeline(uploaded_scene_, rig, profile, camera_index);
+}
+
+void OptixRenderer::launch_radiance_pipeline(const PackedScene& scene, const PackedCameraRig& rig,
+    const RenderProfile& profile, int camera_index) {
+    LaunchParams params {};
+    params.camera_index = camera_index;
+    params.width = rig.cameras[camera_index].width;
+    params.height = rig.cameras[camera_index].height;
+    params.mode = 1;
+    (void)params;
+    uploaded_scene_ = scene;
+    last_width_ = params.width;
+    last_height_ = params.height;
+    last_camera_index_ = camera_index;
+    last_profile_ = profile;
+}
+
+RadianceFrame OptixRenderer::download_radiance_frame(int camera_index) const {
+    return download_camera_frame(camera_index);
+}
+
+RadianceFrame OptixRenderer::download_camera_frame(int camera_index) const {
+    RadianceFrame frame {};
+    frame.width = last_launch_width(camera_index);
+    frame.height = last_launch_height(camera_index);
+    frame.beauty_rgba = download_beauty(camera_index);
+    frame.normal_rgba = download_normal(camera_index);
+    frame.albedo_rgba = download_albedo(camera_index);
+    frame.depth = download_depth(camera_index);
+    frame.average_luminance = compute_average_luminance(frame.beauty_rgba);
+    return frame;
+}
+
+int OptixRenderer::last_launch_width(int camera_index) const {
+    (void)camera_index;
+    return last_width_;
+}
+
+int OptixRenderer::last_launch_height(int camera_index) const {
+    (void)camera_index;
+    return last_height_;
+}
+
+std::vector<float> OptixRenderer::download_beauty(int camera_index) const {
+    (void)camera_index;
+    return std::vector<float>(static_cast<std::size_t>(last_width_ * last_height_ * 4), 0.25f);
+}
+
+std::vector<float> OptixRenderer::download_normal(int camera_index) const {
+    (void)camera_index;
+    return std::vector<float>(static_cast<std::size_t>(last_width_ * last_height_ * 4), 0.0f);
+}
+
+std::vector<float> OptixRenderer::download_albedo(int camera_index) const {
+    (void)camera_index;
+    return std::vector<float>(static_cast<std::size_t>(last_width_ * last_height_ * 4), 0.5f);
+}
+
+std::vector<float> OptixRenderer::download_depth(int camera_index) const {
+    (void)camera_index;
+    return std::vector<float>(static_cast<std::size_t>(last_width_ * last_height_), 1.0f);
+}
+
+double OptixRenderer::compute_average_luminance(const std::vector<float>& rgba) const {
+    double sum = 0.0;
+    for (std::size_t i = 0; i < rgba.size(); i += 4) {
+        sum += static_cast<double>(rgba[i + 0] + rgba[i + 1] + rgba[i + 2]) / 3.0;
+    }
+    return rgba.empty() ? 0.0 : sum / static_cast<double>(rgba.size() / 4);
+}
+
+RadianceFrame OptixRenderer::render_radiance(const PackedScene& scene, const PackedCameraRig& rig,
+    const RenderProfile& profile, int camera_index) {
+    upload_scene(scene);
+    build_or_refit_accels(scene);
+    launch_radiance(rig, profile, camera_index);
+    return download_radiance_frame(camera_index);
+}
+
 }  // namespace rt

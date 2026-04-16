@@ -1,0 +1,35 @@
+#include "realtime/camera_rig.h"
+#include "realtime/gpu/optix_renderer.h"
+#include "realtime/render_profile.h"
+#include "realtime/scene_description.h"
+#include "test_support.h"
+
+int main() {
+    rt::SceneDescription scene;
+    const int light = scene.add_material(rt::DiffuseLightMaterial {Eigen::Vector3d {8.0, 8.0, 8.0}});
+    const int glass = scene.add_material(rt::DielectricMaterial {1.5});
+    scene.add_quad(rt::QuadPrimitive {
+        light,
+        Eigen::Vector3d {-1.0, 1.5, -4.0},
+        Eigen::Vector3d {2.0, 0.0, 0.0},
+        Eigen::Vector3d {0.0, 0.0, -2.0},
+        false,
+    });
+    scene.add_sphere(rt::SpherePrimitive {glass, Eigen::Vector3d {0.0, 0.0, -4.0}, 0.7, false});
+
+    rt::CameraRig rig;
+    rig.add_pinhole(rt::Pinhole32Params {200.0, 200.0, 32.0, 32.0, 0.0, 0.0, 0.0, 0.0, 0.0},
+        Eigen::Isometry3d::Identity(), 64, 64);
+
+    rt::RenderProfile profile = rt::RenderProfile::realtime_default();
+    profile.samples_per_pixel = 4;
+    profile.max_bounces = 4;
+
+    rt::OptixRenderer renderer;
+    const rt::RadianceFrame frame = renderer.render_radiance(scene.pack(), rig.pack(), profile, 0);
+
+    expect_near(static_cast<double>(frame.width), 64.0, 1e-12, "radiance width");
+    expect_near(static_cast<double>(frame.height), 64.0, 1e-12, "radiance height");
+    expect_true(frame.average_luminance > 0.01, "radiance should be non-black");
+    return 0;
+}

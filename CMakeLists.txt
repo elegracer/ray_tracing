@@ -177,3 +177,11 @@ target_sources(test_optix_direction
 )
 target_link_libraries(test_optix_direction PRIVATE realtime_gpu)
 add_test(NAME test_optix_direction COMMAND test_optix_direction)
+
+add_executable(test_optix_path_trace)
+target_sources(test_optix_path_trace
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_optix_path_trace.cpp
+)
+target_link_libraries(test_optix_path_trace PRIVATE realtime_gpu)
+add_test(NAME test_optix_path_trace COMMAND test_optix_path_trace)
