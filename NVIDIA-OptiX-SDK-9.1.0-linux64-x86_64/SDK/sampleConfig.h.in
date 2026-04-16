@@ -1,0 +1,31 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2009 - 2024  NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
+
+#pragma once
+
+#define SAMPLES_DIR "@SAMPLES_DIR@"
+#define SAMPLES_PTX_DIR "@SAMPLES_PTX_DIR@"
+#define SAMPLES_CUDA_DIR "@SAMPLES_CUDA_DIR@"
+
+// Include directories
+#define SAMPLES_RELATIVE_INCLUDE_DIRS @SAMPLES_RELATIVE_INCLUDE_DIRS@
+#define SAMPLES_ABSOLUTE_INCLUDE_DIRS @SAMPLES_ABSOLUTE_INCLUDE_DIRS@
+
+#cmakedefine01 OPTIX_DEBUG_DEVICE_CODE
+#define OPTIX_OPTIXIR_BUILD_CONFIGURATION "@OPTIX_OPTIXIR_BUILD_CONFIGURATION@"
+
+// Signal whether to use NVRTC or not
+#cmakedefine01 CUDA_NVRTC_ENABLED
+
+// NVRTC compiler options
+#if OPTIX_DEBUG_DEVICE_CODE
+#define CUDA_NVRTC_OPTIONS @CUDA_NVRTC_OPTIONS_DEBUG@
+#else
+#define CUDA_NVRTC_OPTIONS @CUDA_NVRTC_OPTIONS@
+#endif
+
+// Indicate what input we are generating
+#cmakedefine01 SAMPLES_INPUT_GENERATE_OPTIXIR
+#cmakedefine01 SAMPLES_INPUT_GENERATE_PTX

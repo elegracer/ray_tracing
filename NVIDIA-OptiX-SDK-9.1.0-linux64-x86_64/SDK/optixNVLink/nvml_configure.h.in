@@ -1,0 +1,6 @@
+//
+// SPDX-FileCopyrightText: Copyright (c) 2019 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: BSD-3-Clause
+//
+
+#cmakedefine01 OPTIX_USE_NVML

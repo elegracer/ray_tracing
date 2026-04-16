@@ -1,0 +1,6 @@
+EXPORTS
+    cache_isOpen
+    cache_query
+    cache_insert
+    cache_connect
+    cache_disconnect 
