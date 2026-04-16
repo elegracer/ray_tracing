@@ -160,6 +160,10 @@ git commit -m "test: lock realtime render profiles"
 - Create: `tests/test_optix_materials_aux.cpp`
 - Modify: `CMakeLists.txt`
 
+This task must produce a true red test on the current placeholder renderer. If the basic
+materials/aux assertions are not sufficient to fail under the current placeholder behavior,
+add one focused aux-buffer semantics assertion that the placeholder path cannot satisfy.
+
 - [ ] **Step 1: Write the failing materials/aux test**
 
 ```cpp
@@ -169,6 +173,26 @@ git commit -m "test: lock realtime render profiles"
 #include "realtime/render_profile.h"
 #include "realtime/scene_description.h"
 #include "test_support.h"
+
+#include <cmath>
+#include <vector>
+
+namespace {
+
+bool has_variation(const std::vector<float>& values, float epsilon) {
+    if (values.empty()) {
+        return false;
+    }
+    const float first = values.front();
+    for (float value : values) {
+        if (std::abs(value - first) > epsilon) {
+            return true;
+        }
+    }
+    return false;
+}
+
+}  // namespace
 
 int main() {
     rt::SceneDescription scene;
@@ -198,6 +222,7 @@ int main() {
     expect_true(!frame.albedo_rgba.empty(), "albedo buffer present");
     expect_true(!frame.depth.empty(), "depth buffer present");
     expect_true(frame.normal_rgba != frame.beauty_rgba, "normal differs from beauty");
+    expect_true(has_variation(frame.depth, 1e-6f), "depth varies across the frame");
     return 0;
 }
 ```
@@ -206,7 +231,7 @@ int main() {
 
 Run: `VCPKG_ROOT=$HOME/vcpkg_root cmake --build build-clang-vcpkg-settings --target test_optix_materials_aux -j 4`
 
-Expected: FAIL because the target does not exist yet or because the placeholder renderer makes `normal_rgba` and `beauty_rgba` meaningless
+Expected: FAIL because the target does not exist yet or because the placeholder renderer still produces semantically wrong aux output, for example a uniform `depth` buffer
 
 - [ ] **Step 3: Add the new target**
 
