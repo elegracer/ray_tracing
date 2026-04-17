@@ -164,6 +164,17 @@ void free_host_ptr(void* ptr) {
     }
 }
 
+void free_host_staging(float4*& beauty, float4*& normal, float4*& albedo, float*& depth) {
+    free_host_ptr(depth);
+    free_host_ptr(albedo);
+    free_host_ptr(normal);
+    free_host_ptr(beauty);
+    depth = nullptr;
+    albedo = nullptr;
+    normal = nullptr;
+    beauty = nullptr;
+}
+
 std::vector<float> unpack_rgba_from_float4(const float4* pixels, std::size_t pixel_count) {
     std::vector<float> rgba(pixel_count * 4U, 0.0f);
     for (std::size_t i = 0; i < pixel_count; ++i) {
@@ -207,6 +218,7 @@ OptixRenderer::OptixRenderer() {
 
 OptixRenderer::~OptixRenderer() {
     free_device_resources();
+    free_staging_buffers();
     if (optix_context_ != nullptr) {
         optixDeviceContextDestroy(optix_context_);
     }
@@ -328,6 +340,16 @@ void OptixRenderer::free_device_resources() {
     free_scene_buffers(device_spheres_, device_quads_, device_materials_);
     allocated_width_ = 0;
     allocated_height_ = 0;
+    uploaded_scene_ = PackedScene {};
+    scene_prepared_ = false;
+}
+
+void OptixRenderer::free_staging_buffers() {
+    for (HostRadianceStaging& staging : host_staging_buffers_) {
+        free_host_staging(staging.beauty, staging.normal, staging.albedo, staging.depth);
+        staging = HostRadianceStaging {};
+    }
+    host_staging_buffers_.clear();
 }
 
 void OptixRenderer::build_or_refit_accels(const PackedScene& scene) {
@@ -346,6 +368,32 @@ void OptixRenderer::build_geometry_accels(const PackedScene& scene) {
 void OptixRenderer::launch_radiance(const PackedCameraRig& rig, const RenderProfile& profile, int camera_index,
     RadianceTiming* timing) {
     launch_radiance_pipeline(uploaded_scene_, rig, profile, camera_index, timing);
+}
+
+OptixRenderer::HostRadianceStaging& OptixRenderer::staging_buffer_for(int width, int height) {
+    for (HostRadianceStaging& staging : host_staging_buffers_) {
+        if (staging.width == width && staging.height == height) {
+            return staging;
+        }
+    }
+
+    HostRadianceStaging staging {};
+    staging.width = width;
+    staging.height = height;
+    const std::size_t pixel_count = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+
+    RT_CUDA_CHECK(cudaMallocHost(reinterpret_cast<void**>(&staging.beauty), pixel_count * sizeof(float4)));
+    try {
+        RT_CUDA_CHECK(cudaMallocHost(reinterpret_cast<void**>(&staging.normal), pixel_count * sizeof(float4)));
+        RT_CUDA_CHECK(cudaMallocHost(reinterpret_cast<void**>(&staging.albedo), pixel_count * sizeof(float4)));
+        RT_CUDA_CHECK(cudaMallocHost(reinterpret_cast<void**>(&staging.depth), pixel_count * sizeof(float)));
+    } catch (...) {
+        free_host_staging(staging.beauty, staging.normal, staging.albedo, staging.depth);
+        throw;
+    }
+
+    host_staging_buffers_.push_back(staging);
+    return host_staging_buffers_.back();
 }
 
 void OptixRenderer::launch_radiance_pipeline(const PackedScene& scene, const PackedCameraRig& rig,
@@ -415,7 +463,7 @@ RadianceFrame OptixRenderer::download_radiance_frame(int camera_index) const {
     return download_camera_frame(camera_index);
 }
 
-RadianceFrame OptixRenderer::download_radiance_frame_profiled(int camera_index, RadianceTiming* timing) const {
+RadianceFrame OptixRenderer::download_radiance_frame_profiled(int camera_index, RadianceTiming* timing) {
     RadianceFrame frame {};
     frame.width = last_launch_width(camera_index);
     frame.height = last_launch_height(camera_index);
@@ -426,29 +474,23 @@ RadianceFrame OptixRenderer::download_radiance_frame_profiled(int camera_index, 
         return frame;
     }
 
-    float4* host_beauty = nullptr;
-    float4* host_normal = nullptr;
-    float4* host_albedo = nullptr;
-    float* host_depth = nullptr;
     cudaEvent_t download_start = nullptr;
     cudaEvent_t download_end = nullptr;
+    HostRadianceStaging& staging = staging_buffer_for(frame.width, frame.height);
 
-    RT_CUDA_CHECK(cudaMallocHost(reinterpret_cast<void**>(&host_beauty), pixel_count * sizeof(float4)));
     try {
-        RT_CUDA_CHECK(cudaMallocHost(reinterpret_cast<void**>(&host_normal), pixel_count * sizeof(float4)));
-        RT_CUDA_CHECK(cudaMallocHost(reinterpret_cast<void**>(&host_albedo), pixel_count * sizeof(float4)));
-        RT_CUDA_CHECK(cudaMallocHost(reinterpret_cast<void**>(&host_depth), pixel_count * sizeof(float)));
         RT_CUDA_CHECK(cudaEventCreate(&download_start));
         RT_CUDA_CHECK(cudaEventCreate(&download_end));
         RT_CUDA_CHECK(cudaEventRecord(download_start, stream_));
         RT_CUDA_CHECK(cudaMemcpyAsync(
-            host_beauty, device_frame_.beauty, pixel_count * sizeof(float4), cudaMemcpyDeviceToHost, stream_));
+            staging.beauty, device_frame_.beauty, pixel_count * sizeof(float4), cudaMemcpyDeviceToHost, stream_));
         RT_CUDA_CHECK(cudaMemcpyAsync(
-            host_normal, device_frame_.normal, pixel_count * sizeof(float4), cudaMemcpyDeviceToHost, stream_));
+            staging.normal, device_frame_.normal, pixel_count * sizeof(float4), cudaMemcpyDeviceToHost, stream_));
         RT_CUDA_CHECK(cudaMemcpyAsync(
-            host_albedo, device_frame_.albedo, pixel_count * sizeof(float4), cudaMemcpyDeviceToHost, stream_));
+            staging.albedo, device_frame_.albedo, pixel_count * sizeof(float4), cudaMemcpyDeviceToHost, stream_));
         RT_CUDA_CHECK(
-            cudaMemcpyAsync(host_depth, device_frame_.depth, pixel_count * sizeof(float), cudaMemcpyDeviceToHost, stream_));
+            cudaMemcpyAsync(staging.depth, device_frame_.depth, pixel_count * sizeof(float), cudaMemcpyDeviceToHost,
+                stream_));
         RT_CUDA_CHECK(cudaEventRecord(download_end, stream_));
         RT_CUDA_CHECK(cudaEventSynchronize(download_end));
 
@@ -458,24 +500,16 @@ RadianceFrame OptixRenderer::download_radiance_frame_profiled(int camera_index, 
             timing->download_ms = elapsed_ms;
         }
 
-        frame.beauty_rgba = unpack_rgba_from_float4(host_beauty, pixel_count);
-        frame.normal_rgba = unpack_rgba_from_float4(host_normal, pixel_count);
-        frame.albedo_rgba = unpack_rgba_from_float4(host_albedo, pixel_count);
-        frame.depth.assign(host_depth, host_depth + pixel_count);
+        frame.beauty_rgba = unpack_rgba_from_float4(staging.beauty, pixel_count);
+        frame.normal_rgba = unpack_rgba_from_float4(staging.normal, pixel_count);
+        frame.albedo_rgba = unpack_rgba_from_float4(staging.albedo, pixel_count);
+        frame.depth.assign(staging.depth, staging.depth + pixel_count);
         frame.average_luminance = compute_average_luminance(frame.beauty_rgba);
 
         RT_CUDA_CHECK(cudaEventDestroy(download_end));
         download_end = nullptr;
         RT_CUDA_CHECK(cudaEventDestroy(download_start));
         download_start = nullptr;
-        free_host_ptr(host_depth);
-        host_depth = nullptr;
-        free_host_ptr(host_albedo);
-        host_albedo = nullptr;
-        free_host_ptr(host_normal);
-        host_normal = nullptr;
-        free_host_ptr(host_beauty);
-        host_beauty = nullptr;
     } catch (...) {
         if (download_end != nullptr) {
             cudaEventDestroy(download_end);
@@ -483,10 +517,6 @@ RadianceFrame OptixRenderer::download_radiance_frame_profiled(int camera_index, 
         if (download_start != nullptr) {
             cudaEventDestroy(download_start);
         }
-        free_host_ptr(host_depth);
-        free_host_ptr(host_albedo);
-        free_host_ptr(host_normal);
-        free_host_ptr(host_beauty);
         throw;
     }
 
@@ -592,6 +622,13 @@ double OptixRenderer::compute_average_luminance(const std::vector<float>& rgba) 
     return rgba.empty() ? 0.0 : sum / static_cast<double>(rgba.size() / 4);
 }
 
+void OptixRenderer::prepare_scene(const PackedScene& scene) {
+    scene_prepared_ = false;
+    upload_scene(scene);
+    build_or_refit_accels(scene);
+    scene_prepared_ = true;
+}
+
 RadianceFrame OptixRenderer::render_radiance(const PackedScene& scene, const PackedCameraRig& rig,
     const RenderProfile& profile, int camera_index) {
     validate_radiance_request(rig, camera_index);
@@ -601,16 +638,23 @@ RadianceFrame OptixRenderer::render_radiance(const PackedScene& scene, const Pac
     return download_radiance_frame(camera_index);
 }
 
-ProfiledRadianceFrame OptixRenderer::render_radiance_profiled(const PackedScene& scene, const PackedCameraRig& rig,
-    const RenderProfile& profile, int camera_index) {
+ProfiledRadianceFrame OptixRenderer::render_prepared_radiance(
+    const PackedCameraRig& rig, const RenderProfile& profile, int camera_index) {
     validate_radiance_request(rig, camera_index);
-    upload_scene(scene);
-    build_or_refit_accels(scene);
+    if (!scene_prepared_) {
+        throw std::runtime_error("render_prepared_radiance requires prepare_scene() first");
+    }
 
     ProfiledRadianceFrame profiled {};
     launch_radiance(rig, profile, camera_index, &profiled.timing);
     profiled.frame = download_radiance_frame_profiled(camera_index, &profiled.timing);
     return profiled;
+}
+
+ProfiledRadianceFrame OptixRenderer::render_radiance_profiled(const PackedScene& scene, const PackedCameraRig& rig,
+    const RenderProfile& profile, int camera_index) {
+    prepare_scene(scene);
+    return render_prepared_radiance(rig, profile, camera_index);
 }
 
 }  // namespace rt

@@ -29,27 +29,41 @@ class OptixRenderer {
     ~OptixRenderer();
 
     DirectionDebugFrame render_direction_debug(const PackedCameraRig& rig);
+    void prepare_scene(const PackedScene& scene);
     RadianceFrame render_radiance(const PackedScene& scene, const PackedCameraRig& rig,
         const RenderProfile& profile, int camera_index);
+    ProfiledRadianceFrame render_prepared_radiance(
+        const PackedCameraRig& rig, const RenderProfile& profile, int camera_index);
     ProfiledRadianceFrame render_radiance_profiled(const PackedScene& scene, const PackedCameraRig& rig,
         const RenderProfile& profile, int camera_index);
 
    private:
+    struct HostRadianceStaging {
+        int width = 0;
+        int height = 0;
+        float4* beauty = nullptr;
+        float4* normal = nullptr;
+        float4* albedo = nullptr;
+        float* depth = nullptr;
+    };
+
     void initialize_optix();
     void create_direction_debug_pipeline();
     void launch_direction_debug(const PackedCameraRig& rig, std::uint8_t* rgba, int width, int height);
     void allocate_frame_buffers(int width, int height);
     void upload_scene(const PackedScene& scene);
     void free_device_resources();
+    void free_staging_buffers();
     void build_or_refit_accels(const PackedScene& scene);
     void launch_radiance(const PackedCameraRig& rig, const RenderProfile& profile, int camera_index,
         RadianceTiming* timing = nullptr);
     RadianceFrame download_radiance_frame(int camera_index) const;
-    RadianceFrame download_radiance_frame_profiled(int camera_index, RadianceTiming* timing) const;
+    RadianceFrame download_radiance_frame_profiled(int camera_index, RadianceTiming* timing);
     void build_geometry_accels(const PackedScene& scene);
     void launch_radiance_pipeline(const PackedScene& scene, const PackedCameraRig& rig,
         const RenderProfile& profile, int camera_index, RadianceTiming* timing = nullptr);
     RadianceFrame download_camera_frame(int camera_index) const;
+    HostRadianceStaging& staging_buffer_for(int width, int height);
     int last_launch_width(int camera_index) const;
     int last_launch_height(int camera_index) const;
     std::vector<float> download_beauty() const;
@@ -75,6 +89,8 @@ class OptixRenderer {
     int quad_gas_count_ = 0;
     int tlas_instance_count_ = 0;
     RenderProfile last_profile_{};
+    bool scene_prepared_ = false;
+    std::vector<HostRadianceStaging> host_staging_buffers_{};
 };
 
 }  // namespace rt
