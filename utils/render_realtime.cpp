@@ -62,6 +62,20 @@ rt::CameraRig make_smoke_rig(int camera_count) {
     return rig;
 }
 
+rt::SceneDescription make_scene(const std::string& scene_name) {
+    if (scene_name == "final_room") {
+        return make_smoke_scene();
+    }
+    return make_smoke_scene();
+}
+
+rt::CameraRig make_rig(const std::string& scene_name, int camera_count) {
+    if (scene_name == "final_room") {
+        return make_smoke_rig(camera_count);
+    }
+    return make_smoke_rig(camera_count);
+}
+
 cv::Mat make_beauty_image(const rt::RadianceFrame& frame) {
     cv::Mat image(frame.height, frame.width, CV_8UC3);
     for (int y = 0; y < frame.height; ++y) {
@@ -143,6 +157,7 @@ int main(int argc, const char* argv[]) {
     int camera_count = 4;
     int frames = 1;
     std::string output_dir = "build/realtime-smoke";
+    std::string scene_name = "smoke";
     std::string profile_arg;
     bool skip_image_write = false;
 
@@ -164,6 +179,10 @@ int main(int argc, const char* argv[]) {
         .help("directory for per-camera png outputs")
         .default_value(output_dir)
         .store_into(output_dir);
+    program.add_argument("--scene")
+        .help("realtime scene: smoke|final_room")
+        .default_value(scene_name)
+        .store_into(scene_name);
     program.add_argument("--profile")
         .help("render profile: quality|balanced|realtime")
         .store_into(profile_arg);
@@ -189,6 +208,10 @@ int main(int argc, const char* argv[]) {
         fmt::print(stderr, "--frames must be >= 1\n");
         return EXIT_FAILURE;
     }
+    if (scene_name != "smoke" && scene_name != "final_room") {
+        fmt::print(stderr, "--scene must be one of: smoke, final_room\n");
+        return EXIT_FAILURE;
+    }
 
     if (!profile_arg.empty()) {
         if (!resolve_render_profile(profile_arg, profile)) {
@@ -201,8 +224,8 @@ int main(int argc, const char* argv[]) {
     const std::filesystem::path output_path = output_dir;
     std::filesystem::create_directories(output_path);
 
-    const rt::PackedScene packed_scene = make_smoke_scene().pack();
-    const rt::PackedCameraRig packed_rig = make_smoke_rig(camera_count).pack();
+    const rt::PackedScene packed_scene = make_scene(scene_name).pack();
+    const rt::PackedCameraRig packed_rig = make_rig(scene_name, camera_count).pack();
     rt::RendererPool renderer_pool(camera_count);
     renderer_pool.prepare_scene(packed_scene);
     std::vector<rt::OptixDenoiserWrapper> denoisers(

@@ -7,6 +7,9 @@ endif()
 if(NOT DEFINED PROFILE_NAME)
     set(PROFILE_NAME realtime)
 endif()
+if(NOT DEFINED SCENE_NAME)
+    set(SCENE_NAME smoke)
+endif()
 if(NOT DEFINED EXPECT_DENOISE_ENABLED)
     set(EXPECT_DENOISE_ENABLED ON)
 endif()
@@ -16,6 +19,7 @@ file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 
 execute_process(
     COMMAND "${RENDER_REALTIME_EXE}"
+        --scene "${SCENE_NAME}"
         --camera-count 4
         --frames 2
         --profile "${PROFILE_NAME}"
