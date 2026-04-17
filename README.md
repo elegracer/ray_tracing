@@ -17,9 +17,10 @@ cmake --build build-clang-vcpkg-settings --target render_realtime -j
 bash utils/run_realtime_benchmark_matrix.sh build/realtime-matrix 3
 ```
 
-Each run directory writes:
+The smoke CLI writes PNG outputs plus `benchmark_frames.csv` and `benchmark_summary.json`.
 
-- PNG outputs for the smoke render
+The matrix runner uses `--skip-image-write`, so each run directory keeps:
+
 - `benchmark_frames.csv`
 - `benchmark_summary.json`
 
