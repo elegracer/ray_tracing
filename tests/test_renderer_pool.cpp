@@ -5,6 +5,13 @@
 #include "realtime/scene_description.h"
 #include "test_support.h"
 
+#include <type_traits>
+
+static_assert(!std::is_copy_constructible_v<rt::RendererPool>);
+static_assert(!std::is_copy_assignable_v<rt::RendererPool>);
+static_assert(!std::is_move_constructible_v<rt::RendererPool>);
+static_assert(!std::is_move_assignable_v<rt::RendererPool>);
+
 namespace {
 
 void expect_vector_near(const std::vector<float>& actual, const std::vector<float>& expected, double tol,
@@ -24,6 +31,22 @@ void expect_throws(Fn&& fn, const std::string& label) {
         threw = true;
     }
     expect_true(threw, label);
+}
+
+template <typename Fn>
+void expect_throws_with_message(Fn&& fn, const std::string& message, const std::string& label) {
+    bool threw = false;
+    bool matched = false;
+    try {
+        fn();
+    } catch (const std::exception& ex) {
+        threw = true;
+        matched = std::string(ex.what()).find(message) != std::string::npos;
+    } catch (...) {
+        threw = true;
+    }
+    expect_true(threw, label + " threw");
+    expect_true(matched, label + " message");
 }
 
 rt::SceneDescription make_scene() {
@@ -109,6 +132,15 @@ int main() {
 
     expect_throws([&]() { four_pool.render_frame(packed_rig, profile, 0); }, "reject active_cameras below range");
     expect_throws([&]() { four_pool.render_frame(packed_rig, profile, 5); }, "reject active_cameras above range");
+
+    rt::PackedCameraRig mismatched_rig = make_rig(1).pack();
+    expect_throws_with_message([&]() { four_pool.render_frame(mismatched_rig, profile, 2); },
+        "active_cameras exceeds rig.active_count", "reject rig active-count mismatch");
+
+    rt::PackedCameraRig disabled_leading_slot = packed_rig;
+    disabled_leading_slot.cameras[0].enabled = 0;
+    expect_throws_with_message([&]() { four_pool.render_frame(disabled_leading_slot, profile, 4); },
+        "leading camera slot disabled", "reject disabled leading camera slot");
 
     return 0;
 }

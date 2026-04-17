@@ -2,6 +2,7 @@
 
 #include "realtime/gpu/optix_renderer.h"
 
+#include <mutex>
 #include <vector>
 
 namespace rt {
@@ -14,13 +15,22 @@ struct CameraRenderResult {
 class RendererPool {
    public:
     explicit RendererPool(int renderer_count);
+    ~RendererPool() = default;
+
+    RendererPool(const RendererPool&) = delete;
+    RendererPool& operator=(const RendererPool&) = delete;
+    RendererPool(RendererPool&&) = delete;
+    RendererPool& operator=(RendererPool&&) = delete;
 
     void prepare_scene(const PackedScene& scene);
     std::vector<CameraRenderResult> render_frame(
         const PackedCameraRig& rig, const RenderProfile& profile, int active_cameras);
 
    private:
+    void validate_render_request(const PackedCameraRig& rig, int active_cameras) const;
+
     std::vector<OptixRenderer> renderers_;
+    mutable std::mutex mutex_;
 };
 
 }  // namespace rt
