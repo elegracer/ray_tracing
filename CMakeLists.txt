@@ -240,6 +240,12 @@ add_test(NAME test_render_realtime_cli
         --profile realtime
         --output-dir ${CMAKE_CURRENT_BINARY_DIR}/test/render_realtime-cli
 )
+add_test(NAME test_render_realtime_profiling_cli
+    COMMAND ${CMAKE_COMMAND}
+        -DRENDER_REALTIME_EXE=$<TARGET_FILE:render_realtime>
+        -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/test/render_realtime-profiling
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/VerifyRenderRealtimeProfiling.cmake
+)
 
 add_executable(test_realtime_pipeline)
 target_sources(test_realtime_pipeline
