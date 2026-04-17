@@ -285,7 +285,7 @@ add_test(NAME test_render_realtime_final_room_quality_cli
         -DFRAME_COUNT=1
         -DPROFILE_NAME=quality
         -DEXPECT_DENOISE_ENABLED=OFF
-        -DEXPECT_DISTINCT_CAMERA_LUMINANCE=ON
+        -DEXPECT_MIN_CAMERA_LUMINANCE_SPREAD_MILLI=10
         -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/VerifyRenderRealtimeFourCameraProfiling.cmake
 )
 add_test(NAME test_render_realtime_cli_skip_write
