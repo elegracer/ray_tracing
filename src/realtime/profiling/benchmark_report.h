@@ -28,6 +28,7 @@ struct FrameStageSample {
     double denoise_ms = 0.0;
     double download_ms = 0.0;
     double image_write_ms = 0.0;
+    // Residual frame time after subtracting summed stage timings; may be negative when stages overlap.
     double host_overhead_ms = 0.0;
     double fps = 0.0;
     std::vector<CameraStageSample> cameras;
@@ -46,6 +47,7 @@ struct RunAggregate {
     AggregateStats denoise_ms;
     AggregateStats download_ms;
     AggregateStats image_write_ms;
+    // Aggregate residual frame time; may be negative when per-camera stage sums overlap in wall-clock time.
     AggregateStats host_overhead_ms;
 };
 

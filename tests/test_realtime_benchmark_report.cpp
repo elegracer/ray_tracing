@@ -67,7 +67,7 @@ int main() {
             .denoise_ms = 3.0,
             .download_ms = 1.5,
             .image_write_ms = 1.0,
-            .host_overhead_ms = 0.5,
+            .host_overhead_ms = -0.5,
             .fps = 71.428571,
             .cameras = {
                 profiling::CameraStageSample {
@@ -93,6 +93,7 @@ int main() {
     expect_near(report.aggregate.frame_ms.p50, 10.0, 1e-12, "frame p50");
     expect_near(report.aggregate.frame_ms.p95, 14.0, 1e-12, "frame p95");
     expect_near(report.aggregate.denoise_ms.max, 3.0, 1e-12, "denoise max");
+    expect_near(report.aggregate.host_overhead_ms.avg, 0.0, 1e-12, "host residual avg");
 
     const std::filesystem::path out_dir = std::filesystem::temp_directory_path() / "rt-benchmark-report-test";
     std::filesystem::create_directories(out_dir);
@@ -121,6 +122,7 @@ int main() {
     expect_true(json_text.find("\"profile\": \"rt,\\\"x\\\"\\\\path\"") != std::string::npos, "json escaped profile");
     expect_true(json_text.find("\"frame_ms\"") != std::string::npos, "json aggregate");
     expect_true(json_text.find("\"host_overhead_ms\": 0.5") != std::string::npos, "json frame host overhead");
+    expect_true(json_text.find("\"host_overhead_ms\": -0.5") != std::string::npos, "json negative host residual");
     expect_true(json_text.find("\"fps\": 100") != std::string::npos, "json frame fps");
     expect_true(json_text.find("\"camera_index\": 1") != std::string::npos, "json per camera");
 

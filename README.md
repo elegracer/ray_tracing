@@ -27,6 +27,7 @@ The matrix runner uses `--skip-image-write`, so each run directory keeps:
 Realtime benchmark runs execute camera work concurrently and keep host-side denoise bounded to active cameras (`1..4`) with deterministic `camera_index` reporting/output order.
 
 The CLI prints per-frame timing plus an aggregate FPS summary.
+`host_overhead_ms` is the residual `frame_ms - (render_ms + denoise_ms + download_ms + image_write_ms)` and may be negative once per-camera stage work overlaps.
 
 For pure benchmark runs, use:
 

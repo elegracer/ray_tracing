@@ -4,6 +4,12 @@ endif()
 if(NOT DEFINED OUTPUT_DIR)
     message(FATAL_ERROR "OUTPUT_DIR is required")
 endif()
+if(NOT DEFINED PROFILE_NAME)
+    set(PROFILE_NAME realtime)
+endif()
+if(NOT DEFINED EXPECT_DENOISE_ENABLED)
+    set(EXPECT_DENOISE_ENABLED ON)
+endif()
 
 file(REMOVE_RECURSE "${OUTPUT_DIR}")
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
@@ -12,7 +18,7 @@ execute_process(
     COMMAND "${RENDER_REALTIME_EXE}"
         --camera-count 4
         --frames 2
-        --profile realtime
+        --profile "${PROFILE_NAME}"
         --skip-image-write
         --output-dir "${OUTPUT_DIR}"
     RESULT_VARIABLE run_result
@@ -26,6 +32,13 @@ endif()
 
 if(NOT run_stdout MATCHES "denoise_ms=")
     message(FATAL_ERROR "stdout missing denoise_ms field:\n${run_stdout}")
+endif()
+if(NOT EXPECT_DENOISE_ENABLED)
+    string(REGEX MATCHALL "frame=[0-9]+ cameras=4 [^\r\n]*denoise_ms=0\\.000" zero_denoise_lines "${run_stdout}")
+    list(LENGTH zero_denoise_lines zero_denoise_count)
+    if(NOT zero_denoise_count EQUAL 2)
+        message(FATAL_ERROR "quality 4-camera run expected two zero-denoise frame lines:\n${run_stdout}")
+    endif()
 endif()
 
 set(csv_path "${OUTPUT_DIR}/benchmark_frames.csv")
@@ -54,6 +67,28 @@ endif()
 set(metadata_camera_count "${CMAKE_MATCH_1}")
 if(NOT metadata_camera_count EQUAL 4)
     message(FATAL_ERROR "metadata.camera_count expected 4, got ${metadata_camera_count}")
+endif()
+string(REGEX MATCH "\"profile\" *: *\"([^\"]+)\"" metadata_profile_match "${metadata_object}")
+if(NOT metadata_profile_match)
+    message(FATAL_ERROR "metadata missing profile")
+endif()
+set(metadata_profile "${CMAKE_MATCH_1}")
+if(NOT metadata_profile STREQUAL PROFILE_NAME)
+    message(FATAL_ERROR "metadata.profile expected ${PROFILE_NAME}, got ${metadata_profile}")
+endif()
+string(REGEX MATCH "\"denoise_enabled\" *: *(true|false)" metadata_denoise_match "${metadata_object}")
+if(NOT metadata_denoise_match)
+    message(FATAL_ERROR "metadata missing denoise_enabled")
+endif()
+set(metadata_denoise_enabled "${CMAKE_MATCH_1}")
+if(EXPECT_DENOISE_ENABLED)
+    if(NOT metadata_denoise_enabled STREQUAL "true")
+        message(FATAL_ERROR "metadata.denoise_enabled expected true, got ${metadata_denoise_enabled}")
+    endif()
+else()
+    if(NOT metadata_denoise_enabled STREQUAL "false")
+        message(FATAL_ERROR "metadata.denoise_enabled expected false, got ${metadata_denoise_enabled}")
+    endif()
 endif()
 
 string(REGEX MATCHALL "\\{[^\\{\\}]*\"frame_index\" *: *[0-9]+[^\\{\\}]*\"camera_index\" *: *[0-9]+[^\\{\\}]*\\}"
