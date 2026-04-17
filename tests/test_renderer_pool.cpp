@@ -62,33 +62,53 @@ int main() {
     expect_throws([]() { rt::RendererPool invalid_zero(0); }, "reject renderer_count below range");
     expect_throws([]() { rt::RendererPool invalid_over(5); }, "reject renderer_count above range");
 
-    rt::RendererPool pool(4);
-    pool.prepare_scene(packed_scene);
-    const std::vector<rt::CameraRenderResult> pooled = pool.render_frame(packed_rig, profile, 4);
+    rt::RendererPool single_pool(1);
+    single_pool.prepare_scene(packed_scene);
+    const std::vector<rt::CameraRenderResult> single_result = single_pool.render_frame(packed_rig, profile, 1);
 
-    expect_true(pooled.size() == 4, "pooled camera count");
+    expect_true(single_result.size() == 1, "single-camera pooled count");
+    expect_true(single_result[0].camera_index == 0, "single-camera pooled ordering");
+    {
+        rt::OptixRenderer baseline;
+        baseline.prepare_scene(packed_scene);
+        const rt::ProfiledRadianceFrame expected = baseline.render_prepared_radiance(packed_rig, profile, 0);
+        expect_vector_near(
+            single_result[0].profiled.frame.beauty_rgba, expected.frame.beauty_rgba, 1e-6, "single-camera beauty parity");
+        expect_vector_near(
+            single_result[0].profiled.frame.normal_rgba, expected.frame.normal_rgba, 1e-6, "single-camera normal parity");
+        expect_vector_near(
+            single_result[0].profiled.frame.albedo_rgba, expected.frame.albedo_rgba, 1e-6, "single-camera albedo parity");
+        expect_vector_near(single_result[0].profiled.frame.depth, expected.frame.depth, 1e-6, "single-camera depth parity");
+        expect_near(single_result[0].profiled.frame.average_luminance, expected.frame.average_luminance, 1e-9,
+            "single-camera luminance parity");
+    }
+
+    rt::RendererPool four_pool(4);
+    four_pool.prepare_scene(packed_scene);
+    const std::vector<rt::CameraRenderResult> four_result = four_pool.render_frame(packed_rig, profile, 4);
+
+    expect_true(four_result.size() == 4, "four-camera pooled count");
     for (int i = 0; i < 4; ++i) {
         const auto idx = static_cast<std::size_t>(i);
-        expect_true(pooled[idx].camera_index == i, "pooled camera ordering");
-
+        expect_true(four_result[idx].camera_index == i, "four-camera pooled ordering");
         rt::OptixRenderer baseline;
         baseline.prepare_scene(packed_scene);
         const rt::ProfiledRadianceFrame expected = baseline.render_prepared_radiance(packed_rig, profile, i);
 
         expect_vector_near(
-            pooled[idx].profiled.frame.beauty_rgba, expected.frame.beauty_rgba, 1e-6, "pool beauty parity " + std::to_string(i));
+            four_result[idx].profiled.frame.beauty_rgba, expected.frame.beauty_rgba, 1e-6, "four-camera beauty parity " + std::to_string(i));
         expect_vector_near(
-            pooled[idx].profiled.frame.normal_rgba, expected.frame.normal_rgba, 1e-6, "pool normal parity " + std::to_string(i));
+            four_result[idx].profiled.frame.normal_rgba, expected.frame.normal_rgba, 1e-6, "four-camera normal parity " + std::to_string(i));
         expect_vector_near(
-            pooled[idx].profiled.frame.albedo_rgba, expected.frame.albedo_rgba, 1e-6, "pool albedo parity " + std::to_string(i));
+            four_result[idx].profiled.frame.albedo_rgba, expected.frame.albedo_rgba, 1e-6, "four-camera albedo parity " + std::to_string(i));
         expect_vector_near(
-            pooled[idx].profiled.frame.depth, expected.frame.depth, 1e-6, "pool depth parity " + std::to_string(i));
-        expect_near(pooled[idx].profiled.frame.average_luminance, expected.frame.average_luminance, 1e-9,
-            "pool luminance parity " + std::to_string(i));
+            four_result[idx].profiled.frame.depth, expected.frame.depth, 1e-6, "four-camera depth parity " + std::to_string(i));
+        expect_near(four_result[idx].profiled.frame.average_luminance, expected.frame.average_luminance, 1e-9,
+            "four-camera luminance parity " + std::to_string(i));
     }
 
-    expect_throws([&]() { pool.render_frame(packed_rig, profile, 0); }, "reject active_cameras below range");
-    expect_throws([&]() { pool.render_frame(packed_rig, profile, 5); }, "reject active_cameras above range");
+    expect_throws([&]() { four_pool.render_frame(packed_rig, profile, 0); }, "reject active_cameras below range");
+    expect_throws([&]() { four_pool.render_frame(packed_rig, profile, 5); }, "reject active_cameras above range");
 
     return 0;
 }
