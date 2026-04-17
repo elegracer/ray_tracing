@@ -14,9 +14,16 @@ VCPKG_ROOT=$HOME/vcpkg_root cmake -S . -B build-clang-vcpkg-settings \
   -DCMAKE_CUDA_ARCHITECTURES=86
 cmake --build build-clang-vcpkg-settings --target render_realtime -j
 ./bin/render_realtime --camera-count 4 --frames 2 --profile realtime --output-dir build/realtime-smoke
+bash utils/run_realtime_benchmark_matrix.sh build/realtime-matrix 3
 ```
 
-The CLI writes one PNG per frame and per active camera under `build/realtime-smoke/` and prints per-frame timing plus an aggregate FPS summary.
+Each run directory writes:
+
+- PNG outputs for the smoke render
+- `benchmark_frames.csv`
+- `benchmark_summary.json`
+
+The CLI prints per-frame timing plus an aggregate FPS summary.
 
 | Quads            | Earch Sphere            | Checkered Spheres            |
 | ---------------- | ----------------------- | ---------------------------- |
