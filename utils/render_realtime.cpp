@@ -2,7 +2,7 @@
 
 #include "realtime/camera_rig.h"
 #include "realtime/gpu/denoiser.h"
-#include "realtime/gpu/optix_renderer.h"
+#include "realtime/gpu/renderer_pool.h"
 #include "realtime/profiling/benchmark_report.h"
 #include "realtime/render_profile.h"
 #include "realtime/scene_description.h"
@@ -194,7 +194,8 @@ int main(int argc, const char* argv[]) {
 
     const rt::PackedScene packed_scene = make_smoke_scene().pack();
     const rt::PackedCameraRig packed_rig = make_smoke_rig(camera_count).pack();
-    rt::OptixRenderer renderer;
+    rt::RendererPool renderer_pool(camera_count);
+    renderer_pool.prepare_scene(packed_scene);
     rt::OptixDenoiserWrapper denoiser;
 
     rt::profiling::RunReport report {};
@@ -222,13 +223,17 @@ int main(int argc, const char* argv[]) {
         frame_record.cameras.reserve(static_cast<std::size_t>(camera_count));
 
         double frame_luminance_sum = 0.0;
+        std::vector<rt::CameraRenderResult> camera_results =
+            renderer_pool.render_frame(packed_rig, profile, camera_count);
+        std::sort(camera_results.begin(), camera_results.end(),
+            [](const rt::CameraRenderResult& lhs, const rt::CameraRenderResult& rhs) {
+                return lhs.camera_index < rhs.camera_index;
+            });
 
-        for (int camera_index = 0; camera_index < camera_count; ++camera_index) {
-            const rt::ProfiledRadianceFrame profiled =
-                renderer.render_radiance_profiled(packed_scene, packed_rig, profile, camera_index);
-            rt::RadianceFrame frame = profiled.frame;
-            frame_record.render_ms += static_cast<double>(profiled.timing.render_ms);
-            frame_record.download_ms += static_cast<double>(profiled.timing.download_ms);
+        for (rt::CameraRenderResult& result : camera_results) {
+            rt::RadianceFrame frame = std::move(result.profiled.frame);
+            frame_record.render_ms += static_cast<double>(result.profiled.timing.render_ms);
+            frame_record.download_ms += static_cast<double>(result.profiled.timing.download_ms);
 
             double denoise_ms = 0.0;
 
@@ -243,7 +248,7 @@ int main(int argc, const char* argv[]) {
 
             if (!skip_image_write) {
                 const auto image_write_begin = std::chrono::steady_clock::now();
-                write_frame_image(output_path, frame_index, camera_index, frame);
+                write_frame_image(output_path, frame_index, result.camera_index, frame);
                 const auto image_write_end = std::chrono::steady_clock::now();
                 const double image_write_ms =
                     std::chrono::duration<double, std::milli>(image_write_end - image_write_begin).count();
@@ -251,10 +256,10 @@ int main(int argc, const char* argv[]) {
             }
 
             frame_record.cameras.push_back(rt::profiling::CameraStageSample {
-                .camera_index = camera_index,
-                .render_ms = static_cast<double>(profiled.timing.render_ms),
+                .camera_index = result.camera_index,
+                .render_ms = static_cast<double>(result.profiled.timing.render_ms),
                 .denoise_ms = denoise_ms,
-                .download_ms = static_cast<double>(profiled.timing.download_ms),
+                .download_ms = static_cast<double>(result.profiled.timing.download_ms),
                 .average_luminance = frame.average_luminance,
             });
         }
