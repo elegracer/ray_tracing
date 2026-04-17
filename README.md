@@ -24,6 +24,8 @@ The matrix runner uses `--skip-image-write`, so each run directory keeps:
 - `benchmark_frames.csv`
 - `benchmark_summary.json`
 
+Realtime benchmark runs execute camera work concurrently and keep host-side denoise bounded to active cameras (`1..4`) with deterministic `camera_index` reporting/output order.
+
 The CLI prints per-frame timing plus an aggregate FPS summary.
 
 For pure benchmark runs, use:

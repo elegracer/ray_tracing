@@ -24,6 +24,10 @@ if(NOT run_result EQUAL 0)
     message(FATAL_ERROR "render_realtime 4-camera run failed: ${run_stderr}")
 endif()
 
+if(NOT run_stdout MATCHES "denoise_ms=")
+    message(FATAL_ERROR "stdout missing denoise_ms field:\n${run_stdout}")
+endif()
+
 set(csv_path "${OUTPUT_DIR}/benchmark_frames.csv")
 set(json_path "${OUTPUT_DIR}/benchmark_summary.json")
 if(NOT EXISTS "${csv_path}")

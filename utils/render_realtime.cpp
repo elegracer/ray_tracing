@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <future>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -125,6 +126,14 @@ std::string render_profile_name(const rt::RenderProfile& profile) {
     return "default";
 }
 
+struct PostprocessResult {
+    int camera_index = 0;
+    float render_ms = 0.0f;
+    float download_ms = 0.0f;
+    rt::RadianceFrame frame;
+    double denoise_ms = 0.0;
+};
+
 }  // namespace
 
 int main(int argc, const char* argv[]) {
@@ -196,7 +205,7 @@ int main(int argc, const char* argv[]) {
     const rt::PackedCameraRig packed_rig = make_smoke_rig(camera_count).pack();
     rt::RendererPool renderer_pool(camera_count);
     renderer_pool.prepare_scene(packed_scene);
-    rt::OptixDenoiserWrapper denoiser;
+    std::vector<rt::OptixDenoiserWrapper> denoisers(static_cast<std::size_t>(camera_count));
 
     rt::profiling::RunReport report {};
     report.profile = profile_name;
@@ -230,25 +239,49 @@ int main(int argc, const char* argv[]) {
                 return lhs.camera_index < rhs.camera_index;
             });
 
+        std::vector<std::future<PostprocessResult>> postprocess_futures;
+        postprocess_futures.reserve(camera_results.size());
         for (rt::CameraRenderResult& result : camera_results) {
-            rt::RadianceFrame frame = std::move(result.profiled.frame);
-            frame_record.render_ms += static_cast<double>(result.profiled.timing.render_ms);
-            frame_record.download_ms += static_cast<double>(result.profiled.timing.download_ms);
+            rt::OptixDenoiserWrapper& camera_denoiser =
+                denoisers.at(static_cast<std::size_t>(result.camera_index));
+            postprocess_futures.push_back(std::async(std::launch::async,
+                [denoiser = &camera_denoiser, denoise_enabled = profile.enable_denoise,
+                    result = std::move(result)]() mutable {
+                    PostprocessResult out {};
+                    out.camera_index = result.camera_index;
+                    out.render_ms = result.profiled.timing.render_ms;
+                    out.download_ms = result.profiled.timing.download_ms;
+                    out.frame = std::move(result.profiled.frame);
+                    if (denoise_enabled) {
+                        const auto denoise_begin = std::chrono::steady_clock::now();
+                        denoiser->run(out.frame);
+                        const auto denoise_end = std::chrono::steady_clock::now();
+                        out.denoise_ms =
+                            std::chrono::duration<double, std::milli>(denoise_end - denoise_begin).count();
+                    }
+                    return out;
+                }));
+        }
 
-            double denoise_ms = 0.0;
+        std::vector<PostprocessResult> postprocessed;
+        postprocessed.reserve(postprocess_futures.size());
+        for (std::future<PostprocessResult>& future : postprocess_futures) {
+            postprocessed.push_back(future.get());
+        }
+        std::sort(postprocessed.begin(), postprocessed.end(),
+            [](const PostprocessResult& lhs, const PostprocessResult& rhs) {
+                return lhs.camera_index < rhs.camera_index;
+            });
 
-            if (profile.enable_denoise) {
-                const auto denoise_begin = std::chrono::steady_clock::now();
-                denoiser.run(frame);
-                const auto denoise_end = std::chrono::steady_clock::now();
-                denoise_ms = std::chrono::duration<double, std::milli>(denoise_end - denoise_begin).count();
-                frame_record.denoise_ms += denoise_ms;
-            }
-            frame_luminance_sum += frame.average_luminance;
+        for (PostprocessResult& item : postprocessed) {
+            frame_record.render_ms += static_cast<double>(item.render_ms);
+            frame_record.download_ms += static_cast<double>(item.download_ms);
+            frame_record.denoise_ms += item.denoise_ms;
+            frame_luminance_sum += item.frame.average_luminance;
 
             if (!skip_image_write) {
                 const auto image_write_begin = std::chrono::steady_clock::now();
-                write_frame_image(output_path, frame_index, result.camera_index, frame);
+                write_frame_image(output_path, frame_index, item.camera_index, item.frame);
                 const auto image_write_end = std::chrono::steady_clock::now();
                 const double image_write_ms =
                     std::chrono::duration<double, std::milli>(image_write_end - image_write_begin).count();
@@ -256,11 +289,11 @@ int main(int argc, const char* argv[]) {
             }
 
             frame_record.cameras.push_back(rt::profiling::CameraStageSample {
-                .camera_index = result.camera_index,
-                .render_ms = static_cast<double>(result.profiled.timing.render_ms),
-                .denoise_ms = denoise_ms,
-                .download_ms = static_cast<double>(result.profiled.timing.download_ms),
-                .average_luminance = frame.average_luminance,
+                .camera_index = item.camera_index,
+                .render_ms = static_cast<double>(item.render_ms),
+                .denoise_ms = item.denoise_ms,
+                .download_ms = static_cast<double>(item.download_ms),
+                .average_luminance = item.frame.average_luminance,
             });
         }
 
