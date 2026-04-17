@@ -24,6 +24,17 @@ void expect_frame_near(const rt::RadianceFrame& actual, const rt::RadianceFrame&
     expect_near(actual.average_luminance, expected.average_luminance, 1e-9, label + " luminance");
 }
 
+template <typename Fn>
+void expect_throws(Fn&& fn, const std::string& label) {
+    bool threw = false;
+    try {
+        fn();
+    } catch (...) {
+        threw = true;
+    }
+    expect_true(threw, label);
+}
+
 }  // namespace
 
 int main() {
@@ -62,5 +73,21 @@ int main() {
     expect_true(prepared_second.timing.download_ms >= 0.0f, "prepared repeat download timing non-negative");
     expect_true(fallback.timing.render_ms >= 0.0f, "fallback render timing non-negative");
     expect_true(fallback.timing.download_ms >= 0.0f, "fallback download timing non-negative");
+
+    rt::OptixRenderer no_prepare_renderer;
+    expect_throws([&]() { no_prepare_renderer.render_prepared_radiance(packed_rig, profile, 0); },
+        "prepared render requires prepare_scene");
+
+    rt::OptixRenderer invalid_wrapper_renderer;
+    expect_throws([&]() { invalid_wrapper_renderer.render_radiance_profiled(packed_scene, packed_rig, profile, 1); },
+        "profiled wrapper rejects invalid camera index");
+    expect_throws([&]() { invalid_wrapper_renderer.render_prepared_radiance(packed_rig, profile, 0); },
+        "failed profiled wrapper must not leave prepared state behind");
+
+    rt::OptixRenderer invalidation_renderer;
+    invalidation_renderer.prepare_scene(packed_scene);
+    invalidation_renderer.render_radiance(packed_scene, packed_rig, profile, 0);
+    expect_throws([&]() { invalidation_renderer.render_prepared_radiance(packed_rig, profile, 0); },
+        "legacy render invalidates prepared state");
     return 0;
 }
