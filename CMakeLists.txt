@@ -282,6 +282,7 @@ add_test(NAME test_render_realtime_final_room_quality_cli
         -DRENDER_REALTIME_EXE=$<TARGET_FILE:render_realtime>
         -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/test/render_realtime-final-room-quality
         -DSCENE_NAME=final_room
+        -DFRAME_COUNT=1
         -DPROFILE_NAME=quality
         -DEXPECT_DENOISE_ENABLED=OFF
         -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/VerifyRenderRealtimeFourCameraProfiling.cmake

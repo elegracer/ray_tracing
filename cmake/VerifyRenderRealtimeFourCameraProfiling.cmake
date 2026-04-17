@@ -10,6 +10,9 @@ endif()
 if(NOT DEFINED SCENE_NAME)
     set(SCENE_NAME smoke)
 endif()
+if(NOT DEFINED FRAME_COUNT)
+    set(FRAME_COUNT 2)
+endif()
 if(NOT DEFINED EXPECT_DENOISE_ENABLED)
     set(EXPECT_DENOISE_ENABLED ON)
 endif()
@@ -21,7 +24,7 @@ execute_process(
     COMMAND "${RENDER_REALTIME_EXE}"
         --scene "${SCENE_NAME}"
         --camera-count 4
-        --frames 2
+        --frames "${FRAME_COUNT}"
         --profile "${PROFILE_NAME}"
         --skip-image-write
         --output-dir "${OUTPUT_DIR}"
@@ -40,8 +43,9 @@ endif()
 if(NOT EXPECT_DENOISE_ENABLED)
     string(REGEX MATCHALL "frame=[0-9]+ cameras=4 [^\r\n]*denoise_ms=0\\.000" zero_denoise_lines "${run_stdout}")
     list(LENGTH zero_denoise_lines zero_denoise_count)
-    if(NOT zero_denoise_count EQUAL 2)
-        message(FATAL_ERROR "quality 4-camera run expected two zero-denoise frame lines:\n${run_stdout}")
+    if(NOT zero_denoise_count EQUAL FRAME_COUNT)
+        message(FATAL_ERROR
+            "quality 4-camera run expected ${FRAME_COUNT} zero-denoise frame lines:\n${run_stdout}")
     endif()
 endif()
 
@@ -98,12 +102,14 @@ endif()
 string(REGEX MATCHALL "\\{[^\\{\\}]*\"frame_index\" *: *[0-9]+[^\\{\\}]*\"camera_index\" *: *[0-9]+[^\\{\\}]*\\}"
     per_camera_records "${json_flat}")
 list(LENGTH per_camera_records per_camera_length)
-if(NOT per_camera_length EQUAL 8)
-    message(FATAL_ERROR "per-camera record count expected 8, got ${per_camera_length}")
+math(EXPR expected_record_count "${FRAME_COUNT} * 4")
+if(NOT per_camera_length EQUAL expected_record_count)
+    message(FATAL_ERROR "per-camera record count expected ${expected_record_count}, got ${per_camera_length}")
 endif()
 
 set(record_index 0)
-foreach(expected_frame_index RANGE 0 1)
+math(EXPR last_frame_index "${FRAME_COUNT} - 1")
+foreach(expected_frame_index RANGE 0 ${last_frame_index})
     foreach(expected_camera_index RANGE 0 3)
         list(GET per_camera_records ${record_index} record_text)
         string(REGEX MATCH "\"frame_index\" *: *([0-9]+)" actual_frame_match "${record_text}")

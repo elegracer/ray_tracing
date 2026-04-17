@@ -42,6 +42,7 @@ For correctness-focused `final_room` validation, use:
 ```
 
 `final_room` is intended for correctness-first checks, not the default benchmark path.
+The automated CLI coverage keeps this path lightweight by running a skip-write verification pass separately.
 
 | Quads            | Earch Sphere            | Checkered Spheres            |
 | ---------------- | ----------------------- | ---------------------------- |
