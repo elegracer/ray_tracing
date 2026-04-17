@@ -175,6 +175,7 @@ Use two timing sources.
 Use steady-clock timing for:
 
 - full frame time
+- denoise stage in the current branch, because the denoiser is still a CPU-side stub
 - image write time
 - high-level orchestration boundaries
 
@@ -183,8 +184,9 @@ Use steady-clock timing for:
 Use CUDA events for:
 
 - render stage
-- denoise stage
 - explicit device-to-host download stage
+
+When a real GPU denoiser replaces the current stub, `denoise_ms` should move to CUDA-event timing as well. Until then, the important property is that the reported source of each stage timing is explicit and stable across runs.
 
 If a stage is skipped, record zero rather than inventing a synthetic value.
 

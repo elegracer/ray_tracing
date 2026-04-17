@@ -196,6 +196,24 @@ void write_json(const RunReport& report, const std::filesystem::path& path) {
     write_aggregate_stats(out, "host_overhead_ms", report.aggregate.host_overhead_ms, false);
     out << "  },\n";
 
+    out << "  \"frames\": [\n";
+    for (std::size_t i = 0; i < report.frames.size(); ++i) {
+        const FrameStageSample& frame = report.frames[i];
+        out << "    {\"frame_index\": " << frame.frame_index << ", \"camera_count\": " << frame.camera_count
+            << ", \"profile\": \"" << escape_json_string(frame.profile) << "\", \"width\": " << frame.width
+            << ", \"height\": " << frame.height << ", \"samples_per_pixel\": " << frame.samples_per_pixel
+            << ", \"max_bounces\": " << frame.max_bounces << ", \"denoise_enabled\": "
+            << bool_text(frame.denoise_enabled) << ", \"frame_ms\": " << frame.frame_ms << ", \"render_ms\": "
+            << frame.render_ms << ", \"denoise_ms\": " << frame.denoise_ms << ", \"download_ms\": "
+            << frame.download_ms << ", \"image_write_ms\": " << frame.image_write_ms << ", \"host_overhead_ms\": "
+            << frame.host_overhead_ms << ", \"fps\": " << frame.fps << "}";
+        if (i + 1U != report.frames.size()) {
+            out << ",";
+        }
+        out << "\n";
+    }
+    out << "  ],\n";
+
     out << "  \"per-camera\": [\n";
     bool first_record = true;
     for (const FrameStageSample& frame : report.frames) {

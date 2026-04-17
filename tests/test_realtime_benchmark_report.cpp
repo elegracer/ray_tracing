@@ -116,9 +116,12 @@ int main() {
     expect_true(!json_text.empty(), "json is non-empty");
     expect_true(json_text.find("\"metadata\"") != std::string::npos, "json metadata field");
     expect_true(json_text.find("\"aggregate\"") != std::string::npos, "json aggregate field");
+    expect_true(json_text.find("\"frames\"") != std::string::npos, "json frames field");
     expect_true(json_text.find("\"per-camera\"") != std::string::npos, "json per-camera field");
     expect_true(json_text.find("\"profile\": \"rt,\\\"x\\\"\\\\path\"") != std::string::npos, "json escaped profile");
     expect_true(json_text.find("\"frame_ms\"") != std::string::npos, "json aggregate");
+    expect_true(json_text.find("\"host_overhead_ms\": 0.5") != std::string::npos, "json frame host overhead");
+    expect_true(json_text.find("\"fps\": 100") != std::string::npos, "json frame fps");
     expect_true(json_text.find("\"camera_index\": 1") != std::string::npos, "json per camera");
 
     const std::filesystem::path bad_csv_path = out_dir / "missing-parent" / "benchmark_frames.csv";
