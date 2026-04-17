@@ -14,6 +14,7 @@
 
 #include <Eigen/Geometry>
 
+#include <array>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -149,6 +150,27 @@ rt::CameraRig make_smoke_rig(int camera_count) {
     return rig;
 }
 
+rt::CameraRig make_final_room_rig(int camera_count) {
+    rt::CameraRig rig;
+    const double fx = 0.75 * static_cast<double>(kDefaultWidth);
+    const double fy = 0.75 * static_cast<double>(kDefaultHeight);
+    const double cx = 0.5 * static_cast<double>(kDefaultWidth);
+    const double cy = 0.5 * static_cast<double>(kDefaultHeight);
+    constexpr double kDegToRad = 3.14159265358979323846 / 180.0;
+
+    const std::array<double, 4> yaw_deg = {0.0, 90.0, 180.0, -90.0};
+    for (int i = 0; i < camera_count; ++i) {
+        Eigen::Isometry3d T_bc = Eigen::Isometry3d::Identity();
+        T_bc.linear() = Eigen::AngleAxisd(yaw_deg[static_cast<std::size_t>(i)] * kDegToRad,
+                            Eigen::Vector3d::UnitY())
+                            .toRotationMatrix();
+        rig.add_pinhole(rt::Pinhole32Params {fx, fy, cx, cy, 0.0, 0.0, 0.0, 0.0, 0.0},
+            T_bc, kDefaultWidth, kDefaultHeight);
+    }
+
+    return rig;
+}
+
 rt::SceneDescription make_scene(const std::string& scene_name) {
     if (scene_name == "final_room") {
         return make_final_room_scene();
@@ -158,7 +180,7 @@ rt::SceneDescription make_scene(const std::string& scene_name) {
 
 rt::CameraRig make_rig(const std::string& scene_name, int camera_count) {
     if (scene_name == "final_room") {
-        return make_smoke_rig(camera_count);
+        return make_final_room_rig(camera_count);
     }
     return make_smoke_rig(camera_count);
 }
