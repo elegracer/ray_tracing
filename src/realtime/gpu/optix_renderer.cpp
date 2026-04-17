@@ -367,11 +367,11 @@ void OptixRenderer::launch_radiance_pipeline(const PackedScene& scene, const Pac
     params.rr_start_bounce = profile.rr_start_bounce;
     params.mode = 1;
     const std::size_t pixel_count = static_cast<std::size_t>(params.width) * static_cast<std::size_t>(params.height);
-    RT_CUDA_CHECK(cudaMemset(params.frame.beauty, 0, pixel_count * sizeof(float4)));
-    RT_CUDA_CHECK(cudaMemset(params.frame.normal, 0, pixel_count * sizeof(float4)));
-    RT_CUDA_CHECK(cudaMemset(params.frame.albedo, 0, pixel_count * sizeof(float4)));
-    RT_CUDA_CHECK(cudaMemset(params.frame.depth, 0, pixel_count * sizeof(float)));
     if (timing == nullptr) {
+        RT_CUDA_CHECK(cudaMemsetAsync(params.frame.beauty, 0, pixel_count * sizeof(float4), stream_));
+        RT_CUDA_CHECK(cudaMemsetAsync(params.frame.normal, 0, pixel_count * sizeof(float4), stream_));
+        RT_CUDA_CHECK(cudaMemsetAsync(params.frame.albedo, 0, pixel_count * sizeof(float4), stream_));
+        RT_CUDA_CHECK(cudaMemsetAsync(params.frame.depth, 0, pixel_count * sizeof(float), stream_));
         launch_radiance_kernel(params, stream_);
     } else {
         cudaEvent_t render_start = nullptr;
@@ -380,6 +380,10 @@ void OptixRenderer::launch_radiance_pipeline(const PackedScene& scene, const Pac
         try {
             RT_CUDA_CHECK(cudaEventCreate(&render_end));
             RT_CUDA_CHECK(cudaEventRecord(render_start, stream_));
+            RT_CUDA_CHECK(cudaMemsetAsync(params.frame.beauty, 0, pixel_count * sizeof(float4), stream_));
+            RT_CUDA_CHECK(cudaMemsetAsync(params.frame.normal, 0, pixel_count * sizeof(float4), stream_));
+            RT_CUDA_CHECK(cudaMemsetAsync(params.frame.albedo, 0, pixel_count * sizeof(float4), stream_));
+            RT_CUDA_CHECK(cudaMemsetAsync(params.frame.depth, 0, pixel_count * sizeof(float), stream_));
             launch_radiance_kernel(params, stream_);
             RT_CUDA_CHECK(cudaEventRecord(render_end, stream_));
             RT_CUDA_CHECK(cudaEventSynchronize(render_end));
