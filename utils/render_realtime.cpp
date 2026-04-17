@@ -56,8 +56,8 @@ rt::SceneDescription make_final_room_scene() {
     scene.add_quad(rt::QuadPrimitive {
         white,
         Eigen::Vector3d {-4.0, -1.0, -4.0},
-        Eigen::Vector3d {8.0, 0.0, 0.0},
         Eigen::Vector3d {0.0, 0.0, 8.0},
+        Eigen::Vector3d {8.0, 0.0, 0.0},
         false,
     });
     scene.add_quad(rt::QuadPrimitive {
@@ -77,8 +77,8 @@ rt::SceneDescription make_final_room_scene() {
     scene.add_quad(rt::QuadPrimitive {
         red,
         Eigen::Vector3d {4.0, -1.0, -4.0},
-        Eigen::Vector3d {0.0, 4.5, 0.0},
         Eigen::Vector3d {0.0, 0.0, 8.0},
+        Eigen::Vector3d {0.0, 4.5, 0.0},
         false,
     });
     scene.add_quad(rt::QuadPrimitive {
@@ -91,8 +91,8 @@ rt::SceneDescription make_final_room_scene() {
     scene.add_quad(rt::QuadPrimitive {
         blue,
         Eigen::Vector3d {-4.0, -1.0, 4.0},
-        Eigen::Vector3d {8.0, 0.0, 0.0},
         Eigen::Vector3d {0.0, 4.5, 0.0},
+        Eigen::Vector3d {8.0, 0.0, 0.0},
         false,
     });
 
@@ -107,18 +107,18 @@ rt::SceneDescription make_final_room_scene() {
     scene.add_quad(rt::QuadPrimitive {
         white,
         Eigen::Vector3d {-3.2, -0.25, -3.0},
-        Eigen::Vector3d {1.8, 0.0, 0.0},
         Eigen::Vector3d {0.0, 0.0, 1.8},
+        Eigen::Vector3d {1.8, 0.0, 0.0},
         false,
     });
     scene.add_quad(rt::QuadPrimitive {
         white,
         Eigen::Vector3d {1.2, 0.15, 1.0},
-        Eigen::Vector3d {1.6, 0.0, 0.0},
         Eigen::Vector3d {0.0, 0.0, 1.6},
+        Eigen::Vector3d {1.6, 0.0, 0.0},
         false,
     });
-    scene.add_sphere(rt::SpherePrimitive {white, Eigen::Vector3d {0.0, 0.1, 0.0}, 0.75, false});
+    scene.add_sphere(rt::SpherePrimitive {white, Eigen::Vector3d {0.0, 0.25, -1.2}, 0.55, false});
     scene.add_sphere(rt::SpherePrimitive {white, Eigen::Vector3d {-1.6, 0.35, 1.7}, 0.55, false});
 
     scene.add_sphere(rt::SpherePrimitive {white, Eigen::Vector3d {-3.1, 1.0, 0.8}, 0.55, false});
