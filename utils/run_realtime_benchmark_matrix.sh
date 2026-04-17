@@ -22,6 +22,7 @@ for PROFILE in balanced realtime; do
             --camera-count "${CAMERAS}" \
             --frames "${FRAMES}" \
             --profile "${PROFILE}" \
+            --skip-image-write \
             --output-dir "${RUN_DIR}"
     done
 done

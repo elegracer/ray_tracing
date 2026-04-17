@@ -25,6 +25,12 @@ Each run directory writes:
 
 The CLI prints per-frame timing plus an aggregate FPS summary.
 
+For pure benchmark runs, use:
+
+```bash
+./bin/render_realtime --camera-count 4 --frames 3 --profile realtime --skip-image-write --output-dir build/realtime-benchmark
+```
+
 | Quads            | Earch Sphere            | Checkered Spheres            |
 | ---------------- | ----------------------- | ---------------------------- |
 | ![](./quads.png) | ![](./earth_sphere.png) | ![](./checkered_spheres.png) |

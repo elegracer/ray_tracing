@@ -135,6 +135,7 @@ int main(int argc, const char* argv[]) {
     int frames = 1;
     std::string output_dir = "build/realtime-smoke";
     std::string profile_arg;
+    bool skip_image_write = false;
 
     rt::RenderProfile profile = rt::RenderProfile::realtime_default();
     std::string profile_name = render_profile_name(profile);
@@ -157,6 +158,11 @@ int main(int argc, const char* argv[]) {
     program.add_argument("--profile")
         .help("render profile: quality|balanced|realtime")
         .store_into(profile_arg);
+    program.add_argument("--skip-image-write")
+        .help("benchmark mode: skip PNG writes and keep image_write_ms at zero")
+        .default_value(false)
+        .implicit_value(true)
+        .store_into(skip_image_write);
 
     try {
         program.parse_args(argc, argv);
@@ -235,12 +241,14 @@ int main(int argc, const char* argv[]) {
             }
             frame_luminance_sum += frame.average_luminance;
 
-            const auto image_write_begin = std::chrono::steady_clock::now();
-            write_frame_image(output_path, frame_index, camera_index, frame);
-            const auto image_write_end = std::chrono::steady_clock::now();
-            const double image_write_ms =
-                std::chrono::duration<double, std::milli>(image_write_end - image_write_begin).count();
-            frame_record.image_write_ms += image_write_ms;
+            if (!skip_image_write) {
+                const auto image_write_begin = std::chrono::steady_clock::now();
+                write_frame_image(output_path, frame_index, camera_index, frame);
+                const auto image_write_end = std::chrono::steady_clock::now();
+                const double image_write_ms =
+                    std::chrono::duration<double, std::milli>(image_write_end - image_write_begin).count();
+                frame_record.image_write_ms += image_write_ms;
+            }
 
             frame_record.cameras.push_back(rt::profiling::CameraStageSample {
                 .camera_index = camera_index,

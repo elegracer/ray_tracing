@@ -246,6 +246,13 @@ add_test(NAME test_render_realtime_profiling_cli
         -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/test/render_realtime-profiling
         -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/VerifyRenderRealtimeProfiling.cmake
 )
+add_test(NAME test_render_realtime_cli_skip_write
+    COMMAND ${CMAKE_COMMAND}
+        -DRENDER_REALTIME_EXE=$<TARGET_FILE:render_realtime>
+        -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/test/render_realtime-skip-write
+        -DEXPECT_SKIP_WRITE=ON
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/VerifyRenderRealtimeProfiling.cmake
+)
 
 add_executable(test_realtime_pipeline)
 target_sources(test_realtime_pipeline

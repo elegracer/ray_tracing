@@ -50,3 +50,32 @@ endif()
 if(NOT json_text MATCHES "\"per-camera\"")
     message(FATAL_ERROR "json missing per-camera records:\n${json_text}")
 endif()
+
+if(DEFINED EXPECT_SKIP_WRITE AND EXPECT_SKIP_WRITE)
+    file(REMOVE_RECURSE "${OUTPUT_DIR}")
+    file(MAKE_DIRECTORY "${OUTPUT_DIR}")
+
+    execute_process(
+        COMMAND "${RENDER_REALTIME_EXE}"
+            --camera-count 1
+            --frames 2
+            --profile realtime
+            --skip-image-write
+            --output-dir "${OUTPUT_DIR}"
+        RESULT_VARIABLE skip_result
+        OUTPUT_VARIABLE skip_stdout
+        ERROR_VARIABLE skip_stderr
+    )
+
+    if(NOT skip_result EQUAL 0)
+        message(FATAL_ERROR "skip-write render_realtime failed: ${skip_stderr}")
+    endif()
+    if(NOT skip_stdout MATCHES "image_write_ms=0\\.000")
+        message(FATAL_ERROR "skip-write stdout missing zero image_write_ms:\n${skip_stdout}")
+    endif()
+    file(GLOB pngs "${OUTPUT_DIR}/*.png")
+    list(LENGTH pngs png_count)
+    if(NOT png_count EQUAL 0)
+        message(FATAL_ERROR "skip-write run still wrote PNG files")
+    endif()
+endif()
