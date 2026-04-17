@@ -216,6 +216,14 @@ target_sources(test_optix_prepared_scene
 target_link_libraries(test_optix_prepared_scene PRIVATE realtime_gpu)
 add_test(NAME test_optix_prepared_scene COMMAND test_optix_prepared_scene)
 
+add_executable(test_renderer_pool)
+target_sources(test_renderer_pool
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_renderer_pool.cpp
+)
+target_link_libraries(test_renderer_pool PRIVATE realtime_gpu)
+add_test(NAME test_renderer_pool COMMAND test_renderer_pool)
+
 add_executable(test_optix_materials_aux)
 target_sources(test_optix_materials_aux
     PRIVATE
@@ -235,6 +243,7 @@ add_test(NAME test_optix_equi_path_trace COMMAND test_optix_equi_path_trace)
 target_sources(realtime_gpu
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/denoiser.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/renderer_pool.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/realtime_pipeline.cpp
 )
 
