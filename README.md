@@ -35,6 +35,14 @@ For pure benchmark runs, use:
 ./bin/render_realtime --camera-count 4 --frames 3 --profile realtime --skip-image-write --output-dir build/realtime-benchmark
 ```
 
+For correctness-focused `final_room` validation, use:
+
+```bash
+./bin/render_realtime --scene final_room --camera-count 4 --frames 1 --profile quality --output-dir build/final-room-check
+```
+
+`final_room` is intended for correctness-first checks, not the default benchmark path.
+
 | Quads            | Earch Sphere            | Checkered Spheres            |
 | ---------------- | ----------------------- | ---------------------------- |
 | ![](./quads.png) | ![](./earth_sphere.png) | ![](./checkered_spheres.png) |

@@ -277,6 +277,15 @@ add_test(NAME test_render_realtime_four_camera_quality_cli
         -DEXPECT_DENOISE_ENABLED=OFF
         -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/VerifyRenderRealtimeFourCameraProfiling.cmake
 )
+add_test(NAME test_render_realtime_final_room_quality_cli
+    COMMAND ${CMAKE_COMMAND}
+        -DRENDER_REALTIME_EXE=$<TARGET_FILE:render_realtime>
+        -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/test/render_realtime-final-room-quality
+        -DSCENE_NAME=final_room
+        -DPROFILE_NAME=quality
+        -DEXPECT_DENOISE_ENABLED=OFF
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/VerifyRenderRealtimeFourCameraProfiling.cmake
+)
 add_test(NAME test_render_realtime_cli_skip_write
     COMMAND ${CMAKE_COMMAND}
         -DRENDER_REALTIME_EXE=$<TARGET_FILE:render_realtime>
