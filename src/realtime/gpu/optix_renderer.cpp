@@ -294,6 +294,7 @@ DirectionDebugFrame OptixRenderer::render_direction_debug(const PackedCameraRig&
 }
 
 void OptixRenderer::upload_scene(const PackedScene& scene) {
+    scene_prepared_ = false;
     free_scene_buffers(device_spheres_, device_quads_, device_materials_);
 
     if (!scene.spheres.empty()) {
@@ -623,7 +624,6 @@ double OptixRenderer::compute_average_luminance(const std::vector<float>& rgba) 
 }
 
 void OptixRenderer::prepare_scene(const PackedScene& scene) {
-    scene_prepared_ = false;
     upload_scene(scene);
     build_or_refit_accels(scene);
     scene_prepared_ = true;
@@ -653,6 +653,7 @@ ProfiledRadianceFrame OptixRenderer::render_prepared_radiance(
 
 ProfiledRadianceFrame OptixRenderer::render_radiance_profiled(const PackedScene& scene, const PackedCameraRig& rig,
     const RenderProfile& profile, int camera_index) {
+    validate_radiance_request(rig, camera_index);
     prepare_scene(scene);
     return render_prepared_radiance(rig, profile, camera_index);
 }
