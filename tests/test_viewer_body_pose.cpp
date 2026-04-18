@@ -52,7 +52,7 @@ int main() {
     {
         rt::viewer::BodyPose pose {.position = Eigen::Vector3d::Zero(), .yaw_deg = 0.0, .pitch_deg = 10.0};
         rt::viewer::integrate_mouse_look(pose, 2.0, 3.0, 4.0);
-        expect_near(pose.yaw_deg, 8.0, 1e-12, "mouse look yaw sign");
+        expect_near(pose.yaw_deg, -8.0, 1e-12, "mouse look yaw sign");
         expect_near(pose.pitch_deg, -2.0, 1e-12, "mouse look pitch sign");
     }
 

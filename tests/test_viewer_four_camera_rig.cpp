@@ -14,14 +14,16 @@ double to_radians(double degrees) {
     return degrees * 3.14159265358979323846 / 180.0;
 }
 
-Eigen::Matrix3d body_rotation(double yaw_deg, double pitch_deg) {
-    return (Eigen::AngleAxisd(to_radians(yaw_deg), Eigen::Vector3d::UnitX())
-            * Eigen::AngleAxisd(to_radians(-pitch_deg), Eigen::Vector3d::UnitY()))
-        .toRotationMatrix();
+Eigen::Matrix3d body_yaw_rotation(double yaw_deg) {
+    return Eigen::AngleAxisd(to_radians(yaw_deg), Eigen::Vector3d::UnitX()).toRotationMatrix();
 }
 
 Eigen::Matrix3d yaw_offset_rotation(double yaw_deg) {
     return Eigen::AngleAxisd(to_radians(yaw_deg), Eigen::Vector3d::UnitX()).toRotationMatrix();
+}
+
+Eigen::Matrix3d camera_pitch_rotation(double pitch_deg) {
+    return Eigen::AngleAxisd(to_radians(-pitch_deg), Eigen::Vector3d::UnitY()).toRotationMatrix();
 }
 
 }  // namespace
@@ -63,8 +65,9 @@ int main() {
         const Eigen::Matrix3d R_rc = camera.T_rc.block<3, 3>(0, 0);
         const Eigen::Vector3d camera_forward_renderer = R_rc * Eigen::Vector3d(0.0, 0.0, 1.0);
         const Eigen::Vector3d expected_forward = rt::body_to_world(
-            body_rotation(pose.yaw_deg, pose.pitch_deg)
+            body_yaw_rotation(pose.yaw_deg)
             * yaw_offset_rotation(expected_yaw_offsets_deg[static_cast<std::size_t>(i)])
+            * camera_pitch_rotation(pose.pitch_deg)
             * Eigen::Vector3d(0.0, 0.0, -1.0));
         expect_vec3_near(camera_forward_renderer, expected_forward, 1e-9, "camera forward");
     }
@@ -91,6 +94,26 @@ int main() {
             packed_rig.cameras[0].T_rc.block<3, 3>(0, 0) * Eigen::Vector3d(1.0, 0.0, 0.0);
         expect_near((translation_delta.normalized() - front_right_renderer.normalized()).norm(), 0.0, 1e-9,
             "D follows front camera right");
+    }
+
+    {
+        const rt::viewer::BodyPose neutral_side_pose {
+            .position = Eigen::Vector3d::Zero(),
+            .yaw_deg = 0.0,
+            .pitch_deg = 0.0,
+        };
+        const rt::viewer::BodyPose pitched_side_pose {
+            .position = Eigen::Vector3d::Zero(),
+            .yaw_deg = 0.0,
+            .pitch_deg = 20.0,
+        };
+        const rt::PackedCameraRig neutral_rig = rt::viewer::make_default_viewer_rig(neutral_side_pose, 640, 480).pack();
+        const rt::PackedCameraRig pitched_rig = rt::viewer::make_default_viewer_rig(pitched_side_pose, 640, 480).pack();
+        const Eigen::Matrix3d R_neutral = neutral_rig.cameras[1].T_rc.block<3, 3>(0, 0);
+        const Eigen::Matrix3d R_pitched = pitched_rig.cameras[1].T_rc.block<3, 3>(0, 0);
+        const Eigen::Matrix3d relative = R_neutral.transpose() * R_pitched;
+        expect_vec3_near(relative * Eigen::Vector3d(1.0, 0.0, 0.0), Eigen::Vector3d(1.0, 0.0, 0.0), 1e-9,
+            "side camera pitch keeps local right axis");
     }
 
     {

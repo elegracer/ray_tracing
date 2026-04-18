@@ -15,10 +15,14 @@ double to_radians(double degrees) {
     return degrees * std::numbers::pi / 180.0;
 }
 
-Eigen::Matrix3d body_rotation_matrix(double yaw_deg, double pitch_deg) {
+Eigen::Matrix3d body_yaw_matrix(double yaw_deg) {
     const Eigen::AngleAxisd yaw(to_radians(yaw_deg), Eigen::Vector3d::UnitX());
+    return yaw.toRotationMatrix();
+}
+
+Eigen::Matrix3d camera_pitch_matrix(double pitch_deg) {
     const Eigen::AngleAxisd pitch(to_radians(-pitch_deg), Eigen::Vector3d::UnitY());
-    return (yaw * pitch).toRotationMatrix();
+    return pitch.toRotationMatrix();
 }
 
 Eigen::Matrix3d body_yaw_offset_matrix(double yaw_deg) {
@@ -46,8 +50,9 @@ CameraRig make_default_viewer_rig(const BodyPose& pose, int width, int height) {
         Eigen::Isometry3d T_bc = Eigen::Isometry3d::Identity();
         T_bc.translation() = body_to_world_matrix().transpose() * pose.position;
         T_bc.linear() = front_camera_to_body_matrix().transpose()
-            * body_rotation_matrix(pose.yaw_deg, pose.pitch_deg)
+            * body_yaw_matrix(pose.yaw_deg)
             * body_yaw_offset_matrix(yaw_offset)
+            * camera_pitch_matrix(pose.pitch_deg)
             * front_camera_to_body_matrix();
         rig.add_pinhole(pinhole, T_bc, width, height);
     }

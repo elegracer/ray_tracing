@@ -20,8 +20,158 @@ constexpr int kViewWidth = 640;
 constexpr int kViewHeight = 480;
 constexpr double kLookDegreesPerPixel = 0.08;
 constexpr double kMoveSpeedUnitsPerSecond = 1.8;
+constexpr float kLabelGlyphWidth = 1.0f;
+constexpr float kLabelGlyphHeight = 1.6f;
+constexpr float kLabelGlyphAdvance = 1.35f;
+constexpr float kLabelPadX = 0.35f;
+constexpr float kLabelPadY = 0.25f;
+
+constexpr std::array<const char*, 4> kCameraLabels {"cam0", "cam1", "cam2", "cam3"};
+
+struct ViewerPanel {
+    int camera_index;
+    int column;
+    int row;
+};
+
+enum class LabelCorner {
+    top_left,
+    top_right,
+    bottom_left,
+    bottom_right,
+};
+
+constexpr std::array<ViewerPanel, 4> kViewerPanels {{
+    {.camera_index = 0, .column = 0, .row = 0},
+    {.camera_index = 1, .column = 1, .row = 0},
+    {.camera_index = 3, .column = 0, .row = 1},
+    {.camera_index = 2, .column = 1, .row = 1},
+}};
 
 float clamp01(float v) { return std::clamp(v, 0.0f, 1.0f); }
+
+constexpr float label_text_width() {
+    return 3.0f * kLabelGlyphAdvance + kLabelGlyphWidth;
+}
+
+void emit_line_segment(float x0, float y0, float x1, float y1, float x_offset) {
+    glVertex2f(x_offset + x0, y0);
+    glVertex2f(x_offset + x1, y1);
+}
+
+void emit_glyph(char glyph, float x_offset) {
+    switch (glyph) {
+    case 'c':
+        emit_line_segment(1.0f, 0.0f, 0.0f, 0.0f, x_offset);
+        emit_line_segment(0.0f, 0.0f, 0.0f, kLabelGlyphHeight, x_offset);
+        emit_line_segment(0.0f, kLabelGlyphHeight, 1.0f, kLabelGlyphHeight, x_offset);
+        break;
+    case 'a':
+        emit_line_segment(0.0f, kLabelGlyphHeight, 0.0f, 0.55f, x_offset);
+        emit_line_segment(0.0f, 0.55f, 0.25f, 0.0f, x_offset);
+        emit_line_segment(0.25f, 0.0f, 0.75f, 0.0f, x_offset);
+        emit_line_segment(0.75f, 0.0f, 1.0f, 0.55f, x_offset);
+        emit_line_segment(1.0f, 0.55f, 1.0f, kLabelGlyphHeight, x_offset);
+        emit_line_segment(0.0f, 0.85f, 1.0f, 0.85f, x_offset);
+        break;
+    case 'm':
+        emit_line_segment(0.0f, kLabelGlyphHeight, 0.0f, 0.0f, x_offset);
+        emit_line_segment(0.0f, 0.0f, 0.5f, 0.7f, x_offset);
+        emit_line_segment(0.5f, 0.7f, 1.0f, 0.0f, x_offset);
+        emit_line_segment(1.0f, 0.0f, 1.0f, kLabelGlyphHeight, x_offset);
+        break;
+    case '0':
+        emit_line_segment(0.0f, 0.0f, 1.0f, 0.0f, x_offset);
+        emit_line_segment(1.0f, 0.0f, 1.0f, kLabelGlyphHeight, x_offset);
+        emit_line_segment(1.0f, kLabelGlyphHeight, 0.0f, kLabelGlyphHeight, x_offset);
+        emit_line_segment(0.0f, kLabelGlyphHeight, 0.0f, 0.0f, x_offset);
+        break;
+    case '1':
+        emit_line_segment(0.5f, 0.0f, 0.5f, kLabelGlyphHeight, x_offset);
+        emit_line_segment(0.2f, 0.3f, 0.5f, 0.0f, x_offset);
+        emit_line_segment(0.2f, kLabelGlyphHeight, 0.8f, kLabelGlyphHeight, x_offset);
+        break;
+    case '2':
+        emit_line_segment(0.0f, 0.0f, 1.0f, 0.0f, x_offset);
+        emit_line_segment(1.0f, 0.0f, 1.0f, 0.8f, x_offset);
+        emit_line_segment(1.0f, 0.8f, 0.0f, 0.8f, x_offset);
+        emit_line_segment(0.0f, 0.8f, 0.0f, kLabelGlyphHeight, x_offset);
+        emit_line_segment(0.0f, kLabelGlyphHeight, 1.0f, kLabelGlyphHeight, x_offset);
+        break;
+    case '3':
+        emit_line_segment(0.0f, 0.0f, 1.0f, 0.0f, x_offset);
+        emit_line_segment(1.0f, 0.0f, 1.0f, kLabelGlyphHeight, x_offset);
+        emit_line_segment(0.0f, 0.8f, 1.0f, 0.8f, x_offset);
+        emit_line_segment(0.0f, kLabelGlyphHeight, 1.0f, kLabelGlyphHeight, x_offset);
+        break;
+    default:
+        break;
+    }
+}
+
+GLuint build_camera_label_lists() {
+    const GLuint list_base = glGenLists(static_cast<GLsizei>(kCameraLabels.size()));
+    if (list_base == 0) {
+        return 0;
+    }
+
+    for (std::size_t i = 0; i < kCameraLabels.size(); ++i) {
+        glNewList(list_base + static_cast<GLuint>(i), GL_COMPILE);
+        glBegin(GL_LINES);
+        const char* label = kCameraLabels[i];
+        for (int j = 0; label[j] != '\0'; ++j) {
+            emit_glyph(label[j], static_cast<float>(j) * kLabelGlyphAdvance);
+        }
+        glEnd();
+        glEndList();
+    }
+    return list_base;
+}
+
+void draw_camera_label(GLuint label_list, float x, float y, float width, float height, LabelCorner corner) {
+    const float unit_scale = std::max(14.0f, std::min(width, height) * 0.05f);
+    const float text_width = label_text_width() * unit_scale;
+    const float text_height = kLabelGlyphHeight * unit_scale;
+    const float box_width = text_width + 2.0f * kLabelPadX * unit_scale;
+    const float box_height = text_height + 2.0f * kLabelPadY * unit_scale;
+    const float inset = std::max(8.0f, std::min(width, height) * 0.03f);
+
+    float box_left = x + 0.5f * (width - box_width);
+    float box_top = y + 0.5f * (height - box_height);
+    switch (corner) {
+    case LabelCorner::top_left:
+        box_left = x + inset;
+        box_top = y + inset;
+        break;
+    case LabelCorner::top_right:
+        box_left = x + width - inset - box_width;
+        box_top = y + inset;
+        break;
+    case LabelCorner::bottom_left:
+        box_left = x + inset;
+        box_top = y + height - inset - box_height;
+        break;
+    case LabelCorner::bottom_right:
+        box_left = x + width - inset - box_width;
+        box_top = y + height - inset - box_height;
+        break;
+    }
+
+    glColor4f(0.0f, 0.0f, 0.0f, 0.55f);
+    glBegin(GL_QUADS);
+    glVertex2f(box_left, box_top);
+    glVertex2f(box_left + box_width, box_top);
+    glVertex2f(box_left + box_width, box_top + box_height);
+    glVertex2f(box_left, box_top + box_height);
+    glEnd();
+
+    glPushMatrix();
+    glTranslatef(box_left + kLabelPadX * unit_scale, box_top + kLabelPadY * unit_scale, 0.0f);
+    glScalef(unit_scale, unit_scale, 1.0f);
+    glColor4f(1.0f, 1.0f, 1.0f, 0.95f);
+    glCallList(label_list);
+    glPopMatrix();
+}
 
 enum class UploadStatus {
     ok,
@@ -108,6 +258,7 @@ int main() {
     std::array<GLuint, 4> textures{};
     std::array<std::vector<std::uint8_t>, 4> texture_scratch{};
     std::array<bool, 4> warned_texture_mismatch{};
+    const GLuint label_list_base = build_camera_label_lists();
     glGenTextures(static_cast<GLsizei>(textures.size()), textures.data());
     for (GLuint texture : textures) {
         glBindTexture(GL_TEXTURE_2D, texture);
@@ -215,14 +366,36 @@ int main() {
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
 
-        draw_textured_quad(textures[0], 0.0f, 0.0f, panel_width, panel_height);
-        draw_textured_quad(textures[1], panel_width, 0.0f, panel_width, panel_height);
-        draw_textured_quad(textures[2], 0.0f, panel_height, panel_width, panel_height);
-        draw_textured_quad(textures[3], panel_width, panel_height, panel_width, panel_height);
+        for (const ViewerPanel& panel : kViewerPanels) {
+            const float x = static_cast<float>(panel.column) * panel_width;
+            const float y = static_cast<float>(panel.row) * panel_height;
+            draw_textured_quad(textures[static_cast<std::size_t>(panel.camera_index)], x, y, panel_width, panel_height);
+        }
+
+        if (label_list_base != 0) {
+            glDisable(GL_TEXTURE_2D);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glLineWidth(2.0f);
+            for (const ViewerPanel& panel : kViewerPanels) {
+                const float x = static_cast<float>(panel.column) * panel_width;
+                const float y = static_cast<float>(panel.row) * panel_height;
+                const LabelCorner corner = panel.row == 0
+                    ? (panel.column == 0 ? LabelCorner::bottom_right : LabelCorner::bottom_left)
+                    : (panel.column == 0 ? LabelCorner::top_right : LabelCorner::top_left);
+                draw_camera_label(label_list_base + static_cast<GLuint>(panel.camera_index), x, y, panel_width,
+                    panel_height, corner);
+            }
+            glDisable(GL_BLEND);
+            glEnable(GL_TEXTURE_2D);
+        }
 
         glfwSwapBuffers(window);
     }
 
+    if (label_list_base != 0) {
+        glDeleteLists(label_list_base, static_cast<GLsizei>(kCameraLabels.size()));
+    }
     glDeleteTextures(static_cast<GLsizei>(textures.size()), textures.data());
     glfwDestroyWindow(window);
     glfwTerminate();
