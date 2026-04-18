@@ -86,6 +86,10 @@ target_sources(core
         ${CMAKE_CURRENT_BINARY_DIR}/include/core/version.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/core.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/core.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/core/offline_shared_scene_renderer.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/core/offline_shared_scene_renderer.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/cpu_scene_adapter.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/cpu_scene_adapter.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/shared_scene_ir.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/shared_scene_builders.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/camera_models.cpp
@@ -230,6 +234,14 @@ target_sources(test_shared_scene_builders
 )
 target_link_libraries(test_shared_scene_builders PRIVATE core)
 add_test(NAME test_shared_scene_builders COMMAND test_shared_scene_builders)
+
+add_executable(test_cpu_scene_adapter)
+target_sources(test_cpu_scene_adapter
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_cpu_scene_adapter.cpp
+)
+target_link_libraries(test_cpu_scene_adapter PRIVATE core)
+add_test(NAME test_cpu_scene_adapter COMMAND test_cpu_scene_adapter)
 
 add_executable(test_scene_catalog)
 target_sources(test_scene_catalog
