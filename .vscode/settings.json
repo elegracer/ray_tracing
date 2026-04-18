@@ -1,11 +1,5 @@
 {
     "cmake.configureSettings": {
-        "CMAKE_TOOLCHAIN_FILE": "${env:VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
-        "CMAKE_C_COMPILER": "clang",
-        "CMAKE_CXX_COMPILER": "clang++",
-        "CMAKE_CUDA_COMPILER": "/usr/local/cuda-13.0/bin/nvcc",
-        "CMAKE_CUDA_HOST_COMPILER": "clang++",
-        "CMAKE_CUDA_ARCHITECTURES": "86;89"
-    },
-    "ROS2.distro": "jazzy",
+        "CMAKE_TOOLCHAIN_FILE": "${env:HOME}/vcpkg_root/scripts/buildsystems/vcpkg.cmake"
+    }
 }
