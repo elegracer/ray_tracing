@@ -165,6 +165,8 @@ target_sources(test_viewer_four_camera_rig
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/viewer/body_pose.cpp
 )
 target_link_libraries(test_viewer_four_camera_rig PRIVATE core)
+add_test(NAME test_viewer_four_camera_rig COMMAND test_viewer_four_camera_rig)
+set_tests_properties(test_viewer_four_camera_rig PROPERTIES DISABLED TRUE)
 
 add_executable(test_scene_description)
 target_sources(test_scene_description
