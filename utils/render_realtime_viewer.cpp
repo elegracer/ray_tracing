@@ -23,15 +23,19 @@ constexpr double kMoveSpeedUnitsPerSecond = 1.8;
 
 float clamp01(float v) { return std::clamp(v, 0.0f, 1.0f); }
 
-std::vector<std::uint8_t> to_rgba8(const rt::RadianceFrame& frame) {
-    const int pixel_count = frame.width * frame.height;
-    const std::size_t expected = static_cast<std::size_t>(pixel_count) * 4;
-
-    std::vector<std::uint8_t> rgba8(expected, 0);
-    if (frame.width <= 0 || frame.height <= 0 || frame.beauty_rgba.size() < expected) {
-        return rgba8;
+bool to_rgba8(const rt::RadianceFrame& frame, std::vector<std::uint8_t>& rgba8) {
+    if (frame.width != kViewWidth || frame.height != kViewHeight) {
+        return false;
     }
 
+    const std::size_t pixel_count =
+        static_cast<std::size_t>(frame.width) * static_cast<std::size_t>(frame.height);
+    const std::size_t expected = pixel_count * 4;
+    if (frame.beauty_rgba.size() < expected) {
+        return false;
+    }
+
+    rgba8.resize(expected);
     for (int p = 0; p < pixel_count; ++p) {
         const float r = clamp01(frame.beauty_rgba[static_cast<std::size_t>(p) * 4 + 0]);
         const float g = clamp01(frame.beauty_rgba[static_cast<std::size_t>(p) * 4 + 1]);
@@ -46,25 +50,20 @@ std::vector<std::uint8_t> to_rgba8(const rt::RadianceFrame& frame) {
         rgba8[static_cast<std::size_t>(p) * 4 + 3] = 255;
     }
 
-    return rgba8;
+    return true;
 }
 
-void upload_texture(GLuint texture, const rt::RadianceFrame& frame) {
-    const std::vector<std::uint8_t> rgba8 = to_rgba8(frame);
+void upload_texture(GLuint texture, const rt::RadianceFrame& frame, std::vector<std::uint8_t>& scratch) {
+    if (!to_rgba8(frame, scratch)) {
+        return;
+    }
+
     glBindTexture(GL_TEXTURE_2D, texture);
-    glTexSubImage2D(
-        GL_TEXTURE_2D, 0, 0, 0, frame.width, frame.height, GL_RGBA, GL_UNSIGNED_BYTE, rgba8.data());
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, kViewWidth, kViewHeight, GL_RGBA, GL_UNSIGNED_BYTE, scratch.data());
 }
 
-void draw_textured_quad(GLuint texture, float x, float y, float width, float height,
-    float window_width, float window_height) {
+void draw_textured_quad(GLuint texture, float x, float y, float width, float height) {
     glBindTexture(GL_TEXTURE_2D, texture);
-
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    glOrtho(0.0, window_width, window_height, 0.0, -1.0, 1.0);
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
 
     glBegin(GL_QUADS);
     glTexCoord2f(0.0f, 0.0f);
@@ -86,6 +85,8 @@ int main() {
         return 1;
     }
 
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
     GLFWwindow* window =
         glfwCreateWindow(kWindowWidth, kWindowHeight, "render_realtime_viewer", nullptr, nullptr);
     if (!window) {
@@ -99,6 +100,7 @@ int main() {
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
     std::array<GLuint, 4> textures{};
+    std::array<std::vector<std::uint8_t>, 4> texture_scratch{};
     glGenTextures(static_cast<GLsizei>(textures.size()), textures.data());
     for (GLuint texture : textures) {
         glBindTexture(GL_TEXTURE_2D, texture);
@@ -125,6 +127,9 @@ int main() {
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+            glfwSetWindowShouldClose(window, GLFW_TRUE);
+        }
 
         const double now = glfwGetTime();
         double dt = now - last_time;
@@ -147,32 +152,42 @@ int main() {
             glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS, kMoveSpeedUnitsPerSecond * dt);
 
         const rt::PackedCameraRig rig = rt::viewer::make_default_viewer_rig(pose, kViewWidth, kViewHeight).pack();
-        const std::vector<rt::CameraRenderResult> results = pool.render_frame(rig, profile, 4);
+        const std::vector<rt::CameraRenderResult> results =
+            pool.render_frame(rig, profile, static_cast<int>(textures.size()));
         for (const auto& result : results) {
             const int idx = result.camera_index;
             if (idx < 0 || idx >= static_cast<int>(textures.size())) {
                 continue;
             }
-            upload_texture(textures[static_cast<std::size_t>(idx)], result.profiled.frame);
+            upload_texture(
+                textures[static_cast<std::size_t>(idx)],
+                result.profiled.frame,
+                texture_scratch[static_cast<std::size_t>(idx)]);
         }
 
-        glViewport(0, 0, kWindowWidth, kWindowHeight);
+        int framebuffer_width = 0;
+        int framebuffer_height = 0;
+        glfwGetFramebufferSize(window, &framebuffer_width, &framebuffer_height);
+        if (framebuffer_width <= 0 || framebuffer_height <= 0) {
+            continue;
+        }
+
+        glViewport(0, 0, framebuffer_width, framebuffer_height);
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        draw_textured_quad(textures[0], 0.0f, 0.0f, static_cast<float>(kViewWidth),
-            static_cast<float>(kViewHeight), static_cast<float>(kWindowWidth),
-            static_cast<float>(kWindowHeight));
-        draw_textured_quad(textures[1], static_cast<float>(kViewWidth), 0.0f,
-            static_cast<float>(kViewWidth), static_cast<float>(kViewHeight),
-            static_cast<float>(kWindowWidth), static_cast<float>(kWindowHeight));
-        draw_textured_quad(textures[2], 0.0f, static_cast<float>(kViewHeight),
-            static_cast<float>(kViewWidth), static_cast<float>(kViewHeight),
-            static_cast<float>(kWindowWidth), static_cast<float>(kWindowHeight));
-        draw_textured_quad(textures[3], static_cast<float>(kViewWidth),
-            static_cast<float>(kViewHeight), static_cast<float>(kViewWidth),
-            static_cast<float>(kViewHeight), static_cast<float>(kWindowWidth),
-            static_cast<float>(kWindowHeight));
+        const float panel_width = 0.5f * static_cast<float>(framebuffer_width);
+        const float panel_height = 0.5f * static_cast<float>(framebuffer_height);
+        glMatrixMode(GL_PROJECTION);
+        glLoadIdentity();
+        glOrtho(0.0, static_cast<double>(framebuffer_width), static_cast<double>(framebuffer_height), 0.0, -1.0, 1.0);
+        glMatrixMode(GL_MODELVIEW);
+        glLoadIdentity();
+
+        draw_textured_quad(textures[0], 0.0f, 0.0f, panel_width, panel_height);
+        draw_textured_quad(textures[1], panel_width, 0.0f, panel_width, panel_height);
+        draw_textured_quad(textures[2], 0.0f, panel_height, panel_width, panel_height);
+        draw_textured_quad(textures[3], panel_width, panel_height, panel_width, panel_height);
 
         glfwSwapBuffers(window);
     }
@@ -182,4 +197,3 @@ int main() {
     glfwTerminate();
     return 0;
 }
-

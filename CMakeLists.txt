@@ -50,8 +50,6 @@ find_package(OpenCV CONFIG REQUIRED)
 find_path(ICECREAM_CPP_INCLUDE_DIRS "icecream.hpp")
 find_package(TBB CONFIG REQUIRED)
 find_package(indicators CONFIG REQUIRED)
-find_package(glfw3 CONFIG REQUIRED)
-find_package(OpenGL REQUIRED)
 find_path(OPTIX_INCLUDE_DIR optix.h
     PATHS ${CMAKE_CURRENT_SOURCE_DIR}/NVIDIA-OptiX-SDK-9.1.0-linux64-x86_64
     PATH_SUFFIXES include
@@ -60,6 +58,18 @@ find_path(OPTIX_INCLUDE_DIR optix.h
 
 # options
 option(OPTION_A "..." ON)
+option(ENABLE_GUI_VIEWER "Build the interactive GLFW/OpenGL viewer" ON)
+
+if(ENABLE_GUI_VIEWER)
+    find_package(glfw3 CONFIG REQUIRED)
+    find_package(OpenGL REQUIRED)
+    set(GLFW_TARGET glfw)
+    if(TARGET glfw::glfw)
+        set(GLFW_TARGET glfw::glfw)
+    elseif(NOT TARGET glfw)
+        message(FATAL_ERROR "GLFW package did not export a glfw target")
+    endif()
+endif()
 
 enable_testing()
 
@@ -113,9 +123,16 @@ add_executable(render_scene)
 target_sources(render_scene PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/utils/render_scene.cpp)
 target_link_libraries(render_scene PRIVATE core)
 
-add_executable(render_realtime_viewer)
-target_sources(render_realtime_viewer PRIVATE utils/render_realtime_viewer.cpp src/realtime/viewer/body_pose.cpp src/realtime/viewer/four_camera_rig.cpp)
-target_link_libraries(render_realtime_viewer PRIVATE realtime_gpu core glfw OpenGL::GL)
+if(ENABLE_GUI_VIEWER)
+    add_executable(render_realtime_viewer)
+    target_sources(render_realtime_viewer
+        PRIVATE
+            utils/render_realtime_viewer.cpp
+            src/realtime/viewer/body_pose.cpp
+            src/realtime/viewer/four_camera_rig.cpp
+    )
+    target_link_libraries(render_realtime_viewer PRIVATE realtime_gpu core ${GLFW_TARGET} OpenGL::GL)
+endif()
 
 add_executable(sphere_importance)
 target_sources(sphere_importance PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/utils/sphere_importance.cpp)
