@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -50,6 +51,13 @@ void context_log_cb(unsigned int level, const char* tag, const char* message, vo
     (void)level;
     (void)tag;
     (void)message;
+}
+
+int checked_scene_count(std::size_t count, const char* label) {
+    if (count > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+        throw std::runtime_error(std::string("scene ") + label + " count exceeds int range");
+    }
+    return static_cast<int>(count);
 }
 
 PackedSphere pack_sphere(const SpherePrimitive& sphere) {
@@ -502,11 +510,11 @@ void OptixRenderer::launch_radiance_pipeline(const PackedScene& scene, const Pac
     params.scene.textures = device_textures_;
     params.scene.image_texels = device_image_texels_;
     params.scene.materials = device_materials_;
-    params.scene.sphere_count = scene.sphere_count;
-    params.scene.quad_count = scene.quad_count;
-    params.scene.texture_count = scene.texture_count;
+    params.scene.sphere_count = checked_scene_count(scene.spheres.size(), "sphere");
+    params.scene.quad_count = checked_scene_count(scene.quads.size(), "quad");
+    params.scene.texture_count = checked_scene_count(scene.textures.size(), "texture");
     params.scene.image_texel_count = device_image_texel_count_;
-    params.scene.material_count = scene.material_count;
+    params.scene.material_count = checked_scene_count(scene.materials.size(), "material");
     params.samples_per_pixel = profile.samples_per_pixel;
     params.max_bounces = profile.max_bounces;
     params.rr_start_bounce = profile.rr_start_bounce;

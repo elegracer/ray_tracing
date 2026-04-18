@@ -21,6 +21,11 @@ int main() {
     expect_near(static_cast<double>(packed.texture_count), 3.0, 1e-12, "texture count");
     expect_near(static_cast<double>(packed.material_count), 1.0, 1e-12, "material count");
     expect_near(static_cast<double>(packed.sphere_count), 1.0, 1e-12, "sphere count");
+    expect_true(
+        packed.texture_count == static_cast<int>(packed.textures.size())
+            && packed.material_count == static_cast<int>(packed.materials.size())
+            && packed.sphere_count == static_cast<int>(packed.spheres.size()),
+        "packed scene counts match vector sizes");
 
     const auto& checker_material = std::get<rt::LambertianMaterial>(packed.materials[0]);
     expect_true(checker_material.albedo_texture == checker, "lambertian uses checker texture");
