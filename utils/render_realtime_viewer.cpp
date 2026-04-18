@@ -53,13 +53,15 @@ bool to_rgba8(const rt::RadianceFrame& frame, std::vector<std::uint8_t>& rgba8) 
     return true;
 }
 
-void upload_texture(GLuint texture, const rt::RadianceFrame& frame, std::vector<std::uint8_t>& scratch) {
+bool upload_texture(GLuint texture, const rt::RadianceFrame& frame, std::vector<std::uint8_t>& scratch) {
     if (!to_rgba8(frame, scratch)) {
-        return;
+        return false;
     }
 
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glBindTexture(GL_TEXTURE_2D, texture);
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, kViewWidth, kViewHeight, GL_RGBA, GL_UNSIGNED_BYTE, scratch.data());
+    return true;
 }
 
 void draw_textured_quad(GLuint texture, float x, float y, float width, float height) {
@@ -101,11 +103,14 @@ int main() {
 
     std::array<GLuint, 4> textures{};
     std::array<std::vector<std::uint8_t>, 4> texture_scratch{};
+    std::array<bool, 4> warned_texture_mismatch{};
     glGenTextures(static_cast<GLsizei>(textures.size()), textures.data());
     for (GLuint texture : textures) {
         glBindTexture(GL_TEXTURE_2D, texture);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, kViewWidth, kViewHeight, 0, GL_RGBA,
             GL_UNSIGNED_BYTE, nullptr);
     }
@@ -129,6 +134,14 @@ int main() {
         glfwPollEvents();
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
             glfwSetWindowShouldClose(window, GLFW_TRUE);
+        }
+
+        int framebuffer_width = 0;
+        int framebuffer_height = 0;
+        glfwGetFramebufferSize(window, &framebuffer_width, &framebuffer_height);
+        if (framebuffer_width <= 0 || framebuffer_height <= 0) {
+            glfwWaitEventsTimeout(0.05);
+            continue;
         }
 
         const double now = glfwGetTime();
@@ -159,17 +172,20 @@ int main() {
             if (idx < 0 || idx >= static_cast<int>(textures.size())) {
                 continue;
             }
-            upload_texture(
+            if (upload_texture(
                 textures[static_cast<std::size_t>(idx)],
                 result.profiled.frame,
-                texture_scratch[static_cast<std::size_t>(idx)]);
-        }
+                texture_scratch[static_cast<std::size_t>(idx)])) {
+                warned_texture_mismatch[static_cast<std::size_t>(idx)] = false;
+                continue;
+            }
 
-        int framebuffer_width = 0;
-        int framebuffer_height = 0;
-        glfwGetFramebufferSize(window, &framebuffer_width, &framebuffer_height);
-        if (framebuffer_width <= 0 || framebuffer_height <= 0) {
-            continue;
+            if (!warned_texture_mismatch[static_cast<std::size_t>(idx)]) {
+                fmt::print(stderr,
+                    "viewer frame size mismatch for camera {}: got {}x{}, expected {}x{}\n",
+                    idx, result.profiled.frame.width, result.profiled.frame.height, kViewWidth, kViewHeight);
+                warned_texture_mismatch[static_cast<std::size_t>(idx)] = true;
+            }
         }
 
         glViewport(0, 0, framebuffer_width, framebuffer_height);
