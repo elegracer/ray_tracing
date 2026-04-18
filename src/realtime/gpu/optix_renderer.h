@@ -78,7 +78,10 @@ class OptixRenderer {
     DeviceFrameBuffers device_frame_{};
     PackedSphere* device_spheres_ = nullptr;
     PackedQuad* device_quads_ = nullptr;
+    PackedTexture* device_textures_ = nullptr;
+    Eigen::Vector3f* device_image_texels_ = nullptr;
     MaterialSample* device_materials_ = nullptr;
+    int device_image_texel_count_ = 0;
     int allocated_width_ = 0;
     int allocated_height_ = 0;
     PackedScene uploaded_scene_{};

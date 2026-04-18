@@ -2,11 +2,14 @@
 
 #include <optix_function_table_definition.h>
 #include <optix_stubs.h>
+#include <opencv2/opencv.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 
 namespace rt {
 
@@ -72,22 +75,82 @@ MaterialSample pack_material(const MaterialDesc& material) {
         [&](const auto& value) {
             using T = std::decay_t<decltype(value)>;
             if constexpr (std::is_same_v<T, LambertianMaterial>) {
-                sample.albedo = value.albedo.template cast<float>();
+                sample.albedo_texture = value.albedo_texture;
                 sample.type = 0;
             } else if constexpr (std::is_same_v<T, MetalMaterial>) {
-                sample.albedo = value.albedo.template cast<float>();
+                sample.albedo_texture = value.albedo_texture;
                 sample.fuzz = static_cast<float>(value.fuzz);
                 sample.type = 1;
             } else if constexpr (std::is_same_v<T, DielectricMaterial>) {
                 sample.ior = static_cast<float>(value.ior);
                 sample.type = 2;
             } else if constexpr (std::is_same_v<T, DiffuseLightMaterial>) {
-                sample.emission = value.emission.template cast<float>();
+                sample.emission_texture = value.emission_texture;
                 sample.type = 3;
             }
         },
         material);
     return sample;
+}
+
+cv::Mat load_texture_image_rgb32f(const std::string& path) {
+    cv::Mat bgr = cv::imread(path, cv::IMREAD_COLOR);
+    if (bgr.empty()) {
+        const std::array<std::string, 2> fallbacks {std::string("../") + path, std::string("../../") + path};
+        for (const std::string& fallback : fallbacks) {
+            bgr = cv::imread(fallback, cv::IMREAD_COLOR);
+            if (!bgr.empty()) {
+                break;
+            }
+        }
+    }
+    if (bgr.empty()) {
+        return {};
+    }
+
+    cv::Mat rgb_u8;
+    cv::cvtColor(bgr, rgb_u8, cv::COLOR_BGR2RGB);
+    cv::Mat rgb_f32;
+    rgb_u8.convertTo(rgb_f32, CV_32FC3, 1.0 / 255.0);
+    return rgb_f32;
+}
+
+PackedTexture pack_texture(const TextureDesc& texture, std::vector<Eigen::Vector3f>& image_texels) {
+    PackedTexture packed {};
+    std::visit(
+        [&](const auto& value) {
+            using T = std::decay_t<decltype(value)>;
+            if constexpr (std::is_same_v<T, ConstantColorTextureDesc>) {
+                packed.type = 0;
+                packed.color = value.color.template cast<float>();
+            } else if constexpr (std::is_same_v<T, CheckerTextureDesc>) {
+                packed.type = 1;
+                packed.scale = static_cast<float>(value.scale);
+                packed.even_texture = value.even_texture;
+                packed.odd_texture = value.odd_texture;
+            } else if constexpr (std::is_same_v<T, ImageTextureDesc>) {
+                packed.type = 2;
+                packed.image_offset = static_cast<int>(image_texels.size());
+                const cv::Mat image = load_texture_image_rgb32f(value.path);
+                if (image.empty()) {
+                    return;
+                }
+                packed.image_width = image.cols;
+                packed.image_height = image.rows;
+                image_texels.reserve(image_texels.size() + static_cast<std::size_t>(image.cols * image.rows));
+                for (int y = 0; y < image.rows; ++y) {
+                    for (int x = 0; x < image.cols; ++x) {
+                        const cv::Vec3f pixel = image.at<cv::Vec3f>(y, x);
+                        image_texels.emplace_back(pixel[0], pixel[1], pixel[2]);
+                    }
+                }
+            } else if constexpr (std::is_same_v<T, NoiseTextureDesc>) {
+                packed.type = 3;
+                packed.scale = static_cast<float>(value.scale);
+            }
+        },
+        texture);
+    return packed;
 }
 
 DeviceActiveCamera make_active_camera(const PackedCamera& camera) {
@@ -149,12 +212,17 @@ void free_frame_buffers(DeviceFrameBuffers& frame) {
     frame = DeviceFrameBuffers {};
 }
 
-void free_scene_buffers(PackedSphere*& spheres, PackedQuad*& quads, MaterialSample*& materials) {
+void free_scene_buffers(PackedSphere*& spheres, PackedQuad*& quads, PackedTexture*& textures,
+    Eigen::Vector3f*& image_texels, MaterialSample*& materials) {
     free_device_ptr(spheres);
     free_device_ptr(quads);
+    free_device_ptr(textures);
+    free_device_ptr(image_texels);
     free_device_ptr(materials);
     spheres = nullptr;
     quads = nullptr;
+    textures = nullptr;
+    image_texels = nullptr;
     materials = nullptr;
 }
 
@@ -295,7 +363,8 @@ DirectionDebugFrame OptixRenderer::render_direction_debug(const PackedCameraRig&
 
 void OptixRenderer::upload_scene(const PackedScene& scene) {
     scene_prepared_ = false;
-    free_scene_buffers(device_spheres_, device_quads_, device_materials_);
+    device_image_texel_count_ = 0;
+    free_scene_buffers(device_spheres_, device_quads_, device_textures_, device_image_texels_, device_materials_);
 
     if (!scene.spheres.empty()) {
         std::vector<PackedSphere> packed_spheres;
@@ -333,12 +402,35 @@ void OptixRenderer::upload_scene(const PackedScene& scene) {
             packed_materials.size() * sizeof(MaterialSample), cudaMemcpyHostToDevice));
     }
 
+    if (!scene.textures.empty()) {
+        std::vector<Eigen::Vector3f> image_texels;
+        std::vector<PackedTexture> packed_textures;
+        packed_textures.reserve(scene.textures.size());
+        for (const TextureDesc& texture : scene.textures) {
+            packed_textures.push_back(pack_texture(texture, image_texels));
+        }
+
+        RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&device_textures_),
+            packed_textures.size() * sizeof(PackedTexture)));
+        RT_CUDA_CHECK(cudaMemcpy(device_textures_, packed_textures.data(),
+            packed_textures.size() * sizeof(PackedTexture), cudaMemcpyHostToDevice));
+
+        if (!image_texels.empty()) {
+            RT_CUDA_CHECK(cudaMalloc(
+                reinterpret_cast<void**>(&device_image_texels_), image_texels.size() * sizeof(Eigen::Vector3f)));
+            RT_CUDA_CHECK(cudaMemcpy(device_image_texels_, image_texels.data(),
+                image_texels.size() * sizeof(Eigen::Vector3f), cudaMemcpyHostToDevice));
+        }
+        device_image_texel_count_ = static_cast<int>(image_texels.size());
+    }
+
     uploaded_scene_ = scene;
 }
 
 void OptixRenderer::free_device_resources() {
     free_frame_buffers(device_frame_);
-    free_scene_buffers(device_spheres_, device_quads_, device_materials_);
+    free_scene_buffers(device_spheres_, device_quads_, device_textures_, device_image_texels_, device_materials_);
+    device_image_texel_count_ = 0;
     allocated_width_ = 0;
     allocated_height_ = 0;
     uploaded_scene_ = PackedScene {};
@@ -407,9 +499,13 @@ void OptixRenderer::launch_radiance_pipeline(const PackedScene& scene, const Pac
     params.frame = device_frame_;
     params.scene.spheres = device_spheres_;
     params.scene.quads = device_quads_;
+    params.scene.textures = device_textures_;
+    params.scene.image_texels = device_image_texels_;
     params.scene.materials = device_materials_;
     params.scene.sphere_count = scene.sphere_count;
     params.scene.quad_count = scene.quad_count;
+    params.scene.texture_count = scene.texture_count;
+    params.scene.image_texel_count = device_image_texel_count_;
     params.scene.material_count = scene.material_count;
     params.samples_per_pixel = profile.samples_per_pixel;
     params.max_bounces = profile.max_bounces;

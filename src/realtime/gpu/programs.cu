@@ -19,6 +19,8 @@ struct HitInfo {
     bool hit = false;
     float t = 0.0f;
     float3 position = make_float3(0.0f, 0.0f, 0.0f);
+    float tex_u = 0.0f;
+    float tex_v = 0.0f;
     float3 geometric_normal = make_float3(0.0f, 0.0f, 1.0f);
     float3 shading_normal = make_float3(0.0f, 0.0f, 1.0f);
     float3 base_color = make_float3(0.0f, 0.0f, 0.0f);
@@ -45,6 +47,8 @@ namespace {
 constexpr float kRayEpsilon = 1e-3f;
 constexpr float kRayFar = 1e30f;
 constexpr float kShadowScale = 0.8f;
+constexpr float kPi = 3.14159265358979323846f;
+constexpr int kTextureResolveDepth = 8;
 constexpr double kCameraEpsilon = 1e-12;
 constexpr int kPinholeUndistortMaxIterations = 24;
 constexpr double kPinholeUndistortResidualThresholdSq = 1e-20;
@@ -95,6 +99,94 @@ __device__ float3 random_unit_vector(std::uint32_t& rng) {
 __device__ float3 vector3f_to_float3(const Eigen::Vector3f& v) {
     const float* ptr = v.data();
     return make_float3(ptr[0], ptr[1], ptr[2]);
+}
+
+__device__ float clamp01(float v) {
+    return fminf(fmaxf(v, 0.0f), 1.0f);
+}
+
+__device__ float fractf(float v) {
+    return v - floorf(v);
+}
+
+__device__ void sphere_uv(const float3& unit_p, float& u, float& v) {
+    const float theta = acosf(fminf(fmaxf(-unit_p.y, -1.0f), 1.0f));
+    const float phi = atan2f(-unit_p.z, unit_p.x) + kPi;
+    u = phi / (2.0f * kPi);
+    v = theta / kPi;
+}
+
+__device__ float hash_noise(const float3& p) {
+    const float n = sinf(dot3(p, make_float3(12.9898f, 78.233f, 37.719f))) * 43758.5453f;
+    return fractf(n) * 2.0f - 1.0f;
+}
+
+__device__ float turbulence_noise(float3 p) {
+    float accum = 0.0f;
+    float weight = 1.0f;
+    for (int i = 0; i < 7; ++i) {
+        accum += weight * hash_noise(p);
+        p = mul3(p, 2.0f);
+        weight *= 0.5f;
+    }
+    return fabsf(accum);
+}
+
+__device__ float3 sample_image_texture(const DeviceSceneView& scene, const PackedTexture& texture, float u, float v) {
+    if (scene.image_texels == nullptr || texture.image_width <= 0 || texture.image_height <= 0) {
+        return make_float3(0.0f, 1.0f, 1.0f);
+    }
+
+    const float clamped_u = clamp01(u);
+    const float clamped_v = clamp01(1.0f - v);
+    int i = static_cast<int>(clamped_u * static_cast<float>(texture.image_width));
+    int j = static_cast<int>(clamped_v * static_cast<float>(texture.image_height));
+    if (i >= texture.image_width) {
+        i = texture.image_width - 1;
+    }
+    if (j >= texture.image_height) {
+        j = texture.image_height - 1;
+    }
+    const int pixel_index = texture.image_offset + j * texture.image_width + i;
+    if (pixel_index < 0 || pixel_index >= scene.image_texel_count) {
+        return make_float3(0.0f, 1.0f, 1.0f);
+    }
+    return vector3f_to_float3(scene.image_texels[pixel_index]);
+}
+
+__device__ float3 evaluate_texture(const DeviceSceneView& scene, int texture_index, float u, float v, const float3& p) {
+    int index = texture_index;
+    for (int depth = 0; depth < kTextureResolveDepth; ++depth) {
+        if (index < 0 || index >= scene.texture_count || scene.textures == nullptr) {
+            return make_float3(1.0f, 0.0f, 1.0f);
+        }
+        const PackedTexture& texture = scene.textures[index];
+        if (texture.type == 0) {
+            return vector3f_to_float3(texture.color);
+        }
+        if (texture.type == 1) {
+            if (fabsf(texture.scale) < 1e-8f) {
+                index = texture.even_texture;
+                continue;
+            }
+            const int x = static_cast<int>(floorf(p.x / texture.scale));
+            const int y = static_cast<int>(floorf(p.y / texture.scale));
+            const int z = static_cast<int>(floorf(p.z / texture.scale));
+            const bool is_even = ((x + y + z) % 2) == 0;
+            index = is_even ? texture.even_texture : texture.odd_texture;
+            continue;
+        }
+        if (texture.type == 2) {
+            return sample_image_texture(scene, texture, u, v);
+        }
+        if (texture.type == 3) {
+            const float turb = turbulence_noise(p);
+            const float value = 0.5f * (1.0f + sinf(texture.scale * p.z + 10.0f * turb));
+            return make_float3(value, value, value);
+        }
+        return make_float3(1.0f, 0.0f, 1.0f);
+    }
+    return make_float3(1.0f, 0.0f, 1.0f);
 }
 
 __device__ Double2 make_double2_xy(double x, double y) {
@@ -310,10 +402,14 @@ __device__ void populate_material(const DeviceSceneView& scene, int material_ind
     hit.material_type = material.type;
     hit.fuzz = material.fuzz;
     hit.ior = material.ior;
-    hit.base_color = vector3f_to_float3(material.albedo);
-    hit.emission = vector3f_to_float3(material.emission);
+    hit.base_color = evaluate_texture(scene, material.albedo_texture, hit.tex_u, hit.tex_v, hit.position);
+    hit.emission = evaluate_texture(scene, material.emission_texture, hit.tex_u, hit.tex_v, hit.position);
     if (hit.material_type == 2) {
         hit.base_color = make_float3(0.92f, 0.95f, 1.0f);
+        hit.emission = make_float3(0.0f, 0.0f, 0.0f);
+    }
+    if (hit.material_type != 3) {
+        hit.emission = make_float3(0.0f, 0.0f, 0.0f);
     }
 }
 
@@ -343,6 +439,7 @@ __device__ void try_hit_sphere(
     best_hit.t = root;
     best_hit.position = add3(ray.origin, mul3(ray.direction, root));
     const float3 outward = div3(sub3(best_hit.position, center), radius);
+    sphere_uv(outward, best_hit.tex_u, best_hit.tex_v);
     set_face_normal(ray, outward, best_hit);
 }
 
@@ -379,6 +476,8 @@ __device__ void try_hit_quad(
     best_hit.hit = true;
     best_hit.t = t;
     best_hit.position = p;
+    best_hit.tex_u = u;
+    best_hit.tex_v = v;
     set_face_normal(ray, normal, best_hit);
 }
 
@@ -578,8 +677,13 @@ __device__ void accumulate_direct_light(const LaunchParams& params, const HitInf
         if (material.type != 3) {
             continue;
         }
-        const float3 emission = vector3f_to_float3(material.emission);
         const float3 light_pos = sample_sphere_light_point(sphere, surface_point);
+        const float3 center = vector3f_to_float3(sphere.center);
+        float light_u = 0.0f;
+        float light_v = 0.0f;
+        sphere_uv(normalize3(sub3(light_pos, center)), light_u, light_v);
+        const float3 emission =
+            evaluate_texture(params.scene, material.emission_texture, light_u, light_v, light_pos);
         const float3 to_light = sub3(light_pos, surface_point);
         const float dist_sq = fmaxf(length_sq3(to_light), 1e-6f);
         const float dist = sqrtf(dist_sq);
@@ -607,11 +711,12 @@ __device__ void accumulate_direct_light(const LaunchParams& params, const HitInf
         if (material.type != 3) {
             continue;
         }
-        const float3 emission = vector3f_to_float3(material.emission);
         const float3 origin = vector3f_to_float3(quad.origin);
         const float3 edge_u = vector3f_to_float3(quad.edge_u);
         const float3 edge_v = vector3f_to_float3(quad.edge_v);
         const float3 light_pos = add3(origin, mul3(add3(edge_u, edge_v), 0.5f));
+        const float3 emission =
+            evaluate_texture(params.scene, material.emission_texture, 0.5f, 0.5f, light_pos);
         const float3 to_light = sub3(light_pos, surface_point);
         const float dist_sq = fmaxf(length_sq3(to_light), 1e-6f);
         const float dist = sqrtf(dist_sq);

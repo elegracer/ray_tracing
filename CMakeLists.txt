@@ -219,6 +219,14 @@ target_sources(test_scene_description
 target_link_libraries(test_scene_description PRIVATE core)
 add_test(NAME test_scene_description COMMAND test_scene_description)
 
+add_executable(test_realtime_texture_materials)
+target_sources(test_realtime_texture_materials
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_realtime_texture_materials.cpp
+)
+target_link_libraries(test_realtime_texture_materials PRIVATE core)
+add_test(NAME test_realtime_texture_materials COMMAND test_realtime_texture_materials)
+
 add_executable(test_shared_scene_ir)
 target_sources(test_shared_scene_ir
     PRIVATE

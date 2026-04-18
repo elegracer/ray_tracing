@@ -12,6 +12,7 @@ namespace rt {
 
 struct PackedSphere;
 struct PackedQuad;
+struct PackedTexture;
 struct MaterialSample;
 
 struct DirectionDebugFrame {
@@ -30,9 +31,13 @@ struct DeviceFrameBuffers {
 struct DeviceSceneView {
     PackedSphere* spheres = nullptr;
     PackedQuad* quads = nullptr;
+    PackedTexture* textures = nullptr;
+    Eigen::Vector3f* image_texels = nullptr;
     MaterialSample* materials = nullptr;
     int sphere_count = 0;
     int quad_count = 0;
+    int texture_count = 0;
+    int image_texel_count = 0;
     int material_count = 0;
 };
 
@@ -111,11 +116,22 @@ struct PackedQuad {
 };
 
 struct MaterialSample {
-    Eigen::Vector3f albedo = Eigen::Vector3f::Zero();
-    Eigen::Vector3f emission = Eigen::Vector3f::Zero();
+    int albedo_texture = -1;
+    int emission_texture = -1;
     float ior = 1.0f;
     float fuzz = 0.0f;
     int type = 0;
+};
+
+struct PackedTexture {
+    int type = 0;
+    int even_texture = -1;
+    int odd_texture = -1;
+    int image_offset = 0;
+    int image_width = 0;
+    int image_height = 0;
+    float scale = 1.0f;
+    Eigen::Vector3f color = Eigen::Vector3f::Zero();
 };
 
 }  // namespace rt
