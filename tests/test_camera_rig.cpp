@@ -19,7 +19,7 @@ int main() {
     expect_true(packed.cameras[3].enabled == 0, "camera 3 disabled");
     expect_true(packed.cameras[0].model == rt::CameraModelType::pinhole32, "camera 0 model");
     expect_true(packed.cameras[1].model == rt::CameraModelType::equi62_lut1d, "camera 1 model");
-    expect_vec3_near(packed.cameras[1].T_rc.block<3, 1>(0, 3), Eigen::Vector3d {0.0, 0.1, 0.0}, 1e-12,
+    expect_vec3_near(packed.cameras[1].T_rc.block<3, 1>(0, 3), Eigen::Vector3d {0.0, 0.0, 0.1}, 1e-12,
         "camera 1 translation");
 
     rt::CameraRig overflow;

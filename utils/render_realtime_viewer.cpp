@@ -166,7 +166,10 @@ int main() {
         rt::viewer::integrate_wasd(pose, glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS,
             glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS,
             glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS,
-            glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS, kMoveSpeedUnitsPerSecond * dt);
+            glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS,
+            glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS,
+            glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS,
+            kMoveSpeedUnitsPerSecond * dt);
 
         const rt::PackedCameraRig rig = rt::viewer::make_default_viewer_rig(pose, kViewWidth, kViewHeight).pack();
         const std::vector<rt::CameraRenderResult> results =

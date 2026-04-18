@@ -1,4 +1,5 @@
 #include "realtime/camera_rig.h"
+#include "realtime/frame_convention.h"
 #include "realtime/gpu/optix_renderer.h"
 #include "realtime/render_profile.h"
 #include "realtime/scene_description.h"
@@ -69,12 +70,12 @@ int main() {
     const int glass = scene.add_material(rt::DielectricMaterial {1.5});
 
     scene.add_quad(rt::QuadPrimitive {light,
-        Eigen::Vector3d {-1.0, 1.5, -3.0},
-        Eigen::Vector3d {2.0, 0.0, 0.0},
-        Eigen::Vector3d {0.0, 0.0, -2.0}, false});
-    scene.add_sphere(rt::SpherePrimitive {diffuse, Eigen::Vector3d {-0.8, -0.2, -3.5}, 0.5, false});
-    scene.add_sphere(rt::SpherePrimitive {metal, Eigen::Vector3d {0.0, -0.2, -3.5}, 0.5, false});
-    scene.add_sphere(rt::SpherePrimitive {glass, Eigen::Vector3d {0.8, -0.2, -3.5}, 0.5, false});
+        rt::legacy_renderer_to_world(Eigen::Vector3d {-1.0, 1.5, -3.0}),
+        rt::legacy_renderer_to_world(Eigen::Vector3d {2.0, 0.0, 0.0}),
+        rt::legacy_renderer_to_world(Eigen::Vector3d {0.0, 0.0, -2.0}), false});
+    scene.add_sphere(rt::SpherePrimitive {diffuse, rt::legacy_renderer_to_world(Eigen::Vector3d {-0.8, -0.2, -3.5}), 0.5, false});
+    scene.add_sphere(rt::SpherePrimitive {metal, rt::legacy_renderer_to_world(Eigen::Vector3d {0.0, -0.2, -3.5}), 0.5, false});
+    scene.add_sphere(rt::SpherePrimitive {glass, rt::legacy_renderer_to_world(Eigen::Vector3d {0.8, -0.2, -3.5}), 0.5, false});
 
     rt::CameraRig rig;
     rig.add_pinhole(rt::Pinhole32Params {80.0, 80.0, 48.0, 48.0, 0.0, 0.0, 0.0, 0.0, 0.0},
@@ -102,10 +103,10 @@ int main() {
         return rt::project_pinhole32(camera.pinhole, point_camera);
     };
 
-    const int y = static_cast<int>(std::round(project_renderer_point(Eigen::Vector3d {0.0, -0.2, -3.5}).y()));
-    const int left_x = static_cast<int>(std::round(project_renderer_point(Eigen::Vector3d {-0.8, -0.2, -3.5}).x()));
-    const int center_x = static_cast<int>(std::round(project_renderer_point(Eigen::Vector3d {0.0, -0.2, -3.5}).x()));
-    const int right_x = static_cast<int>(std::round(project_renderer_point(Eigen::Vector3d {0.8, -0.2, -3.5}).x()));
+    const int y = static_cast<int>(std::round(project_renderer_point(rt::legacy_renderer_to_world(Eigen::Vector3d {0.0, -0.2, -3.5})).y()));
+    const int left_x = static_cast<int>(std::round(project_renderer_point(rt::legacy_renderer_to_world(Eigen::Vector3d {-0.8, -0.2, -3.5})).x()));
+    const int center_x = static_cast<int>(std::round(project_renderer_point(rt::legacy_renderer_to_world(Eigen::Vector3d {0.0, -0.2, -3.5})).x()));
+    const int right_x = static_cast<int>(std::round(project_renderer_point(rt::legacy_renderer_to_world(Eigen::Vector3d {0.8, -0.2, -3.5})).x()));
     const int half_window = std::max(2, frame.width / 24);
 
     const MeanRgb left = window_mean_rgb(frame.albedo_rgba, frame.width, frame.height, left_x, y, half_window);

@@ -1,4 +1,5 @@
 #include "realtime/camera_rig.h"
+#include "realtime/frame_convention.h"
 #include "realtime/gpu/optix_renderer.h"
 #include "realtime/gpu/renderer_pool.h"
 #include "realtime/render_profile.h"
@@ -53,12 +54,12 @@ rt::SceneDescription make_scene() {
     rt::SceneDescription scene;
     const int diffuse = scene.add_material(rt::LambertianMaterial {Eigen::Vector3d {0.75, 0.25, 0.2}});
     const int light = scene.add_material(rt::DiffuseLightMaterial {Eigen::Vector3d {10.0, 10.0, 10.0}});
-    scene.add_sphere(rt::SpherePrimitive {diffuse, Eigen::Vector3d {0.0, 0.0, -1.0}, 0.5, false});
+    scene.add_sphere(rt::SpherePrimitive {diffuse, rt::legacy_renderer_to_world(Eigen::Vector3d {0.0, 0.0, -1.0}), 0.5, false});
     scene.add_quad(rt::QuadPrimitive {
         light,
-        Eigen::Vector3d {-0.75, 1.25, -1.5},
-        Eigen::Vector3d {1.5, 0.0, 0.0},
-        Eigen::Vector3d {0.0, 0.0, 1.5},
+        rt::legacy_renderer_to_world(Eigen::Vector3d {-0.75, 1.25, -1.5}),
+        rt::legacy_renderer_to_world(Eigen::Vector3d {1.5, 0.0, 0.0}),
+        rt::legacy_renderer_to_world(Eigen::Vector3d {0.0, 0.0, 1.5}),
         false,
     });
     return scene;
