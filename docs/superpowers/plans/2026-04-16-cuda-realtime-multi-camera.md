@@ -1641,6 +1641,6 @@ git commit -m "feat: add realtime renderer cli"
 - Do not fold the GPU runtime into [`src/common/camera.h`](/home/huangkai/codes/ray_tracing/src/common/camera.h). Keep the new path isolated under `src/realtime/`.
 - Use fixed seeds for stochastic tests so path tracing smoke tests stay stable enough for CI and local reruns.
 - Keep Eigen on the host side. In device code, prefer small CUDA-safe math types defined in `src/realtime/gpu/device_math.h`.
-- For the `equi62_lut1d` model, preserve the header math behavior from [`src/cam/cam_equi62_lut1d.h`](/home/huangkai/codes/ray_tracing/src/cam/cam_equi62_lut1d.h), but do not drag `CamBase` and OpenCV-heavy SLAM interfaces into the device path.
-- For the `pinhole32` model, preserve the Brown distortion behavior from [`src/cam/cam_pinhole32.h`](/home/huangkai/codes/ray_tracing/src/cam/cam_pinhole32.h).
+- For the `equi62_lut1d` model, preserve the header math behavior from [`docs/reference/src-cam/cam_equi62_lut1d.h`](/home/huangkai/codes/ray_tracing/docs/reference/src-cam/cam_equi62_lut1d.h), but do not drag `CamBase` and OpenCV-heavy SLAM interfaces into the device path.
+- For the `pinhole32` model, preserve the Brown distortion behavior from [`docs/reference/src-cam/cam_pinhole32.h`](/home/huangkai/codes/ray_tracing/docs/reference/src-cam/cam_pinhole32.h).
 - The validation target is agreement in behavior and bounded error, not bit-identical CPU/GPU output.

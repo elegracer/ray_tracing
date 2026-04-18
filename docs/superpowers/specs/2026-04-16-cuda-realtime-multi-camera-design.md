@@ -17,8 +17,8 @@ Primary target:
 
 The first supported camera models are:
 
-- [`src/cam/cam_equi62_lut1d.h`](/home/huangkai/codes/ray_tracing/src/cam/cam_equi62_lut1d.h)
-- [`src/cam/cam_pinhole32.h`](/home/huangkai/codes/ray_tracing/src/cam/cam_pinhole32.h)
+- [`docs/reference/src-cam/cam_equi62_lut1d.h`](/home/huangkai/codes/ray_tracing/docs/reference/src-cam/cam_equi62_lut1d.h)
+- [`docs/reference/src-cam/cam_pinhole32.h`](/home/huangkai/codes/ray_tracing/docs/reference/src-cam/cam_pinhole32.h)
 
 Their current code is treated as the mathematical reference for projection and unprojection behavior, even if those headers are not ready to compile inside this repository today.
 
@@ -186,7 +186,7 @@ For rendering, `unproject` is the hot path because ray generation starts from pi
 
 ### Pinhole32
 
-The reference behavior follows [`src/cam/cam_pinhole32.h`](/home/huangkai/codes/ray_tracing/src/cam/cam_pinhole32.h):
+The reference behavior follows [`docs/reference/src-cam/cam_pinhole32.h`](/home/huangkai/codes/ray_tracing/docs/reference/src-cam/cam_pinhole32.h):
 
 - normalized projection using `x/z`, `y/z`
 - Brown distortion with `k1`, `k2`, `k3`, `p1`, `p2`
@@ -201,7 +201,7 @@ Iteration count must be fixed and bounded for realtime predictability.
 
 ### Equi62Lut1D
 
-The reference behavior follows [`src/cam/cam_equi62_lut1d.h`](/home/huangkai/codes/ray_tracing/src/cam/cam_equi62_lut1d.h):
+The reference behavior follows [`docs/reference/src-cam/cam_equi62_lut1d.h`](/home/huangkai/codes/ray_tracing/docs/reference/src-cam/cam_equi62_lut1d.h):
 
 - fisheye-style mapping driven by `theta = atan(r)` as the core angular term
 - high-order radial distortion
