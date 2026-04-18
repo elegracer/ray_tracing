@@ -1,5 +1,8 @@
 #include "scene/cpu_scene_adapter.h"
 #include "scene/shared_scene_builders.h"
+#include "common/interval.h"
+#include "common/material.h"
+#include "common/ray.h"
 #include "test_support.h"
 
 #include <algorithm>
@@ -36,6 +39,17 @@ int main() {
         "perlin_spheres should include noise texture");
     const rt::scene::CpuSceneAdapterResult adapted_perlin = rt::scene::adapt_to_cpu(perlin_scene);
     expect_true(adapted_perlin.world.has_value(), "perlin_spheres should adapt to world");
+    const Ray perlin_ray {Vec3d {0.0, 2.0, -6.0}, Vec3d {0.0, 0.0, 1.0}};
+    HitRecord perlin_hit;
+    expect_true(adapted_perlin.world->hit(perlin_ray, Interval {0.001, infinity}, perlin_hit),
+        "perlin_spheres ray should hit diffuse sphere");
+    ScatterRecord perlin_scatter;
+    expect_true(perlin_hit.mat->scatter(perlin_ray, perlin_hit, perlin_scatter),
+        "perlin_spheres diffuse material should scatter");
+    expect_true(!perlin_scatter.skip_pdf, "perlin_spheres diffuse scatter should not skip pdf");
+    expect_true(perlin_scatter.pdf != nullptr, "perlin_spheres diffuse scatter should provide pdf");
+    expect_true(perlin_hit.mat->scattering_pdf(perlin_ray, perlin_hit, Ray {perlin_hit.p, perlin_hit.normal}) > 0.0,
+        "perlin_spheres diffuse scattering pdf should be positive");
 
     const rt::scene::SceneIR bouncing_scene = rt::scene::build_scene("bouncing_spheres");
     expect_true(has_variant<rt::scene::MaterialDesc, rt::scene::MetalMaterial>(bouncing_scene.materials()),
@@ -44,11 +58,38 @@ int main() {
         "bouncing_spheres should include dielectric material");
     const rt::scene::CpuSceneAdapterResult adapted_bouncing = rt::scene::adapt_to_cpu(bouncing_scene);
     expect_true(adapted_bouncing.world.has_value(), "bouncing_spheres should adapt to world");
+    const Ray glass_ray {Vec3d {0.0, 1.0, -4.0}, Vec3d {0.0, 0.0, 1.0}};
+    HitRecord glass_hit;
+    expect_true(adapted_bouncing.world->hit(glass_ray, Interval {0.001, infinity}, glass_hit),
+        "bouncing_spheres ray should hit glass hero sphere");
+    ScatterRecord glass_scatter;
+    expect_true(glass_hit.mat->scatter(glass_ray, glass_hit, glass_scatter),
+        "glass hero sphere should scatter");
+    expect_true(glass_scatter.skip_pdf, "glass hero sphere scatter should be specular");
+
+    const Ray metal_ray {Vec3d {4.0, 1.0, -4.0}, Vec3d {0.0, 0.0, 1.0}};
+    HitRecord metal_hit;
+    expect_true(adapted_bouncing.world->hit(metal_ray, Interval {0.001, infinity}, metal_hit),
+        "bouncing_spheres ray should hit metal hero sphere");
+    ScatterRecord metal_scatter;
+    expect_true(metal_hit.mat->scatter(metal_ray, metal_hit, metal_scatter),
+        "metal hero sphere should scatter");
+    expect_true(metal_scatter.skip_pdf, "metal hero sphere scatter should be specular");
 
     const rt::scene::SceneIR simple_light_scene = rt::scene::build_scene("simple_light");
     const rt::scene::CpuSceneAdapterResult adapted_simple_light = rt::scene::adapt_to_cpu(simple_light_scene);
     expect_true(adapted_simple_light.world.has_value(), "simple_light should adapt to world");
     expect_true(adapted_simple_light.lights.has_value(), "simple_light should produce non-empty lights");
+    const Vec3d light_origin {0.0, 7.0, -8.0};
+    const Vec3d light_direction {0.0, 0.0, 1.0};
+    expect_true(adapted_simple_light.lights->pdf_value(light_origin, light_direction) > 0.0,
+        "simple_light lights should be sampleable");
+    const Ray light_ray {light_origin, light_direction};
+    HitRecord light_hit;
+    expect_true(adapted_simple_light.world->hit(light_ray, Interval {0.001, infinity}, light_hit),
+        "simple_light ray should hit emissive geometry");
+    const Vec3d light_emitted = light_hit.mat->emitted(light_ray, light_hit, light_hit.u, light_hit.v, light_hit.p);
+    expect_true(light_emitted.maxCoeff() > 0.0, "simple_light emissive hit should emit positive radiance");
 
     rt::scene::SceneIR transformed_emissive_scene;
     const int emissive_texture = transformed_emissive_scene.add_texture(
