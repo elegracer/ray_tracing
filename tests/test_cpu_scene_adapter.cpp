@@ -50,5 +50,29 @@ int main() {
     expect_true(adapted_simple_light.world.has_value(), "simple_light should adapt to world");
     expect_true(adapted_simple_light.lights.has_value(), "simple_light should produce non-empty lights");
 
+    rt::scene::SceneIR transformed_emissive_scene;
+    const int emissive_texture = transformed_emissive_scene.add_texture(
+        rt::scene::ConstantColorTextureDesc {.color = Eigen::Vector3d {4.0, 4.0, 4.0}});
+    const int emissive_material =
+        transformed_emissive_scene.add_material(rt::scene::EmissiveMaterial {.emission_texture = emissive_texture});
+    const int quad = transformed_emissive_scene.add_shape(rt::scene::QuadShape {
+        .origin = Eigen::Vector3d {0.0, 0.0, 0.0},
+        .edge_u = Eigen::Vector3d {1.0, 0.0, 0.0},
+        .edge_v = Eigen::Vector3d {0.0, 1.0, 0.0},
+    });
+    rt::scene::Transform translated = rt::scene::Transform::identity();
+    translated.translation = Eigen::Vector3d {0.0, 1.0, 0.0};
+    transformed_emissive_scene.add_instance(rt::scene::SurfaceInstance {
+        .shape_index = quad,
+        .material_index = emissive_material,
+        .transform = translated,
+    });
+
+    const rt::scene::CpuSceneAdapterResult adapted_transformed_emissive =
+        rt::scene::adapt_to_cpu(transformed_emissive_scene);
+    expect_true(adapted_transformed_emissive.world.has_value(), "transformed emissive should adapt to world");
+    expect_true(!adapted_transformed_emissive.lights.has_value(),
+        "transformed emissive should not be added to lights");
+
     return 0;
 }
