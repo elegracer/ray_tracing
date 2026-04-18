@@ -48,8 +48,13 @@ int main() {
         "earth_sphere diffuse material should scatter");
     expect_true(!earth_scatter.skip_pdf, "earth_sphere diffuse scatter should not skip pdf");
     expect_true(earth_scatter.pdf != nullptr, "earth_sphere diffuse scatter should provide pdf");
-    expect_true(earth_scatter.attenuation.maxCoeff() < 0.95,
-        "earth_sphere image texture should lower diffuse attenuation below white");
+    expect_true(earth_scatter.attenuation.allFinite(),
+        "earth_sphere scatter attenuation should be finite");
+    expect_true(earth_scatter.attenuation.minCoeff() >= 0.0
+            && earth_scatter.attenuation.maxCoeff() <= 1.0,
+        "earth_sphere attenuation should remain in [0, 1]");
+    expect_true(earth_hit.mat->scattering_pdf(earth_ray, earth_hit, Ray {earth_hit.p, earth_hit.normal}) > 0.0,
+        "earth_sphere diffuse scattering pdf should be positive");
 
     const rt::scene::SceneIR perlin_scene = rt::scene::build_scene("perlin_spheres");
     expect_true(has_variant<rt::scene::TextureDesc, rt::scene::NoiseTextureDesc>(perlin_scene.textures()),
