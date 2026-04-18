@@ -36,7 +36,7 @@ CameraRig make_default_viewer_rig(const BodyPose& pose, int width, int height) {
         .p2 = 0.0,
     };
 
-    for (const double yaw_offset : kDefaultViewerYawOffsetsDeg) {
+    for (const double yaw_offset : rt::kDefaultSurroundYawOffsetsDeg) {
         Eigen::Isometry3d T_bc = Eigen::Isometry3d::Identity();
         T_bc.translation() = pose.position;
         T_bc.linear() = yaw_pitch_matrix(pose.yaw_deg + yaw_offset, pose.pitch_deg);

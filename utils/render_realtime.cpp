@@ -4,10 +4,10 @@
 #include "realtime/gpu/denoiser.h"
 #include "realtime/gpu/renderer_pool.h"
 #include "realtime/profiling/benchmark_report.h"
+#include "realtime/default_viewer_conventions.h"
 #include "realtime/render_profile.h"
 #include "realtime/scene_description.h"
 #include "realtime/viewer/default_viewer_scene.h"
-#include "realtime/viewer/four_camera_rig.h"
 
 #include <argparse/argparse.hpp>
 #include <fmt/core.h>
@@ -76,7 +76,7 @@ rt::CameraRig make_final_room_rig(int camera_count) {
     for (int i = 0; i < camera_count; ++i) {
         Eigen::Isometry3d T_bc = Eigen::Isometry3d::Identity();
         T_bc.linear() = Eigen::AngleAxisd(
-                            rt::viewer::kDefaultViewerYawOffsetsDeg[static_cast<std::size_t>(i)] * kDegToRad,
+                            rt::kDefaultSurroundYawOffsetsDeg[static_cast<std::size_t>(i)] * kDegToRad,
                             Eigen::Vector3d::UnitY())
                             .toRotationMatrix();
         rig.add_pinhole(rt::Pinhole32Params {fx, fy, cx, cy, 0.0, 0.0, 0.0, 0.0, 0.0},
