@@ -87,6 +87,7 @@ target_sources(core
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/core.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/core.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/shared_scene_ir.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/shared_scene_builders.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/camera_models.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/camera_rig.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/profiling/benchmark_report.cpp
@@ -221,6 +222,14 @@ target_sources(test_shared_scene_ir
 )
 target_link_libraries(test_shared_scene_ir PRIVATE core)
 add_test(NAME test_shared_scene_ir COMMAND test_shared_scene_ir)
+
+add_executable(test_shared_scene_builders)
+target_sources(test_shared_scene_builders
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_shared_scene_builders.cpp
+)
+target_link_libraries(test_shared_scene_builders PRIVATE core)
+add_test(NAME test_shared_scene_builders COMMAND test_shared_scene_builders)
 
 add_executable(test_scene_catalog)
 target_sources(test_scene_catalog
