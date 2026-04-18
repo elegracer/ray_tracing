@@ -9,7 +9,7 @@
 namespace rt {
 
 struct ConstantColorTextureDesc {
-    Eigen::Vector3d color;
+    Eigen::Vector3d color = Eigen::Vector3d::Zero();
 };
 
 struct CheckerTextureDesc {
