@@ -60,7 +60,10 @@ void configure_offline_camera(std::string_view scene_id, const int samples_per_p
         cam.lookfrom = {478.0, 278.0, -600.0};
         cam.lookat = {278.0, 278.0, 0.0};
     } else {
-        throw std::invalid_argument("no offline camera preset for scene id");
+        cam.background = {0.70, 0.80, 1.00};
+        cam.vfov = 20.0;
+        cam.lookfrom = {13.0, 2.0, 3.0};
+        cam.lookat = {0.0, 0.0, 0.0};
     }
 }
 
