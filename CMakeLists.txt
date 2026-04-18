@@ -148,6 +148,15 @@ target_sources(test_camera_rig
 target_link_libraries(test_camera_rig PRIVATE core)
 add_test(NAME test_camera_rig COMMAND test_camera_rig)
 
+add_executable(test_viewer_body_pose)
+target_sources(test_viewer_body_pose
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_viewer_body_pose.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/viewer/body_pose.cpp
+)
+target_link_libraries(test_viewer_body_pose PRIVATE core)
+add_test(NAME test_viewer_body_pose COMMAND test_viewer_body_pose)
+
 add_executable(test_scene_description)
 target_sources(test_scene_description
     PRIVATE
