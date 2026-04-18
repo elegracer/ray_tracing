@@ -5,9 +5,9 @@
 namespace rt::viewer {
 
 struct BodyPose {
-    Eigen::Vector3d position;
-    double yaw_deg;
-    double pitch_deg;
+    Eigen::Vector3d position = Eigen::Vector3d::Zero();
+    double yaw_deg = 0.0;
+    double pitch_deg = 0.0;
 };
 
 BodyPose default_spawn_pose();

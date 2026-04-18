@@ -41,7 +41,7 @@ Eigen::Vector3d right_direction(const BodyPose& pose) {
 
 void integrate_mouse_look(BodyPose& pose, double delta_x, double delta_y, double degrees_per_pixel) {
     pose.yaw_deg += delta_x * degrees_per_pixel;
-    pose.pitch_deg = clamp_pitch_deg(pose.pitch_deg + delta_y * degrees_per_pixel);
+    pose.pitch_deg = clamp_pitch_deg(pose.pitch_deg - delta_y * degrees_per_pixel);
 }
 
 void integrate_wasd(BodyPose& pose, bool move_forward, bool move_backward, bool move_left, bool move_right,
