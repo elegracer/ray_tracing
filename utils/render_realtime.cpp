@@ -72,7 +72,7 @@ rt::CameraRig make_final_room_rig(int camera_count) {
     const double cy = 0.5 * static_cast<double>(kDefaultHeight);
     constexpr double kDegToRad = 3.14159265358979323846 / 180.0;
 
-    const std::array<double, 4> yaw_deg = {0.0, 90.0, 180.0, -90.0};
+    const std::array<double, 4> yaw_deg = {0.0, 90.0, -90.0, 180.0};
     for (int i = 0; i < camera_count; ++i) {
         Eigen::Isometry3d T_bc = Eigen::Isometry3d::Identity();
         T_bc.linear() = Eigen::AngleAxisd(yaw_deg[static_cast<std::size_t>(i)] * kDegToRad,
