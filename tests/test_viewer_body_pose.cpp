@@ -27,10 +27,18 @@ int main() {
 
     {
         const rt::viewer::BodyPose yawed {.position = Eigen::Vector3d::Zero(), .yaw_deg = 90.0, .pitch_deg = 0.0};
-        expect_vec3_near(rt::viewer::forward_direction(yawed), Eigen::Vector3d(1.0, 0.0, 0.0), 1e-12,
+        expect_vec3_near(rt::viewer::forward_direction(yawed), Eigen::Vector3d(-1.0, 0.0, 0.0), 1e-12,
             "yaw 90 forward");
-        expect_vec3_near(rt::viewer::right_direction(yawed), Eigen::Vector3d(0.0, 0.0, 1.0), 1e-12,
+        expect_vec3_near(rt::viewer::right_direction(yawed), Eigen::Vector3d(0.0, 0.0, -1.0), 1e-12,
             "yaw 90 right");
+    }
+
+    {
+        const rt::viewer::BodyPose pose {.position = Eigen::Vector3d::Zero(), .yaw_deg = 90.0, .pitch_deg = 45.0};
+        const Eigen::Vector3d forward = rt::viewer::forward_direction(pose);
+        expect_true(forward.x() < -0.7, "yaw+pitch forward x");
+        expect_true(forward.y() > 0.7, "yaw+pitch forward y");
+        expect_true(std::abs(forward.z()) < 1e-12, "yaw+pitch forward z near zero");
     }
 
     {
