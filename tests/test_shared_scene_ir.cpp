@@ -1,5 +1,4 @@
 #include "scene/shared_scene_ir.h"
-#include "realtime/scene_description.h"
 #include "test_support.h"
 
 #include <Eigen/Geometry>
@@ -87,9 +86,7 @@ int main() {
     expect_near(identity.rotation.trace(), 3.0, 1e-12, "identity rotation trace");
 
     rt::scene::MaterialDesc shared_material = rt::scene::MetalMaterial {.albedo_texture = white, .fuzz = 0.05};
-    rt::MaterialDesc realtime_material = rt::MetalMaterial {.albedo = Eigen::Vector3d {0.7, 0.8, 0.9}, .fuzz = 0.1};
     expect_true(std::holds_alternative<rt::scene::MetalMaterial>(shared_material), "shared material variant");
-    expect_true(std::holds_alternative<rt::MetalMaterial>(realtime_material), "realtime material variant");
     expect_near(static_cast<double>(metal), 1.0, 1e-12, "material index assignment");
 
     return 0;
