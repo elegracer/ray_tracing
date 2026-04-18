@@ -14,7 +14,7 @@ double to_radians(double degrees) {
 }
 
 Eigen::Quaterniond look_rotation(const BodyPose& pose) {
-    const Eigen::AngleAxisd yaw(to_radians(pose.yaw_deg), Eigen::Vector3d::UnitY());
+    const Eigen::AngleAxisd yaw(to_radians(pose.yaw_deg), -Eigen::Vector3d::UnitY());
     const Eigen::AngleAxisd pitch(to_radians(pose.pitch_deg), Eigen::Vector3d::UnitX());
     return Eigen::Quaterniond(yaw * pitch);
 }
