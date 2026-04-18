@@ -86,7 +86,7 @@ target_sources(core
         ${CMAKE_CURRENT_BINARY_DIR}/include/core/version.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/core.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/core.h
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/common/shared_scene_ir.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/shared_scene_ir.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/camera_models.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/camera_rig.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/profiling/benchmark_report.cpp
