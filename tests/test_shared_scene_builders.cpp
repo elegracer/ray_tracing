@@ -40,11 +40,36 @@ int main() {
     expect_true(rt::scene::scene_default_samples_per_pixel("cornell_box_extreme") == 10000, "extreme spp");
     expect_true(rt::scene::scene_default_samples_per_pixel("cornell_box") == 1000, "cornell spp");
 
-    expect_true(rt::find_scene_catalog_entry("cornell_box")->supports_cpu_render, "cornell_box cpu");
-    expect_true(!rt::find_scene_catalog_entry("cornell_box")->supports_realtime, "cornell_box non-realtime");
-    expect_true(!rt::find_scene_catalog_entry("smoke")->supports_cpu_render, "smoke non-cpu");
-    expect_true(rt::find_scene_catalog_entry("smoke")->supports_realtime, "smoke realtime");
-    expect_true(!rt::find_scene_catalog_entry("final_room")->supports_cpu_render, "final_room non-cpu");
-    expect_true(rt::find_scene_catalog_entry("final_room")->supports_realtime, "final_room realtime");
+    expect_true(rt::scene::find_scene_metadata("unknown") == nullptr, "unknown metadata");
+
+    bool build_unknown_threw = false;
+    try {
+        (void)rt::scene::build_scene("unknown");
+    } catch (...) {
+        build_unknown_threw = true;
+    }
+    expect_true(build_unknown_threw, "unknown build throws");
+
+    bool spp_unknown_threw = false;
+    try {
+        (void)rt::scene::scene_default_samples_per_pixel("unknown");
+    } catch (...) {
+        spp_unknown_threw = true;
+    }
+    expect_true(spp_unknown_threw, "unknown spp throws");
+
+    for (std::string_view id : expected_ids) {
+        const rt::SceneCatalogEntry* entry = rt::find_scene_catalog_entry(id);
+        expect_true(entry != nullptr, "catalog entry exists for capability");
+
+        const bool is_realtime_only = (id == "smoke" || id == "final_room");
+        if (is_realtime_only) {
+            expect_true(!entry->supports_cpu_render, "realtime-only non-cpu");
+            expect_true(entry->supports_realtime, "realtime-only realtime");
+        } else {
+            expect_true(entry->supports_cpu_render, "offline cpu");
+            expect_true(!entry->supports_realtime, "offline non-realtime");
+        }
+    }
     return 0;
 }
