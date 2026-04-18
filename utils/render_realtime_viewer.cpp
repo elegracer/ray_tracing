@@ -23,45 +23,49 @@ constexpr double kMoveSpeedUnitsPerSecond = 1.8;
 
 float clamp01(float v) { return std::clamp(v, 0.0f, 1.0f); }
 
-bool to_rgba8(const rt::RadianceFrame& frame, std::vector<std::uint8_t>& rgba8) {
+enum class UploadStatus {
+    ok,
+    resolution_mismatch,
+    incomplete_frame,
+};
+
+UploadStatus to_rgba8(const rt::RadianceFrame& frame, std::vector<std::uint8_t>& rgba8) {
     if (frame.width != kViewWidth || frame.height != kViewHeight) {
-        return false;
+        return UploadStatus::resolution_mismatch;
     }
 
     const std::size_t pixel_count =
         static_cast<std::size_t>(frame.width) * static_cast<std::size_t>(frame.height);
     const std::size_t expected = pixel_count * 4;
     if (frame.beauty_rgba.size() < expected) {
-        return false;
+        return UploadStatus::incomplete_frame;
     }
 
     rgba8.resize(expected);
-    for (int p = 0; p < pixel_count; ++p) {
-        const float r = clamp01(frame.beauty_rgba[static_cast<std::size_t>(p) * 4 + 0]);
-        const float g = clamp01(frame.beauty_rgba[static_cast<std::size_t>(p) * 4 + 1]);
-        const float b = clamp01(frame.beauty_rgba[static_cast<std::size_t>(p) * 4 + 2]);
+    for (std::size_t p = 0; p < pixel_count; ++p) {
+        const float r = clamp01(frame.beauty_rgba[p * 4 + 0]);
+        const float g = clamp01(frame.beauty_rgba[p * 4 + 1]);
+        const float b = clamp01(frame.beauty_rgba[p * 4 + 2]);
 
-        rgba8[static_cast<std::size_t>(p) * 4 + 0] =
-            static_cast<std::uint8_t>(std::lround(r * 255.0f));
-        rgba8[static_cast<std::size_t>(p) * 4 + 1] =
-            static_cast<std::uint8_t>(std::lround(g * 255.0f));
-        rgba8[static_cast<std::size_t>(p) * 4 + 2] =
-            static_cast<std::uint8_t>(std::lround(b * 255.0f));
-        rgba8[static_cast<std::size_t>(p) * 4 + 3] = 255;
+        rgba8[p * 4 + 0] = static_cast<std::uint8_t>(std::lround(r * 255.0f));
+        rgba8[p * 4 + 1] = static_cast<std::uint8_t>(std::lround(g * 255.0f));
+        rgba8[p * 4 + 2] = static_cast<std::uint8_t>(std::lround(b * 255.0f));
+        rgba8[p * 4 + 3] = 255;
     }
 
-    return true;
+    return UploadStatus::ok;
 }
 
-bool upload_texture(GLuint texture, const rt::RadianceFrame& frame, std::vector<std::uint8_t>& scratch) {
-    if (!to_rgba8(frame, scratch)) {
-        return false;
+UploadStatus upload_texture(GLuint texture, const rt::RadianceFrame& frame, std::vector<std::uint8_t>& scratch) {
+    const UploadStatus status = to_rgba8(frame, scratch);
+    if (status != UploadStatus::ok) {
+        return status;
     }
 
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glBindTexture(GL_TEXTURE_2D, texture);
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, kViewWidth, kViewHeight, GL_RGBA, GL_UNSIGNED_BYTE, scratch.data());
-    return true;
+    return UploadStatus::ok;
 }
 
 void draw_textured_quad(GLuint texture, float x, float y, float width, float height) {
@@ -172,18 +176,26 @@ int main() {
             if (idx < 0 || idx >= static_cast<int>(textures.size())) {
                 continue;
             }
-            if (upload_texture(
+            const UploadStatus upload_status = upload_texture(
                 textures[static_cast<std::size_t>(idx)],
                 result.profiled.frame,
-                texture_scratch[static_cast<std::size_t>(idx)])) {
+                texture_scratch[static_cast<std::size_t>(idx)]);
+            if (upload_status == UploadStatus::ok) {
                 warned_texture_mismatch[static_cast<std::size_t>(idx)] = false;
                 continue;
             }
 
             if (!warned_texture_mismatch[static_cast<std::size_t>(idx)]) {
-                fmt::print(stderr,
-                    "viewer frame size mismatch for camera {}: got {}x{}, expected {}x{}\n",
-                    idx, result.profiled.frame.width, result.profiled.frame.height, kViewWidth, kViewHeight);
+                if (upload_status == UploadStatus::resolution_mismatch) {
+                    fmt::print(stderr,
+                        "viewer frame size mismatch for camera {}: got {}x{}, expected {}x{}\n",
+                        idx, result.profiled.frame.width, result.profiled.frame.height, kViewWidth, kViewHeight);
+                } else {
+                    fmt::print(stderr,
+                        "viewer frame buffer too small for camera {}: got {}, need at least {}\n",
+                        idx, result.profiled.frame.beauty_rgba.size(),
+                        static_cast<std::size_t>(kViewWidth * kViewHeight * 4));
+                }
                 warned_texture_mismatch[static_cast<std::size_t>(idx)] = true;
             }
         }
