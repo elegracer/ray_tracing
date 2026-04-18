@@ -1,15 +1,27 @@
+#include "realtime/render_profile.h"
+#include "realtime/realtime_scene_factory.h"
+#include "realtime/scene_catalog.h"
 #include "realtime/gpu/renderer_pool.h"
 #include "realtime/viewer/body_pose.h"
 #include "realtime/viewer/default_viewer_scene.h"
 #include "realtime/viewer/four_camera_rig.h"
+#include "realtime/viewer/scene_switch_controller.h"
 
 #include <GLFW/glfw3.h>
+#include <argparse/argparse.hpp>
 #include <fmt/core.h>
+#include <fmt/ostream.h>
+#include <imgui.h>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_opengl3.h>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <stdexcept>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -233,9 +245,44 @@ void draw_textured_quad(GLuint texture, float x, float y, float width, float hei
     glEnd();
 }
 
+bool is_supported_realtime_scene(const std::string& scene_id) {
+    const rt::SceneCatalogEntry* entry = rt::find_scene_catalog_entry(scene_id);
+    return entry != nullptr && entry->supports_realtime;
+}
+
+std::string scene_label(std::string_view scene_id) {
+    const rt::SceneCatalogEntry* entry = rt::find_scene_catalog_entry(scene_id);
+    return entry == nullptr ? std::string(scene_id) : std::string(entry->label);
+}
+
+void set_ui_interaction(GLFWwindow* window, bool enabled, double& cursor_x, double& cursor_y) {
+    glfwSetInputMode(window, GLFW_CURSOR, enabled ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
+    glfwGetCursorPos(window, &cursor_x, &cursor_y);
+}
+
 }  // namespace
 
-int main() {
+int main(int argc, char* argv[]) {
+    std::string scene_name = "final_room";
+    argparse::ArgumentParser program("render_realtime_viewer");
+    program.add_argument("--scene")
+        .help("startup realtime scene id")
+        .default_value(scene_name)
+        .store_into(scene_name);
+
+    try {
+        program.parse_args(argc, argv);
+    } catch (const std::exception& err) {
+        fmt::print(stderr, "{}\n\n", err.what());
+        fmt::print(stderr, "{}\n", fmt::streamed(program));
+        return 1;
+    }
+
+    if (!is_supported_realtime_scene(scene_name)) {
+        fmt::print(stderr, "--scene must reference a registered realtime scene\n");
+        return 1;
+    }
+
     if (!glfwInit()) {
         fmt::print(stderr, "glfwInit failed\n");
         return 1;
@@ -253,7 +300,14 @@ int main() {
 
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);
-    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& imgui_io = ImGui::GetIO();
+    (void)imgui_io;
+    ImGui::StyleColorsDark();
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init("#version 120");
 
     std::array<GLuint, 4> textures{};
     std::array<std::vector<std::uint8_t>, 4> texture_scratch{};
@@ -270,9 +324,13 @@ int main() {
             GL_UNSIGNED_BYTE, nullptr);
     }
 
-    rt::viewer::BodyPose pose = rt::viewer::default_spawn_pose();
-    const rt::PackedScene scene = rt::viewer::make_default_viewer_scene().pack();
+    rt::viewer::SceneSwitchController scene_controller(scene_name);
+    rt::viewer::BodyPose pose = rt::default_spawn_pose_for_scene(scene_name);
+    rt::PackedScene scene = rt::make_realtime_scene(scene_name).pack();
     const rt::RenderProfile profile = rt::viewer::default_viewer_profile();
+    std::string viewer_error_message;
+    bool ui_interaction_enabled = false;
+    bool previous_tab_down = false;
 
     rt::RendererPool pool(4);
     pool.prepare_scene(scene);
@@ -280,7 +338,7 @@ int main() {
     double last_time = glfwGetTime();
     double last_cursor_x = 0.0;
     double last_cursor_y = 0.0;
-    glfwGetCursorPos(window, &last_cursor_x, &last_cursor_y);
+    set_ui_interaction(window, ui_interaction_enabled, last_cursor_x, last_cursor_y);
 
     glDisable(GL_DEPTH_TEST);
     glEnable(GL_TEXTURE_2D);
@@ -290,6 +348,12 @@ int main() {
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
             glfwSetWindowShouldClose(window, GLFW_TRUE);
         }
+        const bool tab_down = glfwGetKey(window, GLFW_KEY_TAB) == GLFW_PRESS;
+        if (tab_down && !previous_tab_down) {
+            ui_interaction_enabled = !ui_interaction_enabled;
+            set_ui_interaction(window, ui_interaction_enabled, last_cursor_x, last_cursor_y);
+        }
+        previous_tab_down = tab_down;
 
         int framebuffer_width = 0;
         int framebuffer_height = 0;
@@ -312,15 +376,37 @@ int main() {
         last_cursor_x = cursor_x;
         last_cursor_y = cursor_y;
 
-        rt::viewer::integrate_mouse_look(pose, delta_x, delta_y, kLookDegreesPerPixel);
+        if (!ui_interaction_enabled) {
+            rt::viewer::integrate_mouse_look(pose, delta_x, delta_y, kLookDegreesPerPixel);
+            rt::viewer::integrate_wasd(pose, glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS,
+                glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS,
+                glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS,
+                glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS,
+                glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS,
+                glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS,
+                kMoveSpeedUnitsPerSecond * dt);
+        }
 
-        rt::viewer::integrate_wasd(pose, glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS,
-            glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS,
-            glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS,
-            glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS,
-            glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS,
-            glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS,
-            kMoveSpeedUnitsPerSecond * dt);
+        const std::string previous_scene_id = scene_controller.current_scene_id();
+        const rt::viewer::SceneSwitchResult switch_result = scene_controller.resolve_pending();
+        if (switch_result.applied) {
+            try {
+                rt::PackedScene next_scene = rt::make_realtime_scene(scene_controller.current_scene_id()).pack();
+                pool.prepare_scene(next_scene);
+                scene = std::move(next_scene);
+                pose = rt::default_spawn_pose_for_scene(scene_controller.current_scene_id());
+                viewer_error_message.clear();
+                set_ui_interaction(window, ui_interaction_enabled, last_cursor_x, last_cursor_y);
+            } catch (const std::exception& err) {
+                scene_controller.request_scene(previous_scene_id);
+                (void)scene_controller.resolve_pending();
+                viewer_error_message = err.what();
+                fmt::print(stderr, "scene switch failed: {}\n", viewer_error_message);
+            }
+        } else if (!switch_result.error_message.empty()) {
+            viewer_error_message = switch_result.error_message;
+            fmt::print(stderr, "scene switch failed: {}\n", viewer_error_message);
+        }
 
         const rt::PackedCameraRig rig = rt::viewer::make_default_viewer_rig(pose, kViewWidth, kViewHeight).pack();
         const std::vector<rt::CameraRenderResult> results =
@@ -390,9 +476,48 @@ int main() {
             glEnable(GL_TEXTURE_2D);
         }
 
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+
+        ImGui::Begin("Viewer");
+        ImGui::Text("Scene: %s", scene_label(scene_controller.current_scene_id()).c_str());
+        ImGui::Text("Tab toggles UI cursor");
+        ImGui::Text("Controls: WASD + QE move, mouse look");
+        const std::string preview_label = scene_label(scene_controller.current_scene_id());
+        if (ImGui::BeginCombo("Switch Scene", preview_label.c_str())) {
+            for (const rt::SceneCatalogEntry& entry : rt::scene_catalog()) {
+                const bool supported = entry.supports_realtime;
+                const bool selected = entry.id == scene_controller.current_scene_id();
+                if (!supported) {
+                    ImGui::BeginDisabled();
+                }
+                const std::string label = std::string(entry.label);
+                if (ImGui::Selectable(label.c_str(), selected) && supported) {
+                    scene_controller.request_scene(std::string(entry.id));
+                }
+                if (!supported) {
+                    ImGui::EndDisabled();
+                }
+            }
+            ImGui::EndCombo();
+        }
+        if (!scene_controller.last_error().empty()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f), "%s", scene_controller.last_error().c_str());
+        } else if (!viewer_error_message.empty()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f), "%s", viewer_error_message.c_str());
+        }
+        ImGui::End();
+
+        ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
         glfwSwapBuffers(window);
     }
 
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
     if (label_list_base != 0) {
         glDeleteLists(label_list_base, static_cast<GLsizei>(kCameraLabels.size()));
     }

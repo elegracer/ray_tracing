@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.14)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/Modules")
+if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{HOME}/vcpkg_root/scripts/buildsystems/vcpkg.cmake" CACHE FILEPATH "vcpkg toolchain")
+endif()
 project(ray_tracing LANGUAGES C CXX CUDA VERSION 0.0.1.0)
 
 if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
@@ -61,6 +64,7 @@ option(OPTION_A "..." ON)
 option(ENABLE_GUI_VIEWER "Build the interactive GLFW/OpenGL viewer" ON)
 
 if(ENABLE_GUI_VIEWER)
+    find_package(imgui CONFIG REQUIRED)
     find_package(glfw3 CONFIG REQUIRED)
     find_package(OpenGL REQUIRED)
     set(GLFW_TARGET glfw)
@@ -85,7 +89,10 @@ target_sources(core
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/camera_models.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/camera_rig.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/profiling/benchmark_report.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/scene_catalog.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/realtime_scene_factory.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/scene_description.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/viewer/body_pose.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/viewer/default_viewer_scene.cpp
 )
 target_include_directories(core
@@ -128,10 +135,10 @@ if(ENABLE_GUI_VIEWER)
     target_sources(render_realtime_viewer
         PRIVATE
             utils/render_realtime_viewer.cpp
-            src/realtime/viewer/body_pose.cpp
             src/realtime/viewer/four_camera_rig.cpp
+            src/realtime/viewer/scene_switch_controller.cpp
     )
-    target_link_libraries(render_realtime_viewer PRIVATE realtime_gpu core ${GLFW_TARGET} OpenGL::GL)
+    target_link_libraries(render_realtime_viewer PRIVATE realtime_gpu core imgui::imgui ${GLFW_TARGET} OpenGL::GL)
 endif()
 
 add_executable(sphere_importance)
@@ -176,7 +183,6 @@ add_executable(test_viewer_body_pose)
 target_sources(test_viewer_body_pose
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_viewer_body_pose.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/viewer/body_pose.cpp
 )
 target_link_libraries(test_viewer_body_pose PRIVATE core)
 add_test(NAME test_viewer_body_pose COMMAND test_viewer_body_pose)
@@ -185,11 +191,19 @@ add_executable(test_viewer_four_camera_rig)
 target_sources(test_viewer_four_camera_rig
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_viewer_four_camera_rig.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/viewer/body_pose.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/viewer/four_camera_rig.cpp
 )
 target_link_libraries(test_viewer_four_camera_rig PRIVATE core)
 add_test(NAME test_viewer_four_camera_rig COMMAND test_viewer_four_camera_rig)
+
+add_executable(test_viewer_scene_switch_controller)
+target_sources(test_viewer_scene_switch_controller
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_viewer_scene_switch_controller.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/viewer/scene_switch_controller.cpp
+)
+target_link_libraries(test_viewer_scene_switch_controller PRIVATE core)
+add_test(NAME test_viewer_scene_switch_controller COMMAND test_viewer_scene_switch_controller)
 
 add_executable(test_scene_description)
 target_sources(test_scene_description
@@ -198,6 +212,22 @@ target_sources(test_scene_description
 )
 target_link_libraries(test_scene_description PRIVATE core)
 add_test(NAME test_scene_description COMMAND test_scene_description)
+
+add_executable(test_scene_catalog)
+target_sources(test_scene_catalog
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_scene_catalog.cpp
+)
+target_link_libraries(test_scene_catalog PRIVATE core)
+add_test(NAME test_scene_catalog COMMAND test_scene_catalog)
+
+add_executable(test_realtime_scene_factory)
+target_sources(test_realtime_scene_factory
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_realtime_scene_factory.cpp
+)
+target_link_libraries(test_realtime_scene_factory PRIVATE core)
+add_test(NAME test_realtime_scene_factory COMMAND test_realtime_scene_factory)
 
 add_executable(test_render_profile)
 target_sources(test_render_profile PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_render_profile.cpp)

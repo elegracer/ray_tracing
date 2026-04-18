@@ -8,6 +8,13 @@
         "opencv",
         "icecream-cpp",
         "tbb",
-        "indicators"
+        "indicators",
+        {
+            "name": "imgui",
+            "features": [
+                "glfw-binding",
+                "opengl3-binding"
+            ]
+        }
     ]
 }

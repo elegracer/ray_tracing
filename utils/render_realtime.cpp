@@ -7,6 +7,8 @@
 #include "realtime/profiling/benchmark_report.h"
 #include "realtime/default_viewer_conventions.h"
 #include "realtime/render_profile.h"
+#include "realtime/realtime_scene_factory.h"
+#include "realtime/scene_catalog.h"
 #include "realtime/scene_description.h"
 #include "realtime/viewer/default_viewer_scene.h"
 
@@ -34,20 +36,9 @@ namespace {
 constexpr int kDefaultWidth = 640;
 constexpr int kDefaultHeight = 480;
 
-rt::SceneDescription make_smoke_scene() {
-    rt::SceneDescription scene;
-    const int diffuse = scene.add_material(rt::LambertianMaterial {Eigen::Vector3d {0.75, 0.25, 0.2}});
-    const int light = scene.add_material(rt::DiffuseLightMaterial {Eigen::Vector3d {10.0, 10.0, 10.0}});
-    scene.add_sphere(
-        rt::SpherePrimitive {diffuse, rt::legacy_renderer_to_world(Eigen::Vector3d {0.0, 0.0, -1.0}), 0.5, false});
-    scene.add_quad(rt::QuadPrimitive {
-        light,
-        rt::legacy_renderer_to_world(Eigen::Vector3d {-0.75, 1.25, -1.5}),
-        rt::legacy_renderer_to_world(Eigen::Vector3d {1.5, 0.0, 0.0}),
-        rt::legacy_renderer_to_world(Eigen::Vector3d {0.0, 0.0, 1.5}),
-        false,
-    });
-    return scene;
+bool is_supported_realtime_scene(const std::string& scene_name) {
+    const rt::SceneCatalogEntry* entry = rt::find_scene_catalog_entry(scene_name);
+    return entry != nullptr && entry->supports_realtime;
 }
 
 rt::CameraRig make_smoke_rig(int camera_count) {
@@ -91,10 +82,7 @@ rt::CameraRig make_final_room_rig(int camera_count) {
 }
 
 rt::SceneDescription make_scene(const std::string& scene_name) {
-    if (scene_name == "final_room") {
-        return rt::viewer::make_final_room_scene();
-    }
-    return make_smoke_scene();
+    return rt::make_realtime_scene(scene_name);
 }
 
 rt::CameraRig make_rig(const std::string& scene_name, int camera_count) {
@@ -236,8 +224,8 @@ int main(int argc, const char* argv[]) {
         fmt::print(stderr, "--frames must be >= 1\n");
         return EXIT_FAILURE;
     }
-    if (scene_name != "smoke" && scene_name != "final_room") {
-        fmt::print(stderr, "--scene must be one of: smoke, final_room\n");
+    if (!is_supported_realtime_scene(scene_name)) {
+        fmt::print(stderr, "--scene must reference a registered realtime scene\n");
         return EXIT_FAILURE;
     }
 

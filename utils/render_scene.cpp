@@ -18,6 +18,7 @@
 #include "common/hittable_list.h"
 #include "common/material.h"
 #include "common/bvh.h"
+#include "realtime/scene_catalog.h"
 
 
 constexpr uint64_t hash(std::string_view sv) {
@@ -30,6 +31,11 @@ constexpr uint64_t hash(std::string_view sv) {
 
 constexpr uint64_t operator""_hash(const char* str, size_t len) {
     return hash({str, len});
+}
+
+bool is_supported_cpu_scene(const std::string& scene_name) {
+    const rt::SceneCatalogEntry* entry = rt::find_scene_catalog_entry(scene_name);
+    return entry != nullptr && entry->supports_cpu_render;
 }
 
 
@@ -583,21 +589,6 @@ int main(int argc, const char* argv[]) {
 
     program.add_argument("--scene")
         .help("Scene to render")
-        .choices(                             //
-            "bouncing_spheres",               //
-            "checkered_spheres",              //
-            "earth_sphere",                   //
-            "perlin_spheres",                 //
-            "quads",                          //
-            "simple_light",                   //
-            "cornell_smoke",                  //
-            "cornell_smoke_extreme",          //
-            "cornell_box",                    //
-            "cornell_box_extreme",            //
-            "cornell_box_and_sphere",         //
-            "cornell_box_and_sphere_extreme", //
-            "rttnw_final_scene",              //
-            "rttnw_final_scene_extreme")
         .default_value("cornell_box")
         .store_into(scene_to_render);
 
@@ -606,6 +597,11 @@ int main(int argc, const char* argv[]) {
     } catch (const std::exception& err) {
         fmt::print(stderr, "{}\n\n", err.what());
         fmt::print(stderr, "{}\n", fmt::streamed(program));
+        return EXIT_FAILURE;
+    }
+
+    if (!is_supported_cpu_scene(scene_to_render)) {
+        fmt::print(stderr, "--scene must reference a registered offline scene\n");
         return EXIT_FAILURE;
     }
 
