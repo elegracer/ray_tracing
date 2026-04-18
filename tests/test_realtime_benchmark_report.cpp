@@ -11,6 +11,7 @@ int main() {
     const std::string tricky_profile = "rt,\"x\"\\path";
 
     profiling::RunReport report {};
+    report.scene = "final_room";
     report.profile = tricky_profile;
     report.camera_count = 2;
     report.width = 640;
@@ -116,6 +117,7 @@ int main() {
     const std::string json_text((std::istreambuf_iterator<char>(json)), std::istreambuf_iterator<char>());
     expect_true(!json_text.empty(), "json is non-empty");
     expect_true(json_text.find("\"metadata\"") != std::string::npos, "json metadata field");
+    expect_true(json_text.find("\"scene\": \"final_room\"") != std::string::npos, "json scene field");
     expect_true(json_text.find("\"aggregate\"") != std::string::npos, "json aggregate field");
     expect_true(json_text.find("\"frames\"") != std::string::npos, "json frames field");
     expect_true(json_text.find("\"per-camera\"") != std::string::npos, "json per-camera field");

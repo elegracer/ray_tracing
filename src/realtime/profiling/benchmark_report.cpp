@@ -177,6 +177,7 @@ void write_json(const RunReport& report, const std::filesystem::path& path) {
     std::ofstream out = open_output_or_throw(path, "json");
     out << "{\n";
     out << "  \"metadata\": {\n";
+    out << "    \"scene\": \"" << escape_json_string(report.scene) << "\",\n";
     out << "    \"profile\": \"" << escape_json_string(report.profile) << "\",\n";
     out << "    \"camera_count\": " << report.camera_count << ",\n";
     out << "    \"width\": " << report.width << ",\n";

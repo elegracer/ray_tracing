@@ -341,6 +341,7 @@ int main(int argc, const char* argv[]) {
         static_cast<std::size_t>(profile.enable_denoise ? camera_count : 0));
 
     rt::profiling::RunReport report {};
+    report.scene = scene_name;
     report.profile = profile_name;
     report.camera_count = camera_count;
     report.width = kDefaultWidth;

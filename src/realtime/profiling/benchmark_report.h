@@ -52,6 +52,7 @@ struct RunAggregate {
 };
 
 struct RunReport {
+    std::string scene;
     std::string profile;
     int camera_count = 0;
     int width = 0;
