@@ -6,6 +6,7 @@
 
 #include <Eigen/Geometry>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <numbers>
@@ -17,7 +18,7 @@ double yaw_from_forward(const Eigen::Vector3d& forward) {
 }
 
 double pitch_from_forward(const Eigen::Vector3d& forward) {
-    return std::asin(forward.y()) * 180.0 / std::numbers::pi;
+    return std::asin(std::clamp(forward.y(), -1.0, 1.0)) * 180.0 / std::numbers::pi;
 }
 
 double wrap_degrees(double deg) {

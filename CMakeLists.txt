@@ -158,8 +158,7 @@ target_sources(test_viewer_body_pose
 target_link_libraries(test_viewer_body_pose PRIVATE core)
 add_test(NAME test_viewer_body_pose COMMAND test_viewer_body_pose)
 
-# Build this viewer-specific test only when explicitly requested.
-add_executable(test_viewer_four_camera_rig EXCLUDE_FROM_ALL)
+add_executable(test_viewer_four_camera_rig)
 target_sources(test_viewer_four_camera_rig
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_viewer_four_camera_rig.cpp
