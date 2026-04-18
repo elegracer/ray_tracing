@@ -1,6 +1,7 @@
 #include "realtime/render_profile.h"
 #include "realtime/viewer/body_pose.h"
 #include "realtime/viewer/default_viewer_scene.h"
+// Task 2 keeps this include red on purpose until Task 3 adds the rig builder.
 #include "realtime/viewer/four_camera_rig.h"
 #include "test_support.h"
 
