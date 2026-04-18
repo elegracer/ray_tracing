@@ -9,8 +9,13 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <filesystem>
+#include <random>
+#include <stdexcept>
+#include <string>
 #include <string_view>
+#include <system_error>
 
 namespace {
 
@@ -18,6 +23,30 @@ template <typename VariantType, typename AlternativeType>
 bool has_variant(const std::vector<VariantType>& values) {
     return std::any_of(values.begin(), values.end(),
         [](const VariantType& value) { return std::holds_alternative<AlternativeType>(value); });
+}
+
+std::filesystem::path make_unique_image_texture_fixture_path() {
+    const std::filesystem::path temp_dir = std::filesystem::temp_directory_path();
+    std::random_device entropy;
+    std::mt19937_64 generator(entropy());
+    std::uniform_int_distribution<std::uint64_t> distribution;
+
+    for (int attempt = 0; attempt < 32; ++attempt) {
+        const auto now_ticks = std::chrono::steady_clock::now().time_since_epoch().count();
+        const std::filesystem::path fixture_dir = temp_dir
+                                                  / ("rt-cpu-scene-adapter-image-texture-"
+                                                      + std::to_string(now_ticks) + "-"
+                                                      + std::to_string(distribution(generator)));
+        std::error_code ec;
+        if (std::filesystem::create_directory(fixture_dir, ec)) {
+            return fixture_dir / "fixture.png";
+        }
+        if (ec && ec != std::make_error_code(std::errc::file_exists)) {
+            throw std::runtime_error("unable to allocate image-texture fixture directory");
+        }
+    }
+
+    throw std::runtime_error("unable to allocate unique image-texture fixture path");
 }
 
 }  // namespace
@@ -37,9 +66,8 @@ int main() {
         expect_true(adapted.world.has_value(), "adapted world should be non-null");
     }
 
-    const std::filesystem::path image_texture_path =
-        std::filesystem::temp_directory_path() / "rt-cpu-scene-adapter-image-texture.png";
-    std::filesystem::remove(image_texture_path);
+    const std::filesystem::path image_texture_path = make_unique_image_texture_fixture_path();
+    const std::filesystem::path image_texture_dir = image_texture_path.parent_path();
 
     cv::Mat image_fixture(1, 1, CV_8UC3);
     image_fixture.at<cv::Vec3b>(0, 0) = cv::Vec3b {32, 96, 224};  // BGR
@@ -75,6 +103,7 @@ int main() {
         "image texture fixture diffuse scattering pdf should be positive");
 
     std::filesystem::remove(image_texture_path);
+    std::filesystem::remove(image_texture_dir);
 
     const rt::scene::SceneIR perlin_scene = rt::scene::build_scene("perlin_spheres");
     expect_true(has_variant<rt::scene::TextureDesc, rt::scene::NoiseTextureDesc>(perlin_scene.textures()),

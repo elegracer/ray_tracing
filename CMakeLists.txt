@@ -243,6 +243,14 @@ target_sources(test_cpu_scene_adapter
 target_link_libraries(test_cpu_scene_adapter PRIVATE core)
 add_test(NAME test_cpu_scene_adapter COMMAND test_cpu_scene_adapter)
 
+add_executable(test_offline_shared_scene_renderer)
+target_sources(test_offline_shared_scene_renderer
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_offline_shared_scene_renderer.cpp
+)
+target_link_libraries(test_offline_shared_scene_renderer PRIVATE core)
+add_test(NAME test_offline_shared_scene_renderer COMMAND test_offline_shared_scene_renderer)
+
 add_executable(test_scene_catalog)
 target_sources(test_scene_catalog
     PRIVATE
