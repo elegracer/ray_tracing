@@ -224,7 +224,7 @@ target_sources(test_realtime_texture_materials
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_realtime_texture_materials.cpp
 )
-target_link_libraries(test_realtime_texture_materials PRIVATE core)
+target_link_libraries(test_realtime_texture_materials PRIVATE realtime_gpu)
 add_test(NAME test_realtime_texture_materials COMMAND test_realtime_texture_materials)
 
 add_executable(test_shared_scene_ir)

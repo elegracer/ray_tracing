@@ -448,7 +448,12 @@ __device__ void try_hit_quad(
     const float3 origin = vector3f_to_float3(quad.origin);
     const float3 edge_u = vector3f_to_float3(quad.edge_u);
     const float3 edge_v = vector3f_to_float3(quad.edge_v);
-    const float3 normal = normalize3(cross3(edge_u, edge_v));
+    const float3 n = cross3(edge_u, edge_v);
+    const float n_len_sq = length_sq3(n);
+    if (n_len_sq <= 1e-12f) {
+        return;
+    }
+    const float3 normal = div3(n, sqrtf(n_len_sq));
     const float denom = dot3(normal, ray.direction);
     if (fabsf(denom) < 1e-6f) {
         return;
@@ -461,13 +466,9 @@ __device__ void try_hit_quad(
 
     const float3 p = add3(ray.origin, mul3(ray.direction, t));
     const float3 rel = sub3(p, origin);
-    const float uu = dot3(edge_u, edge_u);
-    const float vv = dot3(edge_v, edge_v);
-    if (uu <= 0.0f || vv <= 0.0f) {
-        return;
-    }
-    const float u = dot3(rel, edge_u) / uu;
-    const float v = dot3(rel, edge_v) / vv;
+    const float3 w = div3(n, n_len_sq);
+    const float u = dot3(w, cross3(rel, edge_v));
+    const float v = dot3(w, cross3(edge_u, rel));
     if (u < 0.0f || u > 1.0f || v < 0.0f || v > 1.0f) {
         return;
     }
