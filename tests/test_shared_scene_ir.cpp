@@ -5,6 +5,9 @@
 #include <variant>
 
 int main() {
+    const rt::ConstantColorTextureDesc default_constant_texture {};
+    expect_vec3_near(default_constant_texture.color, Eigen::Vector3d::Zero(), 1e-12, "constant color default");
+
     rt::SceneIR scene;
 
     scene.textures.push_back(rt::ConstantColorTextureDesc {Eigen::Vector3d {0.2, 0.4, 0.6}});
