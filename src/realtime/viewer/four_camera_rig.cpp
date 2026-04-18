@@ -36,7 +36,7 @@ CameraRig make_default_viewer_rig(const BodyPose& pose, int width, int height) {
         .p2 = 0.0,
     };
 
-    const std::array<double, 4> yaw_offsets_deg {0.0, 90.0, -90.0, 180.0};
+    const std::array<double, 4> yaw_offsets_deg {0.0, 90.0, -90.0, 180.0};  // front, left, right, rear
     for (const double yaw_offset : yaw_offsets_deg) {
         Eigen::Isometry3d T_bc = Eigen::Isometry3d::Identity();
         T_bc.translation() = pose.position;
@@ -48,4 +48,3 @@ CameraRig make_default_viewer_rig(const BodyPose& pose, int width, int height) {
 }
 
 }  // namespace rt::viewer
-
