@@ -245,6 +245,14 @@ target_sources(test_shared_scene_builders
 target_link_libraries(test_shared_scene_builders PRIVATE core)
 add_test(NAME test_shared_scene_builders COMMAND test_shared_scene_builders)
 
+add_executable(test_shared_scene_regression)
+target_sources(test_shared_scene_regression
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_shared_scene_regression.cpp
+)
+target_link_libraries(test_shared_scene_regression PRIVATE core)
+add_test(NAME test_shared_scene_regression COMMAND test_shared_scene_regression)
+
 add_executable(test_cpu_scene_adapter)
 target_sources(test_cpu_scene_adapter
     PRIVATE
