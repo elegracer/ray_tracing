@@ -50,7 +50,7 @@ struct IsotropicVolumeMaterialDesc {
     int albedo_texture_index = -1;
 };
 
-using MaterialDesc = std::variant<DiffuseMaterialDesc, MetalMaterialDesc, DielectricMaterialDesc,
+using SharedMaterialDesc = std::variant<DiffuseMaterialDesc, MetalMaterialDesc, DielectricMaterialDesc,
     EmissiveMaterialDesc, IsotropicVolumeMaterialDesc>;
 
 struct SphereShapeDesc {
@@ -91,7 +91,7 @@ struct MediumInstanceDesc {
 
 struct SceneIR {
     std::vector<TextureDesc> textures;
-    std::vector<MaterialDesc> materials;
+    std::vector<SharedMaterialDesc> materials;
     std::vector<ShapeDesc> shapes;
     std::vector<SurfaceInstanceDesc> surface_instances;
     std::vector<MediumInstanceDesc> medium_instances;

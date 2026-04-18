@@ -1,4 +1,5 @@
 #include "common/shared_scene_ir.h"
+#include "realtime/scene_description.h"
 #include "test_support.h"
 
 #include <variant>
@@ -74,6 +75,25 @@ int main() {
     expect_true(medium.material_index >= 0 && medium.material_index < static_cast<int>(scene.materials.size()),
         "medium material index range");
     expect_near(medium.density, 0.02, 1e-12, "medium density");
+
+    rt::SharedMaterialDesc shared_material = rt::DiffuseMaterialDesc {.albedo_texture_index = 1};
+    rt::MaterialDesc realtime_material = rt::LambertianMaterial {.albedo = Eigen::Vector3d {0.7, 0.8, 0.9}};
+    expect_true(std::holds_alternative<rt::DiffuseMaterialDesc>(shared_material), "shared material variant");
+    expect_true(std::holds_alternative<rt::LambertianMaterial>(realtime_material), "realtime material variant");
+
+    rt::SceneDescription realtime_scene;
+    const int realtime_material_index = realtime_scene.add_material(realtime_material);
+    realtime_scene.add_sphere(rt::SpherePrimitive {
+        .material_index = realtime_material_index,
+        .center = Eigen::Vector3d {0.0, 0.0, 0.0},
+        .radius = 0.5,
+        .dynamic = false,
+    });
+    const rt::PackedScene packed = realtime_scene.pack();
+    expect_near(static_cast<double>(packed.material_count), 1.0, 1e-12, "realtime packed material count");
+    expect_near(static_cast<double>(packed.sphere_count), 1.0, 1e-12, "realtime packed sphere count");
+    expect_true(std::holds_alternative<rt::LambertianMaterial>(packed.materials.front()),
+        "realtime packed material variant");
 
     return 0;
 }
