@@ -54,8 +54,6 @@ int main() {
     expect_true(packed_rig.active_count == 4, "rig active cameras");
 
     const Eigen::Vector3d expected_translation = rt::body_to_renderer(pose.position);
-    const std::array<double, 4> expected_yaw_offsets_deg {0.0, 90.0, -90.0, 180.0};  // front, left, right, rear
-
     for (int i = 0; i < 4; ++i) {
         const rt::PackedCamera& camera = packed_rig.cameras[static_cast<std::size_t>(i)];
         expect_true(camera.enabled == 1, "camera enabled");
@@ -72,7 +70,8 @@ int main() {
         const Eigen::Vector3d camera_forward_renderer = R_rc * Eigen::Vector3d(0.0, 0.0, 1.0);
         const double actual_yaw = yaw_from_forward(camera_forward_renderer);
         const double actual_pitch = pitch_from_forward(camera_forward_renderer);
-        const double expected_yaw = wrap_degrees(pose.yaw_deg + expected_yaw_offsets_deg[static_cast<std::size_t>(i)]);
+        const double expected_yaw =
+            wrap_degrees(pose.yaw_deg + rt::viewer::kDefaultViewerYawOffsetsDeg[static_cast<std::size_t>(i)]);
         expect_near(wrap_degrees(actual_yaw - expected_yaw), 0.0, 1e-9, "camera yaw");
         expect_near(actual_pitch, pose.pitch_deg, 1e-9, "camera pitch");
     }
