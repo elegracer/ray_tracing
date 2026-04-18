@@ -13,6 +13,7 @@
 #include <cmath>
 #include <filesystem>
 #include <random>
+#include <numbers>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -65,6 +66,35 @@ TemporaryImageFixture make_checker_fixture() {
     }
 
     throw std::runtime_error("unable to allocate checker fixture path");
+}
+
+TemporaryImageFixture make_sphere_uv_fixture() {
+    const std::filesystem::path temp_dir = std::filesystem::temp_directory_path();
+    std::random_device entropy;
+    std::mt19937_64 generator(entropy());
+    std::uniform_int_distribution<std::uint64_t> distribution;
+
+    for (int attempt = 0; attempt < 32; ++attempt) {
+        const auto now_ticks = std::chrono::steady_clock::now().time_since_epoch().count();
+        const std::filesystem::path fixture_dir = temp_dir
+            / ("rt-realtime-sphere-uv-" + std::to_string(now_ticks) + "-" + std::to_string(distribution(generator)));
+        std::error_code ec;
+        if (!std::filesystem::create_directory(fixture_dir, ec)) {
+            if (ec && ec != std::make_error_code(std::errc::file_exists)) {
+                throw std::runtime_error("unable to allocate sphere uv fixture directory");
+            }
+            continue;
+        }
+
+        const std::filesystem::path fixture_path = fixture_dir / "sphere_uv.png";
+        cv::Mat image(1, 2, CV_8UC3);
+        image.at<cv::Vec3b>(0, 0) = cv::Vec3b {0, 0, 255};
+        image.at<cv::Vec3b>(0, 1) = cv::Vec3b {0, 255, 0};
+        expect_true(cv::imwrite(fixture_path.string(), image), "sphere uv fixture should be written");
+        return TemporaryImageFixture {.path = fixture_path, .dir = fixture_dir};
+    }
+
+    throw std::runtime_error("unable to allocate sphere uv fixture path");
 }
 
 void expect_vector_near(
@@ -135,10 +165,46 @@ Eigen::Vector3d checker_color(double u, double v) {
     return Eigen::Vector3d {1.0, 1.0, 1.0};
 }
 
+bool sphere_uv_for_pixel(
+    const rt::PackedCamera& camera, const rt::SpherePrimitive& sphere, int x, int y, double& u, double& v) {
+    const Eigen::Matrix3d R_rc = camera.T_rc.block<3, 3>(0, 0);
+    const Eigen::Vector3d origin = camera.T_rc.block<3, 1>(0, 3);
+    const Eigen::Vector3d direction = (R_rc
+        * rt::unproject_pinhole32(camera.pinhole, Eigen::Vector2d {static_cast<double>(x) + 0.5,
+              static_cast<double>(y) + 0.5}))
+                                           .normalized();
+
+    const Eigen::Vector3d oc = origin - sphere.center;
+    const double half_b = oc.dot(direction);
+    const double c = oc.squaredNorm() - sphere.radius * sphere.radius;
+    const double discriminant = half_b * half_b - c;
+    if (discriminant < 0.0) {
+        return false;
+    }
+
+    const double sqrt_discriminant = std::sqrt(discriminant);
+    double t = -half_b - sqrt_discriminant;
+    if (t <= 1e-6) {
+        t = -half_b + sqrt_discriminant;
+    }
+    if (t <= 1e-6) {
+        return false;
+    }
+
+    const Eigen::Vector3d hit = origin + t * direction;
+    const Eigen::Vector3d outward = (hit - sphere.center) / sphere.radius;
+    const double theta = std::acos(std::clamp(-outward.y(), -1.0, 1.0));
+    const double phi = std::atan2(-outward.z(), outward.x()) + std::numbers::pi;
+    u = phi / (2.0 * std::numbers::pi);
+    v = theta / std::numbers::pi;
+    return true;
+}
+
 }  // namespace
 
 int main() {
     const TemporaryImageFixture fixture = make_checker_fixture();
+    const TemporaryImageFixture sphere_fixture = make_sphere_uv_fixture();
 
     rt::SceneDescription scene;
     const int checker = scene.add_texture(rt::ImageTextureDesc {.path = fixture.path.string()});
@@ -208,6 +274,58 @@ int main() {
     expect_true(red_pixels > 20, "analytic skew quad coverage should include red texel region");
     expect_true(blue_pixels > 20, "analytic skew quad coverage should include blue texel region");
     expect_true(mismatched_pixels == 0, "gpu albedo should match analytic skew-quad UV sampling");
+
+    rt::SceneDescription sphere_scene;
+    const int sphere_texture = sphere_scene.add_texture(rt::ImageTextureDesc {.path = sphere_fixture.path.string()});
+    const int sphere_material = sphere_scene.add_material(rt::LambertianMaterial {.albedo_texture = sphere_texture});
+    sphere_scene.add_sphere(rt::SpherePrimitive {
+        sphere_material,
+        rt::legacy_renderer_to_world(Eigen::Vector3d {0.0, 0.0, -3.0}),
+        0.9,
+        false,
+    });
+
+    const rt::PackedScene sphere_packed = sphere_scene.pack();
+    const rt::RadianceFrame sphere_frame = renderer.render_radiance(sphere_packed, packed_rig, profile, 0);
+    expect_true(!sphere_frame.albedo_rgba.empty(), "sphere albedo buffer present");
+
+    const Eigen::Matrix3d R_rc = camera.T_rc.block<3, 3>(0, 0);
+    const Eigen::Vector3d t_rc = camera.T_rc.block<3, 1>(0, 3);
+    const rt::SpherePrimitive& packed_sphere = sphere_packed.spheres[0];
+    const Eigen::Vector3d sphere_center_camera = R_rc.transpose() * (packed_sphere.center - t_rc);
+    const Eigen::Vector2d sphere_center_pixel = rt::project_pinhole32(camera.pinhole, sphere_center_camera);
+    const int sphere_center_x = static_cast<int>(std::round(sphere_center_pixel.x()));
+    const int sphere_center_y = static_cast<int>(std::round(sphere_center_pixel.y()));
+    const int sphere_radius_pixels =
+        std::max(4, static_cast<int>(std::round(camera.pinhole.fx * packed_sphere.radius / sphere_center_camera.z())));
+
+    bool found_upper_sample = false;
+    int upper_x = sphere_center_x;
+    int upper_y = sphere_center_y;
+    double upper_u = 0.0;
+    double upper_v = 0.0;
+    for (int dy = 1; dy <= (3 * sphere_radius_pixels) / 4; ++dy) {
+        const int sample_y = sphere_center_y - dy;
+        if (sample_y < 0 || sample_y >= sphere_frame.height) {
+            continue;
+        }
+        if (!sphere_uv_for_pixel(camera, packed_sphere, sphere_center_x, sample_y, upper_u, upper_v)) {
+            continue;
+        }
+        if (upper_u < 0.5 && upper_v > 0.1 && upper_v < 0.9) {
+            upper_y = sample_y;
+            found_upper_sample = true;
+            break;
+        }
+    }
+
+    expect_true(found_upper_sample, "sphere regression should find an upper interior sample with left-half UV");
+    expect_true(upper_u < 0.5, "upper sphere sample should land on left half of 2x1 texture");
+    expect_true(upper_v > 0.1 && upper_v < 0.9, "upper sphere sample should avoid pole clamping");
+    const Eigen::Vector3d upper_rgb = pixel_rgb(sphere_frame.albedo_rgba, sphere_frame.width, upper_x, upper_y);
+    expect_true(upper_rgb.x() > 0.95, "upper sphere sample should stay red-dominant");
+    expect_true(upper_rgb.y() < 0.05, "upper sphere sample should suppress green on left texel");
+    expect_true(upper_rgb.z() < 0.05, "upper sphere sample should suppress blue on left texel");
 
     rt::PackedScene tampered = packed;
     tampered.texture_count = 123;
