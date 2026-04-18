@@ -34,6 +34,23 @@ int main() {
         expect_true(adapted.world.has_value(), "adapted world should be non-null");
     }
 
+    const rt::scene::SceneIR earth_scene = rt::scene::build_scene("earth_sphere");
+    expect_true(has_variant<rt::scene::TextureDesc, rt::scene::ImageTextureDesc>(earth_scene.textures()),
+        "earth_sphere should include image texture");
+    const rt::scene::CpuSceneAdapterResult adapted_earth = rt::scene::adapt_to_cpu(earth_scene);
+    expect_true(adapted_earth.world.has_value(), "earth_sphere should adapt to world");
+    const Ray earth_ray {Vec3d {0.0, 0.0, -6.0}, Vec3d {0.0, 0.0, 1.0}};
+    HitRecord earth_hit;
+    expect_true(adapted_earth.world->hit(earth_ray, Interval {0.001, infinity}, earth_hit),
+        "earth_sphere ray should hit image-textured sphere");
+    ScatterRecord earth_scatter;
+    expect_true(earth_hit.mat->scatter(earth_ray, earth_hit, earth_scatter),
+        "earth_sphere diffuse material should scatter");
+    expect_true(!earth_scatter.skip_pdf, "earth_sphere diffuse scatter should not skip pdf");
+    expect_true(earth_scatter.pdf != nullptr, "earth_sphere diffuse scatter should provide pdf");
+    expect_true(earth_scatter.attenuation.maxCoeff() < 0.95,
+        "earth_sphere image texture should lower diffuse attenuation below white");
+
     const rt::scene::SceneIR perlin_scene = rt::scene::build_scene("perlin_spheres");
     expect_true(has_variant<rt::scene::TextureDesc, rt::scene::NoiseTextureDesc>(perlin_scene.textures()),
         "perlin_spheres should include noise texture");
