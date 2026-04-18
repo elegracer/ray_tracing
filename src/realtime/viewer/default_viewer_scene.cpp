@@ -4,7 +4,7 @@
 
 namespace rt::viewer {
 
-SceneDescription make_default_viewer_scene() {
+SceneDescription make_final_room_scene() {
     SceneDescription scene;
     const int white = scene.add_material(LambertianMaterial {Eigen::Vector3d {0.73, 0.73, 0.73}});
     const int green = scene.add_material(LambertianMaterial {Eigen::Vector3d {0.30, 0.70, 0.35}});
@@ -40,6 +40,10 @@ SceneDescription make_default_viewer_scene() {
     scene.add_sphere(SpherePrimitive {white, Eigen::Vector3d {0.9, 0.55, -0.1}, 0.45, false});
     scene.add_sphere(SpherePrimitive {white, Eigen::Vector3d {-0.35, 0.4, -1.15}, 0.35, false});
     return scene;
+}
+
+SceneDescription make_default_viewer_scene() {
+    return make_final_room_scene();
 }
 
 RenderProfile default_viewer_profile() {

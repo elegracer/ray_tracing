@@ -87,7 +87,7 @@ rt::CameraRig make_final_room_rig(int camera_count) {
 
 rt::SceneDescription make_scene(const std::string& scene_name) {
     if (scene_name == "final_room") {
-        return rt::viewer::make_default_viewer_scene();
+        return rt::viewer::make_final_room_scene();
     }
     return make_smoke_scene();
 }

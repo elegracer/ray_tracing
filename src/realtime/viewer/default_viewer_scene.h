@@ -5,6 +5,7 @@
 
 namespace rt::viewer {
 
+SceneDescription make_final_room_scene();
 SceneDescription make_default_viewer_scene();
 RenderProfile default_viewer_profile();
 
