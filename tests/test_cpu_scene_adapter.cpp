@@ -5,8 +5,11 @@
 #include "common/ray.h"
 #include "test_support.h"
 
+#include <opencv2/opencv.hpp>
+
 #include <algorithm>
 #include <array>
+#include <filesystem>
 #include <string_view>
 
 namespace {
@@ -34,27 +37,44 @@ int main() {
         expect_true(adapted.world.has_value(), "adapted world should be non-null");
     }
 
-    const rt::scene::SceneIR earth_scene = rt::scene::build_scene("earth_sphere");
-    expect_true(has_variant<rt::scene::TextureDesc, rt::scene::ImageTextureDesc>(earth_scene.textures()),
-        "earth_sphere should include image texture");
-    const rt::scene::CpuSceneAdapterResult adapted_earth = rt::scene::adapt_to_cpu(earth_scene);
-    expect_true(adapted_earth.world.has_value(), "earth_sphere should adapt to world");
-    const Ray earth_ray {Vec3d {0.0, 0.0, -6.0}, Vec3d {0.0, 0.0, 1.0}};
-    HitRecord earth_hit;
-    expect_true(adapted_earth.world->hit(earth_ray, Interval {0.001, infinity}, earth_hit),
-        "earth_sphere ray should hit image-textured sphere");
-    ScatterRecord earth_scatter;
-    expect_true(earth_hit.mat->scatter(earth_ray, earth_hit, earth_scatter),
-        "earth_sphere diffuse material should scatter");
-    expect_true(!earth_scatter.skip_pdf, "earth_sphere diffuse scatter should not skip pdf");
-    expect_true(earth_scatter.pdf != nullptr, "earth_sphere diffuse scatter should provide pdf");
-    expect_true(earth_scatter.attenuation.allFinite(),
-        "earth_sphere scatter attenuation should be finite");
-    expect_true(earth_scatter.attenuation.minCoeff() >= 0.0
-            && earth_scatter.attenuation.maxCoeff() <= 1.0,
-        "earth_sphere attenuation should remain in [0, 1]");
-    expect_true(earth_hit.mat->scattering_pdf(earth_ray, earth_hit, Ray {earth_hit.p, earth_hit.normal}) > 0.0,
-        "earth_sphere diffuse scattering pdf should be positive");
+    const std::filesystem::path image_texture_path =
+        std::filesystem::temp_directory_path() / "rt-cpu-scene-adapter-image-texture.png";
+    std::filesystem::remove(image_texture_path);
+
+    cv::Mat image_fixture(1, 1, CV_8UC3);
+    image_fixture.at<cv::Vec3b>(0, 0) = cv::Vec3b {32, 96, 224};  // BGR
+    expect_true(cv::imwrite(image_texture_path.string(), image_fixture),
+        "image texture fixture should be written");
+
+    rt::scene::SceneIR image_texture_scene;
+    const int image_texture =
+        image_texture_scene.add_texture(rt::scene::ImageTextureDesc {.path = image_texture_path.string()});
+    const int image_material =
+        image_texture_scene.add_material(rt::scene::DiffuseMaterial {.albedo_texture = image_texture});
+    const int image_sphere = image_texture_scene.add_shape(
+        rt::scene::SphereShape {.center = Eigen::Vector3d {0.0, 0.0, 0.0}, .radius = 1.0});
+    image_texture_scene.add_instance(rt::scene::SurfaceInstance {
+        .shape_index = image_sphere,
+        .material_index = image_material,
+    });
+
+    const rt::scene::CpuSceneAdapterResult adapted_image_texture = rt::scene::adapt_to_cpu(image_texture_scene);
+    expect_true(adapted_image_texture.world.has_value(), "image texture fixture should adapt to world");
+    const Ray image_ray {Vec3d {0.0, 0.0, -3.0}, Vec3d {0.0, 0.0, 1.0}};
+    HitRecord image_hit;
+    expect_true(adapted_image_texture.world->hit(image_ray, Interval {0.001, infinity}, image_hit),
+        "image texture fixture ray should hit diffuse sphere");
+    ScatterRecord image_scatter;
+    expect_true(image_hit.mat->scatter(image_ray, image_hit, image_scatter),
+        "image texture fixture diffuse material should scatter");
+    expect_true(!image_scatter.skip_pdf, "image texture fixture scatter should not skip pdf");
+    expect_true(image_scatter.pdf != nullptr, "image texture fixture scatter should provide pdf");
+    expect_vec3_near(image_scatter.attenuation, Vec3d {224.0 / 255.0, 96.0 / 255.0, 32.0 / 255.0}, 1e-6,
+        "image texture fixture attenuation should match encoded image color");
+    expect_true(image_hit.mat->scattering_pdf(image_ray, image_hit, Ray {image_hit.p, image_hit.normal}) > 0.0,
+        "image texture fixture diffuse scattering pdf should be positive");
+
+    std::filesystem::remove(image_texture_path);
 
     const rt::scene::SceneIR perlin_scene = rt::scene::build_scene("perlin_spheres");
     expect_true(has_variant<rt::scene::TextureDesc, rt::scene::NoiseTextureDesc>(perlin_scene.textures()),
