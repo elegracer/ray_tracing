@@ -1,25 +1,19 @@
 #include "core/version.h"
 
 #include "realtime/camera_rig.h"
-#include "realtime/frame_convention.h"
 #include "realtime/gpu/denoiser.h"
 #include "realtime/gpu/renderer_pool.h"
 #include "realtime/profiling/benchmark_report.h"
-#include "realtime/default_viewer_conventions.h"
 #include "realtime/render_profile.h"
 #include "realtime/realtime_scene_factory.h"
 #include "realtime/scene_catalog.h"
 #include "realtime/scene_description.h"
-#include "realtime/viewer/default_viewer_scene.h"
 
 #include <argparse/argparse.hpp>
 #include <fmt/core.h>
 #include <fmt/ostream.h>
 #include <opencv2/opencv.hpp>
 
-#include <Eigen/Geometry>
-
-#include <array>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -41,55 +35,12 @@ bool is_supported_realtime_scene(const std::string& scene_name) {
     return entry != nullptr && entry->supports_realtime;
 }
 
-rt::CameraRig make_smoke_rig(int camera_count) {
-    rt::CameraRig rig;
-    const double fx = 0.75 * static_cast<double>(kDefaultWidth);
-    const double fy = 0.75 * static_cast<double>(kDefaultHeight);
-    const double cx = 0.5 * static_cast<double>(kDefaultWidth);
-    const double cy = 0.5 * static_cast<double>(kDefaultHeight);
-
-    for (int i = 0; i < camera_count; ++i) {
-        Eigen::Isometry3d T_bc = Eigen::Isometry3d::Identity();
-        T_bc.translation() = Eigen::Vector3d {0.03 * static_cast<double>(i), 0.0, 0.0};
-        rig.add_pinhole(rt::Pinhole32Params {fx, fy, cx, cy, 0.0, 0.0, 0.0, 0.0, 0.0},
-            T_bc, kDefaultWidth, kDefaultHeight);
-    }
-
-    return rig;
-}
-
-rt::CameraRig make_final_room_rig(int camera_count) {
-    rt::CameraRig rig;
-    const double fx = 0.75 * static_cast<double>(kDefaultWidth);
-    const double fy = 0.75 * static_cast<double>(kDefaultHeight);
-    const double cx = 0.5 * static_cast<double>(kDefaultWidth);
-    const double cy = 0.5 * static_cast<double>(kDefaultHeight);
-    constexpr double kDegToRad = 3.14159265358979323846 / 180.0;
-
-    for (int i = 0; i < camera_count; ++i) {
-        Eigen::Isometry3d T_bc = Eigen::Isometry3d::Identity();
-        T_bc.linear() = rt::front_camera_to_body_matrix().transpose()
-            * Eigen::AngleAxisd(
-                  rt::kDefaultSurroundYawOffsetsDeg[static_cast<std::size_t>(i)] * kDegToRad,
-                  Eigen::Vector3d::UnitX())
-                  .toRotationMatrix()
-            * rt::front_camera_to_body_matrix();
-        rig.add_pinhole(rt::Pinhole32Params {fx, fy, cx, cy, 0.0, 0.0, 0.0, 0.0, 0.0},
-            T_bc, kDefaultWidth, kDefaultHeight);
-    }
-
-    return rig;
-}
-
 rt::SceneDescription make_scene(const std::string& scene_name) {
     return rt::make_realtime_scene(scene_name);
 }
 
 rt::CameraRig make_rig(const std::string& scene_name, int camera_count) {
-    if (scene_name == "final_room") {
-        return make_final_room_rig(camera_count);
-    }
-    return make_smoke_rig(camera_count);
+    return rt::default_camera_rig_for_scene(scene_name, camera_count, kDefaultWidth, kDefaultHeight);
 }
 
 cv::Mat make_beauty_image(const rt::RadianceFrame& frame) {
@@ -196,7 +147,7 @@ int main(int argc, const char* argv[]) {
         .default_value(output_dir)
         .store_into(output_dir);
     program.add_argument("--scene")
-        .help("realtime scene: smoke|final_room")
+        .help("registered realtime scene id")
         .default_value(scene_name)
         .store_into(scene_name);
     program.add_argument("--profile")

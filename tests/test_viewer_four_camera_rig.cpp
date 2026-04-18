@@ -1,4 +1,5 @@
 #include "realtime/frame_convention.h"
+#include "realtime/realtime_scene_factory.h"
 #include "realtime/viewer/body_pose.h"
 #include "realtime/viewer/default_viewer_scene.h"
 #include "realtime/viewer/four_camera_rig.h"
@@ -118,6 +119,13 @@ int main() {
 
     {
         rt::PackedScene converted_scene = rt::viewer::make_final_room_scene().pack();
+        const rt::PackedScene shared_scene = rt::make_realtime_scene("final_room").pack();
+        expect_true(converted_scene.material_count == shared_scene.material_count,
+            "viewer final_room material count matches shared factory");
+        expect_true(converted_scene.sphere_count == shared_scene.sphere_count,
+            "viewer final_room sphere count matches shared factory");
+        expect_true(converted_scene.quad_count == shared_scene.quad_count,
+            "viewer final_room quad count matches shared factory");
         expect_true(!converted_scene.quads.empty(), "final_room exposes quads");
         const rt::QuadPrimitive& floor = converted_scene.quads.front();
         expect_near(floor.origin.z(), -1.0, 1e-12, "floor z origin");

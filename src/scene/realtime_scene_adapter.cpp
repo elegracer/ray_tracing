@@ -54,7 +54,7 @@ rt::MaterialDesc adapt_material(const scene::MaterialDesc& material) {
             if constexpr (std::is_same_v<T, DiffuseMaterial>) {
                 return rt::LambertianMaterial {.albedo_texture = desc.albedo_texture};
             } else if constexpr (std::is_same_v<T, scene::MetalMaterial>) {
-                return rt::MetalMaterial {.albedo_texture = desc.albedo_texture, .fuzz = desc.fuzz};
+                return rt::MetalMaterial {.fuzz = desc.fuzz, .albedo_texture = desc.albedo_texture};
             } else if constexpr (std::is_same_v<T, scene::DielectricMaterial>) {
                 return rt::DielectricMaterial {.ior = desc.ior};
             } else if constexpr (std::is_same_v<T, EmissiveMaterial>) {
