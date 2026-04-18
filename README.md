@@ -44,6 +44,22 @@ For correctness-focused `final_room` validation, use:
 `final_room` is intended for correctness-first checks, not the default benchmark path.
 The automated CLI coverage keeps this path lightweight by running a skip-write verification pass separately.
 
+## GUI Viewer
+
+Build and run the default interactive viewer with:
+
+```bash
+cmake --build build-clang-vcpkg-settings --target render_realtime_viewer -j
+./bin/render_realtime_viewer
+```
+
+Behavior:
+
+- starts in `final_room`
+- shows four pinhole cameras in a `2x2` grid
+- mouse controls body `yaw + pitch`
+- `WASD` moves the body through the scene
+
 | Quads            | Earch Sphere            | Checkered Spheres            |
 | ---------------- | ----------------------- | ---------------------------- |
 | ![](./quads.png) | ![](./earth_sphere.png) | ![](./checkered_spheres.png) |
