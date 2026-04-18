@@ -63,12 +63,14 @@ int checked_scene_count(std::size_t count, const char* label) {
 struct PrimitiveCounts {
     int sphere_count = 0;
     int quad_count = 0;
+    int medium_count = 0;
 };
 
 PrimitiveCounts primitive_counts(const PackedScene& scene) {
     return PrimitiveCounts {
         .sphere_count = checked_scene_count(scene.spheres.size(), "sphere"),
         .quad_count = checked_scene_count(scene.quads.size(), "quad"),
+        .medium_count = checked_scene_count(scene.media.size(), "medium"),
     };
 }
 
@@ -86,6 +88,21 @@ PackedQuad pack_quad(const QuadPrimitive& quad) {
         .edge_u = quad.edge_u.cast<float>(),
         .edge_v = quad.edge_v.cast<float>(),
         .material_index = quad.material_index,
+    };
+}
+
+PackedMedium pack_medium(const HomogeneousMediumPrimitive& medium) {
+    return PackedMedium {
+        .local_center_or_min = medium.local_center_or_min.cast<float>(),
+        .radius = static_cast<float>(medium.radius),
+        .local_max = medium.local_max.cast<float>(),
+        .density = static_cast<float>(medium.density),
+        .rotation_row0 = medium.world_to_local_rotation.row(0).transpose().cast<float>(),
+        .material_index = medium.material_index,
+        .rotation_row1 = medium.world_to_local_rotation.row(1).transpose().cast<float>(),
+        .boundary_type = medium.boundary_type,
+        .rotation_row2 = medium.world_to_local_rotation.row(2).transpose().cast<float>(),
+        .translation = medium.translation.cast<float>(),
     };
 }
 
@@ -107,6 +124,9 @@ MaterialSample pack_material(const MaterialDesc& material) {
             } else if constexpr (std::is_same_v<T, DiffuseLightMaterial>) {
                 sample.emission_texture = value.emission_texture;
                 sample.type = 3;
+            } else if constexpr (std::is_same_v<T, IsotropicVolumeMaterial>) {
+                sample.albedo_texture = value.albedo_texture;
+                sample.type = 4;
             }
         },
         material);
@@ -232,15 +252,17 @@ void free_frame_buffers(DeviceFrameBuffers& frame) {
     frame = DeviceFrameBuffers {};
 }
 
-void free_scene_buffers(PackedSphere*& spheres, PackedQuad*& quads, PackedTexture*& textures,
+void free_scene_buffers(PackedSphere*& spheres, PackedQuad*& quads, PackedMedium*& media, PackedTexture*& textures,
     Eigen::Vector3f*& image_texels, MaterialSample*& materials) {
     free_device_ptr(spheres);
     free_device_ptr(quads);
+    free_device_ptr(media);
     free_device_ptr(textures);
     free_device_ptr(image_texels);
     free_device_ptr(materials);
     spheres = nullptr;
     quads = nullptr;
+    media = nullptr;
     textures = nullptr;
     image_texels = nullptr;
     materials = nullptr;
@@ -384,7 +406,8 @@ DirectionDebugFrame OptixRenderer::render_direction_debug(const PackedCameraRig&
 void OptixRenderer::upload_scene(const PackedScene& scene) {
     scene_prepared_ = false;
     device_image_texel_count_ = 0;
-    free_scene_buffers(device_spheres_, device_quads_, device_textures_, device_image_texels_, device_materials_);
+    free_scene_buffers(
+        device_spheres_, device_quads_, device_media_, device_textures_, device_image_texels_, device_materials_);
 
     if (!scene.spheres.empty()) {
         std::vector<PackedSphere> packed_spheres;
@@ -408,6 +431,18 @@ void OptixRenderer::upload_scene(const PackedScene& scene) {
             packed_quads.size() * sizeof(PackedQuad)));
         RT_CUDA_CHECK(cudaMemcpy(device_quads_, packed_quads.data(),
             packed_quads.size() * sizeof(PackedQuad), cudaMemcpyHostToDevice));
+    }
+
+    if (!scene.media.empty()) {
+        std::vector<PackedMedium> packed_media;
+        packed_media.reserve(scene.media.size());
+        for (const HomogeneousMediumPrimitive& medium : scene.media) {
+            packed_media.push_back(pack_medium(medium));
+        }
+        RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&device_media_),
+            packed_media.size() * sizeof(PackedMedium)));
+        RT_CUDA_CHECK(cudaMemcpy(device_media_, packed_media.data(),
+            packed_media.size() * sizeof(PackedMedium), cudaMemcpyHostToDevice));
     }
 
     if (!scene.materials.empty()) {
@@ -449,7 +484,8 @@ void OptixRenderer::upload_scene(const PackedScene& scene) {
 
 void OptixRenderer::free_device_resources() {
     free_frame_buffers(device_frame_);
-    free_scene_buffers(device_spheres_, device_quads_, device_textures_, device_image_texels_, device_materials_);
+    free_scene_buffers(
+        device_spheres_, device_quads_, device_media_, device_textures_, device_image_texels_, device_materials_);
     device_image_texel_count_ = 0;
     allocated_width_ = 0;
     allocated_height_ = 0;
@@ -467,7 +503,7 @@ void OptixRenderer::free_staging_buffers() {
 
 void OptixRenderer::build_or_refit_accels(const PackedScene& scene) {
     const PrimitiveCounts counts = primitive_counts(scene);
-    if (counts.sphere_count == 0 && counts.quad_count == 0) {
+    if (counts.sphere_count == 0 && counts.quad_count == 0 && counts.medium_count == 0) {
         throw std::runtime_error("render_radiance requires at least one primitive");
     }
     build_geometry_accels(scene);
@@ -521,11 +557,13 @@ void OptixRenderer::launch_radiance_pipeline(const PackedScene& scene, const Pac
     params.frame = device_frame_;
     params.scene.spheres = device_spheres_;
     params.scene.quads = device_quads_;
+    params.scene.media = device_media_;
     params.scene.textures = device_textures_;
     params.scene.image_texels = device_image_texels_;
     params.scene.materials = device_materials_;
     params.scene.sphere_count = checked_scene_count(scene.spheres.size(), "sphere");
     params.scene.quad_count = checked_scene_count(scene.quads.size(), "quad");
+    params.scene.medium_count = checked_scene_count(scene.media.size(), "medium");
     params.scene.texture_count = checked_scene_count(scene.textures.size(), "texture");
     params.scene.image_texel_count = device_image_texel_count_;
     params.scene.material_count = checked_scene_count(scene.materials.size(), "material");

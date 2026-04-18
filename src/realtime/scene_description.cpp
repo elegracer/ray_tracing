@@ -48,16 +48,22 @@ void SceneDescription::add_quad(const QuadPrimitive& quad) {
     quads_.push_back(quad);
 }
 
+void SceneDescription::add_medium(const HomogeneousMediumPrimitive& medium) {
+    media_.push_back(medium);
+}
+
 PackedScene SceneDescription::pack() const {
     return PackedScene {
         .texture_count = static_cast<int>(textures_.size()),
         .material_count = static_cast<int>(materials_.size()),
         .sphere_count = static_cast<int>(spheres_.size()),
         .quad_count = static_cast<int>(quads_.size()),
+        .medium_count = static_cast<int>(media_.size()),
         .textures = textures_,
         .materials = materials_,
         .spheres = spheres_,
         .quads = quads_,
+        .media = media_,
     };
 }
 

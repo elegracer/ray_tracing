@@ -68,7 +68,7 @@ int main() {
             expect_true(entry->supports_realtime, "realtime-only realtime");
         } else {
             expect_true(entry->supports_cpu_render, "offline cpu");
-            expect_true(!entry->supports_realtime, "offline non-realtime");
+            expect_true(entry->supports_realtime, "offline realtime");
         }
     }
     return 0;

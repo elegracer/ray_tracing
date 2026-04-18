@@ -6,10 +6,10 @@ int main() {
     expect_true(controller.current_scene_id() == "final_room", "initial scene");
 
     controller.request_scene("cornell_box");
-    const rt::viewer::SceneSwitchResult unsupported = controller.resolve_pending();
-    expect_true(!unsupported.applied, "unsupported scene not applied");
-    expect_true(controller.current_scene_id() == "final_room", "unsupported keeps old scene");
-    expect_true(!unsupported.error_message.empty(), "unsupported error");
+    const rt::viewer::SceneSwitchResult cornell = controller.resolve_pending();
+    expect_true(cornell.applied, "cornell box applied");
+    expect_true(controller.current_scene_id() == "cornell_box", "cornell box becomes current scene");
+    expect_true(cornell.reset_pose, "supported switch resets pose");
 
     controller.request_scene("smoke");
     const rt::viewer::SceneSwitchResult applied = controller.resolve_pending();

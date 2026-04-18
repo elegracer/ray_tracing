@@ -49,7 +49,12 @@ struct DiffuseLightMaterial {
     int emission_texture = -1;
 };
 
-using MaterialDesc = std::variant<LambertianMaterial, MetalMaterial, DielectricMaterial, DiffuseLightMaterial>;
+struct IsotropicVolumeMaterial {
+    int albedo_texture = -1;
+};
+
+using MaterialDesc =
+    std::variant<LambertianMaterial, MetalMaterial, DielectricMaterial, DiffuseLightMaterial, IsotropicVolumeMaterial>;
 
 struct SpherePrimitive {
     int material_index;
@@ -66,15 +71,28 @@ struct QuadPrimitive {
     bool dynamic;
 };
 
+struct HomogeneousMediumPrimitive {
+    int material_index = -1;
+    double density = 0.0;
+    int boundary_type = 0;
+    Eigen::Vector3d local_center_or_min = Eigen::Vector3d::Zero();
+    Eigen::Vector3d local_max = Eigen::Vector3d::Zero();
+    double radius = 0.0;
+    Eigen::Matrix3d world_to_local_rotation = Eigen::Matrix3d::Identity();
+    Eigen::Vector3d translation = Eigen::Vector3d::Zero();
+};
+
 struct PackedScene {
     int texture_count = 0;
     int material_count = 0;
     int sphere_count = 0;
     int quad_count = 0;
+    int medium_count = 0;
     std::vector<TextureDesc> textures;
     std::vector<MaterialDesc> materials;
     std::vector<SpherePrimitive> spheres;
     std::vector<QuadPrimitive> quads;
+    std::vector<HomogeneousMediumPrimitive> media;
 };
 
 class SceneDescription {
@@ -83,6 +101,7 @@ class SceneDescription {
     int add_material(const MaterialDesc& material);
     void add_sphere(const SpherePrimitive& sphere);
     void add_quad(const QuadPrimitive& quad);
+    void add_medium(const HomogeneousMediumPrimitive& medium);
     PackedScene pack() const;
 
    private:
@@ -90,6 +109,7 @@ class SceneDescription {
     std::vector<MaterialDesc> materials_;
     std::vector<SpherePrimitive> spheres_;
     std::vector<QuadPrimitive> quads_;
+    std::vector<HomogeneousMediumPrimitive> media_;
 };
 
 }  // namespace rt

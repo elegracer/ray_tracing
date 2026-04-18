@@ -352,5 +352,36 @@ int main() {
         prepared_tampered_renderer.render_prepared_radiance(packed_rig, profile, 0);
     expect_frame_near(prepared_tampered_frame.frame, prepared_baseline.frame,
         "prepared rendering should ignore stale zero primitive counts");
+
+    rt::SceneDescription medium_scene;
+    const int medium_albedo =
+        medium_scene.add_texture(rt::ConstantColorTextureDesc {.color = Eigen::Vector3d {0.9, 0.9, 0.9}});
+    const int medium_material = medium_scene.add_material(rt::IsotropicVolumeMaterial {.albedo_texture = medium_albedo});
+    const int medium_light = medium_scene.add_material(rt::DiffuseLightMaterial {Eigen::Vector3d {12.0, 12.0, 12.0}});
+    const Eigen::Vector3d medium_center = rt::legacy_renderer_to_world(Eigen::Vector3d {0.0, 0.0, -3.0});
+    medium_scene.add_sphere(rt::SpherePrimitive {
+        medium_light,
+        medium_center,
+        0.2,
+        false,
+    });
+    medium_scene.add_medium(rt::HomogeneousMediumPrimitive {
+        .material_index = medium_material,
+        .density = 2.0,
+        .boundary_type = 0,
+        .local_center_or_min = medium_center,
+        .radius = 0.9,
+    });
+
+    rt::RenderProfile medium_profile = profile;
+    medium_profile.samples_per_pixel = 64;
+    medium_profile.max_bounces = 2;
+    medium_profile.rr_start_bounce = 2;
+
+    rt::OptixRenderer medium_renderer;
+    const rt::RadianceFrame medium_frame =
+        medium_renderer.render_radiance(medium_scene.pack(), packed_rig, medium_profile, 0);
+    expect_true(medium_frame.average_luminance > 0.001, "homogeneous medium should scatter visible light");
+    expect_true(!medium_frame.albedo_rgba.empty(), "medium render should keep albedo buffer");
     return 0;
 }

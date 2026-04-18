@@ -90,6 +90,8 @@ target_sources(core
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/offline_shared_scene_renderer.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/cpu_scene_adapter.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/cpu_scene_adapter.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/realtime_scene_adapter.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/realtime_scene_adapter.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/shared_scene_ir.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/shared_scene_builders.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/camera_models.cpp
@@ -274,6 +276,14 @@ target_sources(test_realtime_scene_factory
 )
 target_link_libraries(test_realtime_scene_factory PRIVATE core)
 add_test(NAME test_realtime_scene_factory COMMAND test_realtime_scene_factory)
+
+add_executable(test_realtime_scene_adapter)
+target_sources(test_realtime_scene_adapter
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_realtime_scene_adapter.cpp
+)
+target_link_libraries(test_realtime_scene_adapter PRIVATE core)
+add_test(NAME test_realtime_scene_adapter COMMAND test_realtime_scene_adapter)
 
 add_executable(test_render_profile)
 target_sources(test_render_profile PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_render_profile.cpp)

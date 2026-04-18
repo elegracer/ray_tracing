@@ -101,6 +101,21 @@ __device__ float3 vector3f_to_float3(const Eigen::Vector3f& v) {
     return make_float3(ptr[0], ptr[1], ptr[2]);
 }
 
+__device__ float3 packed_medium_world_to_local_point(const PackedMedium& medium, const float3& point) {
+    const float3 shifted = sub3(point, vector3f_to_float3(medium.translation));
+    return make_float3(
+        dot3(vector3f_to_float3(medium.rotation_row0), shifted),
+        dot3(vector3f_to_float3(medium.rotation_row1), shifted),
+        dot3(vector3f_to_float3(medium.rotation_row2), shifted));
+}
+
+__device__ float3 packed_medium_world_to_local_dir(const PackedMedium& medium, const float3& dir) {
+    return make_float3(
+        dot3(vector3f_to_float3(medium.rotation_row0), dir),
+        dot3(vector3f_to_float3(medium.rotation_row1), dir),
+        dot3(vector3f_to_float3(medium.rotation_row2), dir));
+}
+
 __device__ float clamp01(float v) {
     return fminf(fmaxf(v, 0.0f), 1.0f);
 }
@@ -413,6 +428,71 @@ __device__ void populate_material(const DeviceSceneView& scene, int material_ind
     }
 }
 
+__device__ bool hit_medium_boundary(
+    const PackedMedium& medium, const Ray& ray, float t_min, float t_max, float& entry_t, float& exit_t) {
+    const float3 local_origin = packed_medium_world_to_local_point(medium, ray.origin);
+    const float3 local_direction = packed_medium_world_to_local_dir(medium, ray.direction);
+
+    if (medium.boundary_type == 0) {
+        const float3 center = vector3f_to_float3(medium.local_center_or_min);
+        const float3 oc = sub3(local_origin, center);
+        const float a = length_sq3(local_direction);
+        const float half_b = dot3(oc, local_direction);
+        const float c = length_sq3(oc) - medium.radius * medium.radius;
+        const float discriminant = half_b * half_b - a * c;
+        if (discriminant <= 0.0f) {
+            return false;
+        }
+        const float sqrt_disc = sqrtf(discriminant);
+        float t0 = (-half_b - sqrt_disc) / a;
+        float t1 = (-half_b + sqrt_disc) / a;
+        if (t0 > t1) {
+            const float tmp = t0;
+            t0 = t1;
+            t1 = tmp;
+        }
+        entry_t = fmaxf(t0, t_min);
+        exit_t = fminf(t1, t_max);
+        return entry_t < exit_t;
+    }
+
+    if (medium.boundary_type == 1) {
+        const float3 box_min = vector3f_to_float3(medium.local_center_or_min);
+        const float3 box_max = vector3f_to_float3(medium.local_max);
+        float t0 = t_min;
+        float t1 = t_max;
+        const float origin[3] {local_origin.x, local_origin.y, local_origin.z};
+        const float direction[3] {local_direction.x, local_direction.y, local_direction.z};
+        const float min_v[3] {box_min.x, box_min.y, box_min.z};
+        const float max_v[3] {box_max.x, box_max.y, box_max.z};
+        for (int axis = 0; axis < 3; ++axis) {
+            if (fabsf(direction[axis]) < 1e-8f) {
+                if (origin[axis] < min_v[axis] || origin[axis] > max_v[axis]) {
+                    return false;
+                }
+                continue;
+            }
+            float axis_t0 = (min_v[axis] - origin[axis]) / direction[axis];
+            float axis_t1 = (max_v[axis] - origin[axis]) / direction[axis];
+            if (axis_t0 > axis_t1) {
+                const float tmp = axis_t0;
+                axis_t0 = axis_t1;
+                axis_t1 = tmp;
+            }
+            t0 = fmaxf(t0, axis_t0);
+            t1 = fminf(t1, axis_t1);
+            if (t0 >= t1) {
+                return false;
+            }
+        }
+        entry_t = t0;
+        exit_t = t1;
+        return true;
+    }
+
+    return false;
+}
+
 __device__ void try_hit_sphere(
     const PackedSphere& sphere, const Ray& ray, float t_min, float t_max, HitInfo& best_hit, bool& found_hit) {
     const float3 center = vector3f_to_float3(sphere.center);
@@ -482,7 +562,8 @@ __device__ void try_hit_quad(
     set_face_normal(ray, normal, best_hit);
 }
 
-__device__ HitInfo intersect_scene(const DeviceSceneView& scene, const Ray& ray, float t_min, float t_max) {
+__device__ HitInfo intersect_scene(
+    const DeviceSceneView& scene, const Ray& ray, float t_min, float t_max, std::uint32_t* rng = nullptr) {
     HitInfo hit {};
     float closest = t_max;
     bool found = false;
@@ -513,6 +594,48 @@ __device__ HitInfo intersect_scene(const DeviceSceneView& scene, const Ray& ray,
         closest = candidate.t;
         hit = candidate;
         found = true;
+    }
+
+    if (rng != nullptr) {
+        const float ray_length = length3(ray.direction);
+        if (ray_length > 1e-8f) {
+            for (int i = 0; i < scene.medium_count; ++i) {
+                const PackedMedium& medium = scene.media[i];
+                if (medium.density <= 0.0f) {
+                    continue;
+                }
+                float entry_t = 0.0f;
+                float exit_t = 0.0f;
+                if (!hit_medium_boundary(medium, ray, t_min, closest, entry_t, exit_t)) {
+                    continue;
+                }
+                entry_t = fmaxf(entry_t, t_min);
+                exit_t = fminf(exit_t, closest);
+                if (entry_t >= exit_t) {
+                    continue;
+                }
+                const float distance_inside = (exit_t - entry_t) * ray_length;
+                const float sample = fmaxf(random_float01(*rng), 1e-6f);
+                const float hit_distance = -logf(sample) / medium.density;
+                if (hit_distance >= distance_inside) {
+                    continue;
+                }
+
+                HitInfo candidate {};
+                candidate.hit = true;
+                candidate.t = entry_t + hit_distance / ray_length;
+                candidate.position = add3(ray.origin, mul3(ray.direction, candidate.t));
+                candidate.front_face = true;
+                candidate.geometric_normal = mul3(normalize3(ray.direction), -1.0f);
+                candidate.shading_normal = candidate.geometric_normal;
+                candidate.tex_u = 0.0f;
+                candidate.tex_v = 0.0f;
+                populate_material(scene, medium.material_index, candidate);
+                closest = candidate.t;
+                hit = candidate;
+                found = true;
+            }
+        }
     }
 
     hit.hit = found;
@@ -592,7 +715,7 @@ __global__ void radiance_kernel(const LaunchParams* params_ptr) {
 
         const int max_bounces = params.max_bounces > 0 ? params.max_bounces : 1;
         for (int bounce = 0; bounce < max_bounces && state.alive; ++bounce) {
-            HitInfo hit = intersect_scene(params.scene, state.ray, kRayEpsilon, kRayFar);
+            HitInfo hit = intersect_scene(params.scene, state.ray, kRayEpsilon, kRayFar, &rng);
             if (!hit.hit) {
                 state.alive = false;
                 break;
@@ -689,8 +812,9 @@ __device__ void accumulate_direct_light(const LaunchParams& params, const HitInf
         const float dist_sq = fmaxf(length_sq3(to_light), 1e-6f);
         const float dist = sqrtf(dist_sq);
         const float3 light_dir = div3(to_light, dist);
-        const float n_dot_l = fmaxf(dot3(hit.shading_normal, light_dir), 0.0f);
-        if (n_dot_l <= 0.0f) {
+        const bool isotropic = hit.material_type == 4;
+        const float n_dot_l = isotropic ? (1.0f / (4.0f * kPi)) : fmaxf(dot3(hit.shading_normal, light_dir), 0.0f);
+        if (!isotropic && n_dot_l <= 0.0f) {
             continue;
         }
         Ray shadow_ray {};
@@ -722,8 +846,9 @@ __device__ void accumulate_direct_light(const LaunchParams& params, const HitInf
         const float dist_sq = fmaxf(length_sq3(to_light), 1e-6f);
         const float dist = sqrtf(dist_sq);
         const float3 light_dir = div3(to_light, dist);
-        const float n_dot_l = fmaxf(dot3(hit.shading_normal, light_dir), 0.0f);
-        if (n_dot_l <= 0.0f) {
+        const bool isotropic = hit.material_type == 4;
+        const float n_dot_l = isotropic ? (1.0f / (4.0f * kPi)) : fmaxf(dot3(hit.shading_normal, light_dir), 0.0f);
+        if (!isotropic && n_dot_l <= 0.0f) {
             continue;
         }
         Ray shadow_ray {};
@@ -788,6 +913,13 @@ __device__ void sample_bsdf(const LaunchParams&, const HitInfo& hit, std::uint32
         }
         state.ray.origin = add3(hit.position, mul3(direction, kRayEpsilon));
         state.ray.direction = normalize3(direction);
+        state.throughput = mul3(state.throughput, hit.base_color);
+        return;
+    }
+
+    if (hit.material_type == 4) {
+        state.ray.origin = add3(hit.position, mul3(random_unit_vector(rng), kRayEpsilon));
+        state.ray.direction = random_unit_vector(rng);
         state.throughput = mul3(state.throughput, hit.base_color);
         return;
     }

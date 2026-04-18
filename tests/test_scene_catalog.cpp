@@ -35,7 +35,8 @@ int main() {
     }
 
     expect_true(rt::find_scene_catalog_entry("final_room")->supports_realtime, "final_room realtime");
-    expect_true(!rt::find_scene_catalog_entry("cornell_box")->supports_realtime, "cornell_box not realtime yet");
+    expect_true(rt::find_scene_catalog_entry("cornell_box")->supports_realtime, "cornell_box realtime");
+    expect_true(rt::find_scene_catalog_entry("quads")->supports_realtime, "quads realtime");
     expect_true(rt::find_scene_catalog_entry("quads")->supports_cpu_render, "quads cpu");
     expect_true(!rt::find_scene_catalog_entry("smoke")->supports_cpu_render, "smoke realtime-only");
     return 0;
