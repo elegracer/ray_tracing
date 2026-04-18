@@ -60,6 +60,18 @@ int checked_scene_count(std::size_t count, const char* label) {
     return static_cast<int>(count);
 }
 
+struct PrimitiveCounts {
+    int sphere_count = 0;
+    int quad_count = 0;
+};
+
+PrimitiveCounts primitive_counts(const PackedScene& scene) {
+    return PrimitiveCounts {
+        .sphere_count = checked_scene_count(scene.spheres.size(), "sphere"),
+        .quad_count = checked_scene_count(scene.quads.size(), "quad"),
+    };
+}
+
 PackedSphere pack_sphere(const SpherePrimitive& sphere) {
     return PackedSphere {
         .center = sphere.center.cast<float>(),
@@ -454,16 +466,18 @@ void OptixRenderer::free_staging_buffers() {
 }
 
 void OptixRenderer::build_or_refit_accels(const PackedScene& scene) {
-    if (scene.sphere_count == 0 && scene.quad_count == 0) {
+    const PrimitiveCounts counts = primitive_counts(scene);
+    if (counts.sphere_count == 0 && counts.quad_count == 0) {
         throw std::runtime_error("render_radiance requires at least one primitive");
     }
     build_geometry_accels(scene);
 }
 
 void OptixRenderer::build_geometry_accels(const PackedScene& scene) {
-    sphere_gas_count_ = scene.sphere_count;
-    quad_gas_count_ = scene.quad_count;
-    tlas_instance_count_ = scene.sphere_count + scene.quad_count;
+    const PrimitiveCounts counts = primitive_counts(scene);
+    sphere_gas_count_ = counts.sphere_count;
+    quad_gas_count_ = counts.quad_count;
+    tlas_instance_count_ = counts.sphere_count + counts.quad_count;
 }
 
 void OptixRenderer::launch_radiance(const PackedCameraRig& rig, const RenderProfile& profile, int camera_index,

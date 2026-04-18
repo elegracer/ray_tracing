@@ -218,5 +218,21 @@ int main() {
     rt::OptixRenderer tampered_renderer;
     const rt::RadianceFrame tampered_frame = tampered_renderer.render_radiance(tampered, packed_rig, profile, 0);
     expect_frame_near(tampered_frame, frame, "tampered explicit counts should not affect render_radiance");
+
+    rt::OptixRenderer prepared_renderer;
+    prepared_renderer.prepare_scene(packed);
+    const rt::ProfiledRadianceFrame prepared_baseline =
+        prepared_renderer.render_prepared_radiance(packed_rig, profile, 0);
+
+    rt::PackedScene prepared_tampered = packed;
+    prepared_tampered.sphere_count = 0;
+    prepared_tampered.quad_count = 0;
+
+    rt::OptixRenderer prepared_tampered_renderer;
+    prepared_tampered_renderer.prepare_scene(prepared_tampered);
+    const rt::ProfiledRadianceFrame prepared_tampered_frame =
+        prepared_tampered_renderer.render_prepared_radiance(packed_rig, profile, 0);
+    expect_frame_near(prepared_tampered_frame.frame, prepared_baseline.frame,
+        "prepared rendering should ignore stale zero primitive counts");
     return 0;
 }
