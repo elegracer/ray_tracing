@@ -145,6 +145,7 @@ if(ENABLE_GUI_VIEWER)
             utils/render_realtime_viewer.cpp
             src/realtime/viewer/four_camera_rig.cpp
             src/realtime/viewer/scene_switch_controller.cpp
+            src/realtime/viewer/viewer_quality_controller.cpp
     )
     target_link_libraries(render_realtime_viewer PRIVATE realtime_gpu core imgui::imgui ${GLFW_TARGET} OpenGL::GL)
 endif()
