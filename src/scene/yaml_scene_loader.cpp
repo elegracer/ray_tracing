@@ -26,6 +26,12 @@ void ensure_map(const YAML::Node& node, std::string_view field_name) {
     }
 }
 
+void ensure_sequence(const YAML::Node& node, std::string_view field_name) {
+    if (node.IsDefined() && !node.IsSequence()) {
+        throw std::runtime_error(std::string(field_name) + " must be a sequence");
+    }
+}
+
 void ensure_unique_id(const IdTable& ids, const std::string& id, std::string_view kind) {
     if (ids.find(id) != ids.end()) {
         throw std::runtime_error("duplicate " + std::string(kind) + " id: " + id);
@@ -85,11 +91,13 @@ void parse_textures(const YAML::Node& textures_node, const std::filesystem::path
     if (!textures_node) {
         return;
     }
+    ensure_map(textures_node, "scene.textures");
 
     for (const auto& texture_entry : textures_node) {
         const std::string id = texture_entry.first.as<std::string>();
         ensure_unique_id(texture_ids, id, "texture");
         const YAML::Node texture_node = texture_entry.second;
+        ensure_map(texture_node, "texture");
         const std::string type = texture_node["type"].as<std::string>();
 
         if (type == "constant") {
@@ -129,11 +137,13 @@ void parse_materials(const YAML::Node& materials_node, SceneIR& scene_ir, const 
     if (!materials_node) {
         return;
     }
+    ensure_map(materials_node, "scene.materials");
 
     for (const auto& material_entry : materials_node) {
         const std::string id = material_entry.first.as<std::string>();
         ensure_unique_id(material_ids, id, "material");
         const YAML::Node material_node = material_entry.second;
+        ensure_map(material_node, "material");
         const std::string type = material_node["type"].as<std::string>();
 
         if (type == "diffuse") {
@@ -176,11 +186,13 @@ void parse_shapes(const YAML::Node& shapes_node, SceneIR& scene_ir, IdTable& sha
     if (!shapes_node) {
         return;
     }
+    ensure_map(shapes_node, "scene.shapes");
 
     for (const auto& shape_entry : shapes_node) {
         const std::string id = shape_entry.first.as<std::string>();
         ensure_unique_id(shape_ids, id, "shape");
         const YAML::Node shape_node = shape_entry.second;
+        ensure_map(shape_node, "shape");
         const std::string type = shape_node["type"].as<std::string>();
 
         if (type == "sphere") {
@@ -216,8 +228,10 @@ void parse_instances(const YAML::Node& instances_node, SceneIR& scene_ir, const 
     if (!instances_node) {
         return;
     }
+    ensure_sequence(instances_node, "scene.instances");
 
     for (const YAML::Node& instance_node : instances_node) {
+        ensure_map(instance_node, "instance");
         scene_ir.add_instance(SurfaceInstance {
             .shape_index = require_id(shape_ids, instance_node["shape"].as<std::string>(), "shape"),
             .material_index = require_id(material_ids, instance_node["material"].as<std::string>(), "material"),
@@ -230,8 +244,15 @@ void parse_media(const YAML::Node& media_node, SceneIR& scene_ir, const IdTable&
     if (!media_node) {
         return;
     }
+    ensure_map(media_node, "scene.media");
+    IdTable medium_ids;
 
-    for (const YAML::Node& medium_node : media_node) {
+    for (const auto& medium_entry : media_node) {
+        const std::string id = medium_entry.first.as<std::string>();
+        ensure_unique_id(medium_ids, id, "medium");
+        medium_ids.emplace(id, 0);
+        const YAML::Node medium_node = medium_entry.second;
+        ensure_map(medium_node, "medium");
         scene_ir.add_medium(MediumInstance {
             .shape_index = require_id(shape_ids, medium_node["shape"].as<std::string>(), "shape"),
             .material_index = require_id(material_ids, medium_node["material"].as<std::string>(), "material"),
@@ -282,12 +303,20 @@ void parse_cpu_presets(const YAML::Node& cpu_presets_node, const std::string& sc
     if (!cpu_presets_node) {
         return;
     }
+    ensure_map(cpu_presets_node, "cpu_presets");
+
+    IdTable preset_ids;
 
     for (const auto& preset_entry : cpu_presets_node) {
+        const std::string preset_id = preset_entry.first.as<std::string>();
+        ensure_unique_id(preset_ids, preset_id, "cpu preset");
+        preset_ids.emplace(preset_id, 0);
+
         SceneDefinitionCpuRenderPreset preset;
         preset.scene_id = scene_id;
-        preset.preset_id = preset_entry.first.as<std::string>();
+        preset.preset_id = preset_id;
         const YAML::Node preset_node = preset_entry.second;
+        ensure_map(preset_node, "cpu preset");
         if (const YAML::Node samples_per_pixel = preset_node["samples_per_pixel"]) {
             preset.samples_per_pixel = samples_per_pixel.as<int>();
         }

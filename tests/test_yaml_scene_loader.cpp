@@ -222,6 +222,41 @@ scene:
     expect_throws_contains([&]() { rt::scene::load_scene_definition(scene_file); }, "duplicate shape id: ball");
 }
 
+void test_duplicate_medium_ids_are_rejected() {
+    const fs::path root = fs::temp_directory_path() / "yaml_scene_loader_duplicate_medium";
+    fs::remove_all(root);
+    const fs::path scene_file = root / "scene.yaml";
+    write_text_file(scene_file, R"(format_version: 1
+scene:
+  id: duplicate_media
+  label: Duplicate Media
+  textures:
+    white:
+      type: constant
+      color: [1.0, 1.0, 1.0]
+  materials:
+    fog:
+      type: isotropic
+      albedo: white
+  shapes:
+    volume:
+      type: sphere
+      center: [0.0, 0.0, 0.0]
+      radius: 1.0
+  media:
+    smoke:
+      shape: volume
+      material: fog
+      density: 0.01
+    smoke:
+      shape: volume
+      material: fog
+      density: 0.02
+)");
+
+    expect_throws_contains([&]() { rt::scene::load_scene_definition(scene_file); }, "duplicate medium id: smoke");
+}
+
 void test_malformed_optional_transform_is_rejected() {
     const fs::path root = fs::temp_directory_path() / "yaml_scene_loader_bad_transform";
     fs::remove_all(root);
@@ -283,6 +318,202 @@ realtime:
     expect_throws_contains([&]() { rt::scene::load_scene_definition(scene_file); }, "default_view must be a map");
 }
 
+void test_malformed_container_sections_are_rejected() {
+    struct Case {
+        const char* name;
+        const char* contents;
+        const char* expected_error;
+    };
+
+    const Case cases[] = {
+        {
+            "bad_cpu_presets",
+            R"(format_version: 1
+scene:
+  id: malformed_cpu_presets
+  label: Malformed CPU Presets
+cpu_presets: nope
+)",
+            "cpu_presets must be a map",
+        },
+        {
+            "bad_textures",
+            R"(format_version: 1
+scene:
+  id: malformed_textures
+  label: Malformed Textures
+  textures: nope
+)",
+            "scene.textures must be a map",
+        },
+        {
+            "bad_materials",
+            R"(format_version: 1
+scene:
+  id: malformed_materials
+  label: Malformed Materials
+  materials: nope
+)",
+            "scene.materials must be a map",
+        },
+        {
+            "bad_shapes",
+            R"(format_version: 1
+scene:
+  id: malformed_shapes
+  label: Malformed Shapes
+  shapes: nope
+)",
+            "scene.shapes must be a map",
+        },
+        {
+            "bad_instances",
+            R"(format_version: 1
+scene:
+  id: malformed_instances
+  label: Malformed Instances
+  instances: nope
+)",
+            "scene.instances must be a sequence",
+        },
+        {
+            "bad_media",
+            R"(format_version: 1
+scene:
+  id: malformed_media
+  label: Malformed Media
+  media: nope
+)",
+            "scene.media must be a map",
+        },
+    };
+
+    const fs::path root = fs::temp_directory_path() / "yaml_scene_loader_bad_sections";
+    fs::remove_all(root);
+    fs::create_directories(root);
+
+    for (const Case& test_case : cases) {
+        const fs::path scene_file = root / test_case.name / "scene.yaml";
+        write_text_file(scene_file, test_case.contents);
+        expect_throws_contains([&]() { rt::scene::load_scene_definition(scene_file); }, test_case.expected_error);
+    }
+}
+
+void test_malformed_section_entries_are_rejected() {
+    struct Case {
+        const char* name;
+        const char* contents;
+        const char* expected_error;
+    };
+
+    const Case cases[] = {
+        {
+            "bad_texture_entry",
+            R"(format_version: 1
+scene:
+  id: malformed_texture_entry
+  label: Malformed Texture Entry
+  textures:
+    white: nope
+)",
+            "texture must be a map",
+        },
+        {
+            "bad_material_entry",
+            R"(format_version: 1
+scene:
+  id: malformed_material_entry
+  label: Malformed Material Entry
+  textures:
+    white:
+      type: constant
+      color: [1.0, 1.0, 1.0]
+  materials:
+    matte: nope
+)",
+            "material must be a map",
+        },
+        {
+            "bad_shape_entry",
+            R"(format_version: 1
+scene:
+  id: malformed_shape_entry
+  label: Malformed Shape Entry
+  shapes:
+    ball: nope
+)",
+            "shape must be a map",
+        },
+        {
+            "bad_instance_entry",
+            R"(format_version: 1
+scene:
+  id: malformed_instance_entry
+  label: Malformed Instance Entry
+  textures:
+    white:
+      type: constant
+      color: [1.0, 1.0, 1.0]
+  materials:
+    matte:
+      type: diffuse
+      albedo: white
+  shapes:
+    ball:
+      type: sphere
+      center: [0.0, 0.0, 0.0]
+      radius: 1.0
+  instances:
+    - nope
+)",
+            "instance must be a map",
+        },
+    };
+
+    const fs::path root = fs::temp_directory_path() / "yaml_scene_loader_bad_entries";
+    fs::remove_all(root);
+    fs::create_directories(root);
+
+    for (const Case& test_case : cases) {
+        const fs::path scene_file = root / test_case.name / "scene.yaml";
+        write_text_file(scene_file, test_case.contents);
+        expect_throws_contains([&]() { rt::scene::load_scene_definition(scene_file); }, test_case.expected_error);
+    }
+}
+
+void test_duplicate_cpu_preset_ids_are_rejected() {
+    const fs::path root = fs::temp_directory_path() / "yaml_scene_loader_duplicate_cpu_preset";
+    fs::remove_all(root);
+    const fs::path scene_file = root / "scene.yaml";
+    write_text_file(scene_file, R"(format_version: 1
+scene:
+  id: duplicate_presets
+  label: Duplicate Presets
+cpu_presets:
+  default:
+    samples_per_pixel: 16
+  default:
+    samples_per_pixel: 64
+)");
+
+    expect_throws_contains([&]() { rt::scene::load_scene_definition(scene_file); }, "duplicate cpu preset id: default");
+}
+
+void test_malformed_cpu_preset_entry_is_rejected() {
+    const fs::path root = fs::temp_directory_path() / "yaml_scene_loader_bad_cpu_preset_entry";
+    fs::remove_all(root);
+    const fs::path scene_file = root / "scene.yaml";
+    write_text_file(scene_file, R"(format_version: 1
+scene:
+  id: malformed_cpu_preset_entry
+  label: Malformed CPU Preset Entry
+cpu_presets:
+  default: nope
+)");
+
+    expect_throws_contains([&]() { rt::scene::load_scene_definition(scene_file); }, "cpu preset must be a map");
+}
+
 void test_scene_errors_are_only_prefixed_once() {
     const fs::path root = fs::temp_directory_path() / "yaml_scene_loader_single_prefix";
     fs::remove_all(root);
@@ -307,9 +538,14 @@ int main() {
     test_duplicate_texture_ids_are_rejected();
     test_duplicate_material_ids_are_rejected();
     test_duplicate_shape_ids_are_rejected();
+    test_duplicate_medium_ids_are_rejected();
     test_malformed_optional_transform_is_rejected();
     test_malformed_optional_camera_is_rejected();
     test_malformed_optional_default_view_is_rejected();
+    test_malformed_container_sections_are_rejected();
+    test_malformed_section_entries_are_rejected();
+    test_duplicate_cpu_preset_ids_are_rejected();
+    test_malformed_cpu_preset_entry_is_rejected();
     test_scene_errors_are_only_prefixed_once();
     return 0;
 }
