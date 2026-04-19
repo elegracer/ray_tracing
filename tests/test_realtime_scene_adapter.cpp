@@ -5,6 +5,24 @@
 #include <type_traits>
 
 int main() {
+    rt::scene::SceneIR triangle_scene;
+    const int white = triangle_scene.add_texture(rt::scene::ConstantColorTextureDesc {.color = Eigen::Vector3d::Ones()});
+    const int matte = triangle_scene.add_material(rt::scene::DiffuseMaterial {.albedo_texture = white});
+    const int mesh = triangle_scene.add_shape(rt::scene::TriangleMeshShape {
+        .positions = {
+            Eigen::Vector3d {0.0, 0.0, 0.0},
+            Eigen::Vector3d {1.0, 0.0, 0.0},
+            Eigen::Vector3d {0.0, 1.0, 0.0},
+        },
+        .normals = {},
+        .uvs = {},
+        .triangles = {Eigen::Vector3i {0, 1, 2}},
+    });
+    triangle_scene.add_instance(rt::scene::SurfaceInstance {.shape_index = mesh, .material_index = matte});
+
+    const rt::SceneDescription adapted_triangle = rt::scene::adapt_to_realtime(triangle_scene);
+    expect_true(adapted_triangle.triangles().size() == 1, "realtime adapter emits triangle primitive");
+
     const rt::scene::SceneIR cornell_smoke = rt::scene::build_scene("cornell_smoke");
     const rt::SceneDescription adapted = rt::scene::adapt_to_realtime(cornell_smoke);
     const rt::PackedScene packed = adapted.pack();

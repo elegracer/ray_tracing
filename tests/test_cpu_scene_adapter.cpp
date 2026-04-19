@@ -49,9 +49,35 @@ std::filesystem::path make_unique_image_texture_fixture_path() {
     throw std::runtime_error("unable to allocate unique image-texture fixture path");
 }
 
+void test_cpu_adapter_accepts_triangle_mesh() {
+    rt::scene::SceneIR scene;
+    const int white = scene.add_texture(rt::scene::ConstantColorTextureDesc {.color = Eigen::Vector3d::Ones()});
+    const int matte = scene.add_material(rt::scene::DiffuseMaterial {.albedo_texture = white});
+    const int mesh = scene.add_shape(rt::scene::TriangleMeshShape {
+        .positions = {
+            Eigen::Vector3d {0.0, 0.0, 0.0},
+            Eigen::Vector3d {1.0, 0.0, 0.0},
+            Eigen::Vector3d {0.0, 1.0, 0.0},
+        },
+        .normals = {},
+        .uvs = {},
+        .triangles = {Eigen::Vector3i {0, 1, 2}},
+    });
+    scene.add_instance(rt::scene::SurfaceInstance {.shape_index = mesh, .material_index = matte});
+
+    const rt::scene::CpuSceneAdapterResult adapted = rt::scene::adapt_to_cpu(scene);
+    expect_true(adapted.world.has_value(), "triangle mesh world");
+
+    const Ray ray {Vec3d {0.25, 0.25, -1.0}, Vec3d {0.0, 0.0, 1.0}};
+    HitRecord hit;
+    expect_true(adapted.world->hit(ray, Interval {0.001, infinity}, hit), "triangle mesh should be hittable");
+}
+
 }  // namespace
 
 int main() {
+    test_cpu_adapter_accepts_triangle_mesh();
+
     constexpr std::array<std::string_view, 5> scene_ids {
         "bouncing_spheres",
         "checkered_spheres",

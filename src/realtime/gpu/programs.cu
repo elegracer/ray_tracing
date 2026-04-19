@@ -563,6 +563,47 @@ __device__ void try_hit_quad(
     set_face_normal(ray, normal, best_hit);
 }
 
+__device__ void try_hit_triangle(
+    const PackedTriangle& triangle, const Ray& ray, float t_min, float t_max, HitInfo& best_hit, bool& found_hit) {
+    const float3 p0 = vector3f_to_float3(triangle.p0);
+    const float3 p1 = vector3f_to_float3(triangle.p1);
+    const float3 p2 = vector3f_to_float3(triangle.p2);
+    const float3 edge1 = sub3(p1, p0);
+    const float3 edge2 = sub3(p2, p0);
+    const float3 pvec = cross3(ray.direction, edge2);
+    const float det = dot3(edge1, pvec);
+    if (fabsf(det) <= 1e-8f) {
+        return;
+    }
+
+    const float inv_det = 1.0f / det;
+    const float3 tvec = sub3(ray.origin, p0);
+    const float u = dot3(tvec, pvec) * inv_det;
+    if (u < 0.0f || u > 1.0f) {
+        return;
+    }
+
+    const float3 qvec = cross3(tvec, edge1);
+    const float v = dot3(ray.direction, qvec) * inv_det;
+    if (v < 0.0f || (u + v) > 1.0f) {
+        return;
+    }
+
+    const float t = dot3(edge2, qvec) * inv_det;
+    if (t <= t_min || t >= t_max) {
+        return;
+    }
+
+    const float3 normal = normalize3(cross3(edge1, edge2));
+    found_hit = true;
+    best_hit.hit = true;
+    best_hit.t = t;
+    best_hit.position = add3(ray.origin, mul3(ray.direction, t));
+    best_hit.tex_u = u;
+    best_hit.tex_v = v;
+    set_face_normal(ray, normal, best_hit);
+}
+
 __device__ HitInfo intersect_scene(
     const DeviceSceneView& scene, const Ray& ray, float t_min, float t_max, std::uint32_t* rng = nullptr) {
     HitInfo hit {};
@@ -592,6 +633,20 @@ __device__ HitInfo intersect_scene(
             continue;
         }
         populate_material(scene, quad.material_index, candidate);
+        closest = candidate.t;
+        hit = candidate;
+        found = true;
+    }
+
+    for (int i = 0; i < scene.triangle_count; ++i) {
+        const PackedTriangle& triangle = scene.triangles[i];
+        HitInfo candidate {};
+        bool candidate_hit = false;
+        try_hit_triangle(triangle, ray, t_min, closest, candidate, candidate_hit);
+        if (!candidate_hit) {
+            continue;
+        }
+        populate_material(scene, triangle.material_index, candidate);
         closest = candidate.t;
         hit = candidate;
         found = true;

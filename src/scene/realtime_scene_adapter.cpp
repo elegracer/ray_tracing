@@ -134,6 +134,21 @@ rt::SceneDescription adapt_to_realtime(const SceneIR& scene) {
                     });
                 } else if constexpr (std::is_same_v<T, BoxShape>) {
                     add_box_quads(out, instance.material_index, desc, instance.transform);
+                } else if constexpr (std::is_same_v<T, TriangleMeshShape>) {
+                    for (const Eigen::Vector3i& tri : desc.triangles) {
+                        for (int vertex = 0; vertex < 3; ++vertex) {
+                            if (tri[vertex] < 0 || tri[vertex] >= static_cast<int>(desc.positions.size())) {
+                                throw std::out_of_range("triangle mesh vertex index out of range");
+                            }
+                        }
+                        out.add_triangle(TrianglePrimitive {
+                            .material_index = instance.material_index,
+                            .p0 = transform_point(instance.transform, desc.positions[tri.x()]),
+                            .p1 = transform_point(instance.transform, desc.positions[tri.y()]),
+                            .p2 = transform_point(instance.transform, desc.positions[tri.z()]),
+                            .dynamic = false,
+                        });
+                    }
                 } else {
                     static_assert(std::is_same_v<T, void>, "unsupported surface shape");
                 }
@@ -170,6 +185,8 @@ rt::SceneDescription adapt_to_realtime(const SceneIR& scene) {
                     packed.local_max = desc.max_corner;
                 } else if constexpr (std::is_same_v<T, QuadShape>) {
                     throw std::invalid_argument("quad boundaries are unsupported for homogeneous media");
+                } else if constexpr (std::is_same_v<T, TriangleMeshShape>) {
+                    throw std::invalid_argument("triangle mesh boundaries are unsupported for homogeneous media");
                 } else {
                     static_assert(std::is_same_v<T, void>, "unsupported medium shape");
                 }

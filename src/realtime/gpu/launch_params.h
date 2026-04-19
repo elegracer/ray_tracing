@@ -12,6 +12,7 @@ namespace rt {
 
 struct PackedSphere;
 struct PackedQuad;
+struct PackedTriangle;
 struct PackedMedium;
 struct PackedTexture;
 struct MaterialSample;
@@ -26,12 +27,14 @@ struct DeviceFrameBuffers {
 struct DeviceSceneView {
     PackedSphere* spheres = nullptr;
     PackedQuad* quads = nullptr;
+    PackedTriangle* triangles = nullptr;
     PackedMedium* media = nullptr;
     PackedTexture* textures = nullptr;
     Eigen::Vector3f* image_texels = nullptr;
     MaterialSample* materials = nullptr;
     int sphere_count = 0;
     int quad_count = 0;
+    int triangle_count = 0;
     int medium_count = 0;
     int texture_count = 0;
     int image_texel_count = 0;
@@ -102,6 +105,15 @@ struct PackedQuad {
     float pad1 = 0.0f;
     Eigen::Vector3f edge_v;
     int material_index;
+};
+
+struct PackedTriangle {
+    Eigen::Vector3f p0;
+    float pad0 = 0.0f;
+    Eigen::Vector3f p1;
+    float pad1 = 0.0f;
+    Eigen::Vector3f p2;
+    int material_index = -1;
 };
 
 struct PackedMedium {
