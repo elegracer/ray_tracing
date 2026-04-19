@@ -44,10 +44,15 @@ int main() {
         find_definition_cpu_preset(final_room_definition, "default");
     expect_true(final_room_yaml_default != nullptr, "final_room yaml default preset");
     expect_true(final_room_yaml_default->samples_per_pixel == 500, "final_room yaml default spp");
+    expect_true(final_room_yaml_default->camera.camera.model == rt::CameraModelType::pinhole32,
+        "final_room yaml cpu camera model");
+    expect_true(final_room_yaml_default->camera.camera.fx > 0.0, "final_room yaml cpu camera fx");
     expect_vec3_near(final_room_yaml_default->camera.lookfrom, Eigen::Vector3d(13.0, 2.0, 3.0), 1e-12,
         "final_room yaml cpu camera lookfrom");
     expect_vec3_near(final_room_definition.realtime_preset->initial_body_pose.position, Eigen::Vector3d(0.0, -0.8, 0.35),
         1e-12, "final_room yaml realtime spawn");
+    expect_true(final_room_definition.realtime_preset->camera.model == rt::CameraModelType::pinhole32,
+        "final_room yaml realtime camera model");
     const rt::scene::SceneDefinition* final_room_catalog_definition = catalog.find_scene("final_room");
     expect_true(final_room_catalog_definition != nullptr, "final_room catalog definition");
     expect_true(std::find(final_room_catalog_definition->dependencies.begin(),
@@ -58,6 +63,8 @@ int main() {
     const rt::scene::CpuRenderPreset* final_room_catalog_default = catalog.default_cpu_render_preset("final_room");
     expect_true(final_room_catalog_default != nullptr, "final_room catalog default preset");
     expect_true(final_room_catalog_default->samples_per_pixel == 500, "final_room catalog default spp");
+    expect_true(final_room_catalog_default->camera.camera.model == rt::CameraModelType::pinhole32,
+        "final_room catalog cpu camera model");
     expect_vec3_near(final_room_catalog_default->camera.lookfrom, Eigen::Vector3d(13.0, 2.0, 3.0), 1e-12,
         "final_room catalog cpu camera lookfrom");
     const rt::scene::RealtimeViewPreset* final_room_catalog_view = catalog.find_realtime_view_preset("final_room");
@@ -81,6 +88,8 @@ int main() {
     expect_true(cornell_box_yaml_extreme != nullptr, "cornell_box yaml extreme preset");
     expect_true(cornell_box_yaml_default->samples_per_pixel == 1000, "cornell_box yaml default spp");
     expect_true(cornell_box_yaml_extreme->samples_per_pixel == 10000, "cornell_box yaml extreme spp");
+    expect_true(cornell_box_yaml_default->camera.camera.model == rt::CameraModelType::pinhole32,
+        "cornell_box yaml cpu camera model");
     expect_vec3_near(cornell_box_yaml_default->camera.lookfrom, Eigen::Vector3d(278.0, 278.0, -800.0), 1e-12,
         "cornell_box yaml cpu camera lookfrom");
     expect_true(cornell_box_definition.realtime_preset.has_value(), "cornell_box yaml realtime preset");
@@ -99,6 +108,8 @@ int main() {
     expect_true(cornell_box_catalog_extreme != nullptr, "cornell_box catalog extreme preset");
     expect_true(cornell_box_catalog_default->samples_per_pixel == 1000, "cornell_box catalog default spp");
     expect_true(cornell_box_catalog_extreme->samples_per_pixel == 10000, "cornell_box catalog extreme spp");
+    expect_true(cornell_box_catalog_default->camera.camera.fx == cornell_box_yaml_default->camera.camera.fx,
+        "cornell_box catalog cpu camera fx preserved");
     expect_vec3_near(cornell_box_catalog_default->camera.lookfrom, Eigen::Vector3d(278.0, 278.0, -800.0), 1e-12,
         "cornell_box catalog cpu camera lookfrom");
     const rt::scene::RealtimeViewPreset* cornell_box_catalog_view = catalog.find_realtime_view_preset("cornell_box");
@@ -119,6 +130,8 @@ int main() {
         find_definition_cpu_preset(simple_light_definition, "default");
     expect_true(simple_light_yaml_default != nullptr, "simple_light yaml default preset");
     expect_true(simple_light_yaml_default->samples_per_pixel == 500, "simple_light yaml default spp");
+    expect_true(simple_light_yaml_default->camera.camera.model == rt::CameraModelType::pinhole32,
+        "simple_light yaml cpu camera model");
     expect_vec3_near(simple_light_yaml_default->camera.lookfrom, Eigen::Vector3d(26.0, 3.0, 6.0), 1e-12,
         "simple_light yaml cpu camera lookfrom");
     expect_vec3_near(simple_light_definition.realtime_preset->initial_body_pose.position, Eigen::Vector3d(10.0, 3.0, 6.0),
@@ -133,6 +146,8 @@ int main() {
     const rt::scene::CpuRenderPreset* simple_light_catalog_default = catalog.default_cpu_render_preset("simple_light");
     expect_true(simple_light_catalog_default != nullptr, "simple_light catalog default preset");
     expect_true(simple_light_catalog_default->samples_per_pixel == 500, "simple_light catalog default spp");
+    expect_true(simple_light_catalog_default->camera.camera.fx == simple_light_yaml_default->camera.camera.fx,
+        "simple_light catalog cpu camera fx preserved");
     expect_vec3_near(simple_light_catalog_default->camera.lookfrom, Eigen::Vector3d(26.0, 3.0, 6.0), 1e-12,
         "simple_light catalog cpu camera lookfrom");
     const rt::scene::RealtimeViewPreset* simple_light_catalog_view = catalog.find_realtime_view_preset("simple_light");

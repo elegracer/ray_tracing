@@ -154,9 +154,27 @@ cpu_presets:
   default:
     samples_per_pixel: 500
     camera:
+      model: pinhole32
+      width: 1280
+      height: 720
+      fx: 2041.6614550623754
+      fy: 2041.6614550623754
+      cx: 640.0
+      cy: 360.0
+      T_bc:
+        translation: [0.0, 0.0, 0.0]
+        rotation:
+          - [1.0, 0.0, 0.0]
+          - [0.0, 1.0, 0.0]
+          - [0.0, 0.0, 1.0]
+      pinhole32:
+        k1: 0.0
+        k2: 0.0
+        k3: 0.0
+        p1: 0.0
+        p2: 0.0
       lookfrom: [13.0, 2.0, 3.0]
       lookat: [0.0, 0.0, 0.0]
-      vfov: 20.0
       aspect_ratio: 1.7777777777777777
       image_width: 1280
       max_depth: 50
@@ -171,6 +189,24 @@ realtime:
       yaw_deg: 0.0
       pitch_deg: 0.0
     frame_convention: world_z_up
-    vfov_deg: 67.38013505195957
-    use_default_viewer_intrinsics: true
+    camera:
+      model: pinhole32
+      width: 640
+      height: 480
+      fx: 480.0
+      fy: 360.0
+      cx: 320.0
+      cy: 240.0
+      T_bc:
+        translation: [0.0, 0.0, 0.0]
+        rotation:
+          - [1.0, 0.0, 0.0]
+          - [0.0, 1.0, 0.0]
+          - [0.0, 0.0, 1.0]
+      pinhole32:
+        k1: 0.0
+        k2: 0.0
+        k3: 0.0
+        p1: 0.0
+        p2: 0.0
     base_move_speed: 1.8

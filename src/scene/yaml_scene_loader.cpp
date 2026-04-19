@@ -4,8 +4,6 @@
 
 #include "yaml-cpp/yaml.h"
 
-#include <cmath>
-#include <numbers>
 #include <type_traits>
 #include <stdexcept>
 #include <string>
@@ -68,6 +66,13 @@ Eigen::Vector3d parse_vec3(const YAML::Node& node) {
     return Eigen::Vector3d {node[0].as<double>(), node[1].as<double>(), node[2].as<double>()};
 }
 
+Eigen::Vector2d parse_vec2(const YAML::Node& node) {
+    if (!node || !node.IsSequence() || node.size() != 2) {
+        throw std::runtime_error("expected a 2-element vector");
+    }
+    return Eigen::Vector2d {node[0].as<double>(), node[1].as<double>()};
+}
+
 Eigen::Matrix3d parse_mat3(const YAML::Node& node) {
     if (!node || !node.IsSequence() || node.size() != 3) {
         throw std::runtime_error("expected a 3x3 matrix");
@@ -107,6 +112,99 @@ Transform parse_transform(const YAML::Node& node) {
         transform.rotation = parse_mat3(rotation);
     }
     return transform;
+}
+
+Eigen::Isometry3d parse_isometry(const YAML::Node& node, std::string_view field_name) {
+    if (!node) {
+        throw std::runtime_error(std::string(field_name) + " must be a map");
+    }
+    ensure_map(node, field_name);
+
+    Eigen::Isometry3d transform = Eigen::Isometry3d::Identity();
+    if (const YAML::Node translation = node["translation"]) {
+        transform.translation() = parse_vec3(translation);
+    }
+    if (const YAML::Node rotation = node["rotation"]) {
+        transform.linear() = parse_mat3(rotation);
+    }
+    return transform;
+}
+
+CameraModelType parse_camera_model(const YAML::Node& node) {
+    if (!node) {
+        throw std::runtime_error("camera.model is required");
+    }
+
+    const std::string value = node.as<std::string>();
+    if (value == "pinhole32") {
+        return CameraModelType::pinhole32;
+    }
+    if (value == "equi62_lut1d") {
+        return CameraModelType::equi62_lut1d;
+    }
+    throw std::runtime_error("unsupported camera model: " + value);
+}
+
+CameraSpec parse_camera_spec(const YAML::Node& node) {
+    if (!node) {
+        throw std::runtime_error("camera is required");
+    }
+    ensure_map(node, "camera");
+
+    if (node["vfov"] || node["vfov_deg"] || node["use_default_viewer_intrinsics"]) {
+        throw std::runtime_error("legacy camera fields are not supported; use explicit camera model and intrinsics");
+    }
+
+    CameraSpec spec;
+    spec.model = parse_camera_model(node["model"]);
+
+    if (!node["width"] || !node["height"] || !node["fx"] || !node["fy"] || !node["cx"] || !node["cy"]) {
+        throw std::runtime_error("camera requires width, height, fx, fy, cx, and cy");
+    }
+    spec.width = node["width"].as<int>();
+    spec.height = node["height"].as<int>();
+    spec.fx = node["fx"].as<double>();
+    spec.fy = node["fy"].as<double>();
+    spec.cx = node["cx"].as<double>();
+    spec.cy = node["cy"].as<double>();
+    spec.T_bc = parse_isometry(node["T_bc"], "camera.T_bc");
+
+    if (const YAML::Node pinhole32 = node["pinhole32"]) {
+        ensure_map(pinhole32, "camera.pinhole32");
+        if (const YAML::Node k1 = pinhole32["k1"]) {
+            spec.pinhole32.k1 = k1.as<double>();
+        }
+        if (const YAML::Node k2 = pinhole32["k2"]) {
+            spec.pinhole32.k2 = k2.as<double>();
+        }
+        if (const YAML::Node k3 = pinhole32["k3"]) {
+            spec.pinhole32.k3 = k3.as<double>();
+        }
+        if (const YAML::Node p1 = pinhole32["p1"]) {
+            spec.pinhole32.p1 = p1.as<double>();
+        }
+        if (const YAML::Node p2 = pinhole32["p2"]) {
+            spec.pinhole32.p2 = p2.as<double>();
+        }
+    }
+
+    if (const YAML::Node equi62 = node["equi62_lut1d"]) {
+        ensure_map(equi62, "camera.equi62_lut1d");
+        if (const YAML::Node radial = equi62["radial"]) {
+            ensure_sequence(radial, "camera.equi62_lut1d.radial");
+            if (radial.size() != spec.equi62_lut1d.radial.size()) {
+                throw std::runtime_error("camera.equi62_lut1d.radial must have 6 entries");
+            }
+            for (std::size_t i = 0; i < spec.equi62_lut1d.radial.size(); ++i) {
+                spec.equi62_lut1d.radial[i] = radial[i].as<double>();
+            }
+        }
+        if (const YAML::Node tangential = equi62["tangential"]) {
+            spec.equi62_lut1d.tangential = parse_vec2(tangential);
+        }
+    }
+
+    return spec;
 }
 
 void parse_textures(const YAML::Node& textures_node, const std::filesystem::path& scene_directory, SceneDefinition& out,
@@ -288,9 +386,9 @@ void parse_media(const YAML::Node& media_node, SceneIR& scene_ir, const IdTable&
 CpuCameraPreset parse_camera_preset(const YAML::Node& node) {
     CpuCameraPreset camera;
     if (!node) {
-        return camera;
+        throw std::runtime_error("camera is required");
     }
-    ensure_map(node, "camera");
+    camera.camera = parse_camera_spec(node);
     if (const YAML::Node aspect_ratio = node["aspect_ratio"]) {
         camera.aspect_ratio = aspect_ratio.as<double>();
     }
@@ -315,21 +413,6 @@ CpuCameraPreset parse_camera_preset(const YAML::Node& node) {
     if (const YAML::Node focus_dist = node["focus_dist"]) {
         camera.focus_dist = focus_dist.as<double>();
     }
-    if (const YAML::Node vfov = node["vfov"]) {
-        const double theta = vfov.as<double>() * std::numbers::pi / 180.0;
-        const int image_height =
-            static_cast<int>(std::lround(static_cast<double>(camera.image_width) / camera.aspect_ratio));
-        const double fy = 0.5 * static_cast<double>(image_height) / std::tan(theta * 0.5);
-        camera.camera = CameraSpec {
-            .model = CameraModelType::pinhole32,
-            .width = camera.image_width,
-            .height = image_height,
-            .fx = fy,
-            .fy = fy,
-            .cx = 0.5 * static_cast<double>(camera.image_width),
-            .cy = 0.5 * static_cast<double>(image_height),
-        };
-    }
     return camera;
 }
 
@@ -352,6 +435,9 @@ void parse_cpu_presets(const YAML::Node& cpu_presets_node, const std::string& sc
         ensure_map(preset_node, "cpu preset");
         if (const YAML::Node samples_per_pixel = preset_node["samples_per_pixel"]) {
             preset.samples_per_pixel = samples_per_pixel.as<int>();
+        }
+        if (!preset_node["camera"]) {
+            throw std::runtime_error("cpu preset camera is required");
         }
         preset.camera = parse_camera_preset(preset_node["camera"]);
         cpu_presets.push_back(std::move(preset));
@@ -376,7 +462,7 @@ viewer::ViewerFrameConvention parse_frame_convention(const YAML::Node& node) {
 RealtimeViewPreset parse_realtime_preset(const YAML::Node& node) {
     RealtimeViewPreset preset;
     if (!node) {
-        return preset;
+        throw std::runtime_error("default_view is required");
     }
     ensure_map(node, "default_view");
 
@@ -393,32 +479,10 @@ RealtimeViewPreset parse_realtime_preset(const YAML::Node& node) {
         }
     }
     preset.frame_convention = parse_frame_convention(node["frame_convention"]);
-    if (const YAML::Node vfov_deg = node["vfov_deg"]) {
-        const double theta = vfov_deg.as<double>() * std::numbers::pi / 180.0;
-        const double fy = 0.5 * 480.0 / std::tan(theta * 0.5);
-        preset.camera = CameraSpec {
-            .model = CameraModelType::pinhole32,
-            .width = 640,
-            .height = 480,
-            .fx = fy,
-            .fy = fy,
-            .cx = 320.0,
-            .cy = 240.0,
-        };
+    if (!node["camera"]) {
+        throw std::runtime_error("realtime default_view.camera is required");
     }
-    if (const YAML::Node use_default_viewer_intrinsics = node["use_default_viewer_intrinsics"]) {
-        if (use_default_viewer_intrinsics.as<bool>()) {
-            preset.camera = CameraSpec {
-                .model = CameraModelType::pinhole32,
-                .width = 640,
-                .height = 480,
-                .fx = 480.0,
-                .fy = 360.0,
-                .cx = 320.0,
-                .cy = 240.0,
-            };
-        }
-    }
+    preset.camera = parse_camera_spec(node["camera"]);
     if (const YAML::Node base_move_speed = node["base_move_speed"]) {
         preset.base_move_speed = base_move_speed.as<double>();
     }

@@ -74,9 +74,27 @@ cpu_presets:
   default:
     samples_per_pixel: 64
     camera:
+      model: pinhole32
+      width: 640
+      height: 360
+      fx: 494.54593550183205
+      fy: 494.54593550183205
+      cx: 320.0
+      cy: 180.0
+      T_bc:
+        translation: [0.0, 0.0, 0.0]
+        rotation:
+          - [1.0, 0.0, 0.0]
+          - [0.0, 1.0, 0.0]
+          - [0.0, 0.0, 1.0]
+      pinhole32:
+        k1: 0.0
+        k2: 0.0
+        k3: 0.0
+        p1: 0.0
+        p2: 0.0
       lookfrom: [0.0, 0.0, 5.0]
       lookat: [0.0, 0.0, 0.0]
-      vfov: 40.0
       aspect_ratio: 1.7777778
       image_width: 640
       max_depth: 16
@@ -90,8 +108,26 @@ realtime:
       yaw_deg: 0.0
       pitch_deg: 0.0
     frame_convention: legacy_y_up
-    vfov_deg: 67.0
-    use_default_viewer_intrinsics: false
+    camera:
+      model: pinhole32
+      width: 640
+      height: 480
+      fx: 362.60044646757626
+      fy: 362.60044646757626
+      cx: 320.0
+      cy: 240.0
+      T_bc:
+        translation: [0.0, 0.0, 0.0]
+        rotation:
+          - [1.0, 0.0, 0.0]
+          - [0.0, 1.0, 0.0]
+          - [0.0, 0.0, 1.0]
+      pinhole32:
+        k1: 0.0
+        k2: 0.0
+        k3: 0.0
+        p1: 0.0
+        p2: 0.0
     base_move_speed: 2.5
 )");
 
@@ -109,9 +145,12 @@ realtime:
     expect_true(loaded.cpu_presets.front().scene_id == "basic_room", "cpu preset scene id");
     expect_true(loaded.cpu_presets.front().preset_id == "default", "cpu preset id");
     expect_true(loaded.cpu_presets.front().samples_per_pixel == 64, "cpu preset spp");
+    expect_true(loaded.cpu_presets.front().camera.camera.model == rt::CameraModelType::pinhole32, "cpu camera model");
+    expect_true(loaded.cpu_presets.front().camera.camera.width == 640, "cpu camera width");
     expect_true(loaded.realtime_preset.has_value(), "realtime preset");
     expect_true(loaded.realtime_preset->frame_convention == rt::viewer::ViewerFrameConvention::legacy_y_up,
                 "frame convention");
+    expect_true(loaded.realtime_preset->camera.model == rt::CameraModelType::pinhole32, "realtime camera model");
     expect_true(loaded.dependencies.size() == 1, "dependency count");
     expect_true(loaded.dependencies.front() == scene_file.string(), "dependency path");
 }
@@ -307,6 +346,25 @@ void test_includes_can_provide_cpu_and_realtime_presets() {
   preview:
     samples_per_pixel: 32
     camera:
+      model: pinhole32
+      width: 320
+      height: 180
+      fx: 247.27296775091602
+      fy: 247.27296775091602
+      cx: 160.0
+      cy: 90.0
+      T_bc:
+        translation: [0.0, 0.0, 0.0]
+        rotation:
+          - [1.0, 0.0, 0.0]
+          - [0.0, 1.0, 0.0]
+          - [0.0, 0.0, 1.0]
+      pinhole32:
+        k1: 0.0
+        k2: 0.0
+        k3: 0.0
+        p1: 0.0
+        p2: 0.0
       image_width: 320
 realtime:
   default_view:
@@ -315,8 +373,26 @@ realtime:
       yaw_deg: 10.0
       pitch_deg: -5.0
     frame_convention: world_z_up
-    vfov_deg: 70.0
-    use_default_viewer_intrinsics: false
+    camera:
+      model: pinhole32
+      width: 640
+      height: 480
+      fx: 342.75552161810754
+      fy: 342.75552161810754
+      cx: 320.0
+      cy: 240.0
+      T_bc:
+        translation: [0.0, 0.0, 0.0]
+        rotation:
+          - [1.0, 0.0, 0.0]
+          - [0.0, 1.0, 0.0]
+          - [0.0, 0.0, 1.0]
+      pinhole32:
+        k1: 0.0
+        k2: 0.0
+        k3: 0.0
+        p1: 0.0
+        p2: 0.0
     base_move_speed: 4.0
 )");
     write_text_file(scene_file, R"(format_version: 1
@@ -334,6 +410,7 @@ scene:
     expect_true(loaded.cpu_presets.front().scene_id == "include_presets", "included cpu preset scene id");
     expect_true(loaded.cpu_presets.front().preset_id == "preview", "included cpu preset id");
     expect_true(loaded.cpu_presets.front().samples_per_pixel == 32, "included cpu preset spp");
+    expect_true(loaded.cpu_presets.front().camera.camera.width == 320, "included cpu preset width");
     expect_true(loaded.realtime_preset.has_value(), "included realtime preset");
     expect_true(loaded.realtime_preset->frame_convention == rt::viewer::ViewerFrameConvention::world_z_up,
         "included realtime convention");
@@ -482,6 +559,65 @@ cpu_presets:
 )");
 
     expect_throws_contains([&]() { rt::scene::load_scene_definition(scene_file); }, "camera must be a map");
+}
+
+void test_missing_camera_model_is_rejected() {
+    const fs::path root = fs::temp_directory_path() / "yaml_scene_loader_missing_camera_model";
+    fs::remove_all(root);
+    const fs::path scene_file = root / "scene.yaml";
+    write_text_file(scene_file, R"(format_version: 1
+scene:
+  id: missing_model
+  label: Missing Model
+cpu_presets:
+  default:
+    camera:
+      width: 640
+      height: 360
+      fx: 494.54593550183205
+      fy: 494.54593550183205
+      cx: 320.0
+      cy: 180.0
+      T_bc:
+        translation: [0.0, 0.0, 0.0]
+        rotation:
+          - [1.0, 0.0, 0.0]
+          - [0.0, 1.0, 0.0]
+          - [0.0, 0.0, 1.0]
+)");
+
+    expect_throws_contains([&]() { rt::scene::load_scene_definition(scene_file); }, "camera.model is required");
+}
+
+void test_legacy_camera_fields_are_rejected() {
+    const fs::path root = fs::temp_directory_path() / "yaml_scene_loader_legacy_camera_fields";
+    fs::remove_all(root);
+    const fs::path scene_file = root / "scene.yaml";
+    write_text_file(scene_file, R"(format_version: 1
+scene:
+  id: legacy_camera
+  label: Legacy Camera
+cpu_presets:
+  default:
+    camera:
+      model: pinhole32
+      width: 640
+      height: 360
+      fx: 494.54593550183205
+      fy: 494.54593550183205
+      cx: 320.0
+      cy: 180.0
+      T_bc:
+        translation: [0.0, 0.0, 0.0]
+        rotation:
+          - [1.0, 0.0, 0.0]
+          - [0.0, 1.0, 0.0]
+          - [0.0, 0.0, 1.0]
+      vfov: 40.0
+)");
+
+    expect_throws_contains([&]() { rt::scene::load_scene_definition(scene_file); },
+        "legacy camera fields are not supported");
 }
 
 void test_malformed_optional_default_view_is_rejected() {
@@ -673,8 +809,36 @@ scene:
 cpu_presets:
   default:
     samples_per_pixel: 16
+    camera:
+      model: pinhole32
+      width: 128
+      height: 128
+      fx: 175.83855484509584
+      fy: 175.83855484509584
+      cx: 64.0
+      cy: 64.0
+      T_bc:
+        translation: [0.0, 0.0, 0.0]
+        rotation:
+          - [1.0, 0.0, 0.0]
+          - [0.0, 1.0, 0.0]
+          - [0.0, 0.0, 1.0]
   default:
     samples_per_pixel: 64
+    camera:
+      model: pinhole32
+      width: 128
+      height: 128
+      fx: 175.83855484509584
+      fy: 175.83855484509584
+      cx: 64.0
+      cy: 64.0
+      T_bc:
+        translation: [0.0, 0.0, 0.0]
+        rotation:
+          - [1.0, 0.0, 0.0]
+          - [0.0, 1.0, 0.0]
+          - [0.0, 0.0, 1.0]
 )");
 
     expect_throws_contains([&]() { rt::scene::load_scene_definition(scene_file); }, "duplicate cpu preset id: default");
@@ -727,6 +891,8 @@ int main() {
     test_include_errors_are_attributed_to_the_included_file();
     test_malformed_optional_transform_is_rejected();
     test_malformed_optional_camera_is_rejected();
+    test_missing_camera_model_is_rejected();
+    test_legacy_camera_fields_are_rejected();
     test_malformed_optional_default_view_is_rejected();
     test_malformed_container_sections_are_rejected();
     test_malformed_section_entries_are_rejected();

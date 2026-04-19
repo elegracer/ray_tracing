@@ -44,8 +44,26 @@ realtime:
       yaw_deg: 0.0
       pitch_deg: 0.0
     frame_convention: legacy_y_up
-    vfov_deg: 60.0
-    use_default_viewer_intrinsics: false
+    camera:
+      model: pinhole32
+      width: 640
+      height: 480
+      fx: 415.69219381653056
+      fy: 415.69219381653056
+      cx: 320.0
+      cy: 240.0
+      T_bc:
+        translation: [0.0, 0.0, 0.0]
+        rotation:
+          - [1.0, 0.0, 0.0]
+          - [0.0, 1.0, 0.0]
+          - [0.0, 0.0, 1.0]
+      pinhole32:
+        k1: 0.0
+        k2: 0.0
+        k3: 0.0
+        p1: 0.0
+        p2: 0.0
     base_move_speed: 1.0
 )");
 }
