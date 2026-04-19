@@ -1,6 +1,7 @@
 #pragma once
 
 #include "realtime/viewer/body_pose.h"
+#include "scene/camera_spec.h"
 #include "scene/shared_scene_ir.h"
 
 #include <string_view>
@@ -19,10 +20,10 @@ struct SceneMetadata {
 };
 
 struct CpuCameraPreset {
+    CameraSpec camera {};
     double aspect_ratio = 16.0 / 9.0;
     int image_width = 1280;
     int max_depth = 50;
-    double vfov = 20.0;
     Eigen::Vector3d lookfrom = Eigen::Vector3d::Zero();
     Eigen::Vector3d lookat = Eigen::Vector3d::Zero();
     Eigen::Vector3d vup = Eigen::Vector3d::UnitY();
@@ -40,8 +41,7 @@ struct CpuRenderPreset {
 struct RealtimeViewPreset {
     viewer::BodyPose initial_body_pose {};
     viewer::ViewerFrameConvention frame_convention = viewer::ViewerFrameConvention::world_z_up;
-    double vfov_deg = 20.0;
-    bool use_default_viewer_intrinsics = false;
+    CameraSpec camera {};
     double base_move_speed = 1.8;
 };
 

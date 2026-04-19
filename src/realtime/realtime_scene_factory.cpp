@@ -15,43 +15,27 @@
 namespace rt {
 namespace {
 
-constexpr double kPi = 3.14159265358979323846;
+scene::CameraSpec runtime_camera_spec(
+    const scene::CameraSpec& authored, int width, int height, const Eigen::Isometry3d& T_bc) {
+    if (authored.width <= 0 || authored.height <= 0) {
+        throw std::invalid_argument("authored camera dimensions must be positive");
+    }
 
-Pinhole32Params make_pinhole_from_vfov(double vfov_deg, int width, int height) {
-    const double theta = vfov_deg * kPi / 180.0;
-    const double fy = 0.5 * static_cast<double>(height) / std::tan(theta * 0.5);
-    return Pinhole32Params {
-        .fx = fy,
-        .fy = fy,
-        .cx = 0.5 * static_cast<double>(width),
-        .cy = 0.5 * static_cast<double>(height),
-        .k1 = 0.0,
-        .k2 = 0.0,
-        .k3 = 0.0,
-        .p1 = 0.0,
-        .p2 = 0.0,
-    };
-}
-
-Pinhole32Params make_default_viewer_pinhole(int width, int height) {
-    return Pinhole32Params {
-        .fx = 0.75 * static_cast<double>(width),
-        .fy = 0.75 * static_cast<double>(height),
-        .cx = 0.5 * static_cast<double>(width),
-        .cy = 0.5 * static_cast<double>(height),
-        .k1 = 0.0,
-        .k2 = 0.0,
-        .k3 = 0.0,
-        .p1 = 0.0,
-        .p2 = 0.0,
-    };
+    scene::CameraSpec runtime = authored;
+    const double scale_x = static_cast<double>(width) / static_cast<double>(authored.width);
+    const double scale_y = static_cast<double>(height) / static_cast<double>(authored.height);
+    runtime.width = width;
+    runtime.height = height;
+    runtime.fx = authored.fx * scale_x;
+    runtime.fy = authored.fy * scale_y;
+    runtime.cx = authored.cx * scale_x;
+    runtime.cy = authored.cy * scale_y;
+    runtime.T_bc = T_bc * authored.T_bc;
+    return runtime;
 }
 
 CameraRig make_camera_rig_from_preset(const scene::RealtimeViewPreset& preset, int camera_count, int width, int height) {
     CameraRig rig;
-    const Pinhole32Params pinhole = preset.use_default_viewer_intrinsics
-        ? make_default_viewer_pinhole(width, height)
-        : make_pinhole_from_vfov(preset.vfov_deg, width, height);
 
     for (int i = 0; i < camera_count; ++i) {
         Eigen::Isometry3d T_bc = Eigen::Isometry3d::Identity();
@@ -71,7 +55,7 @@ CameraRig make_camera_rig_from_preset(const scene::RealtimeViewPreset& preset, i
         R_rc.col(1) = -up;
         R_rc.col(2) = forward;
         T_bc.linear() = camera_to_renderer_matrix().transpose() * R_rc;
-        rig.add_pinhole(pinhole, T_bc, width, height);
+        rig.add_camera(runtime_camera_spec(preset.camera, width, height, T_bc));
     }
 
     return rig;

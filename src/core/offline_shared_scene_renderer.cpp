@@ -23,7 +23,8 @@ void configure_offline_camera(const scene::CpuRenderPreset& preset, const int sa
     cam.image_width = preset.camera.image_width;
     cam.samples_per_pixel = samples_per_pixel;
     cam.max_depth = preset.camera.max_depth;
-    cam.vfov = preset.camera.vfov;
+    cam.vfov = 2.0 * std::atan(0.5 * static_cast<double>(preset.camera.camera.height) / preset.camera.camera.fy)
+        * 180.0 / std::numbers::pi;
     cam.lookfrom = preset.camera.lookfrom;
     cam.lookat = preset.camera.lookat;
     cam.vup = preset.camera.vup;

@@ -6,6 +6,7 @@
 #include <Eigen/Geometry>
 
 #include <algorithm>
+#include <cmath>
 #include <numbers>
 #include <stdexcept>
 
@@ -28,6 +29,9 @@ struct RealtimePresetRegistryEntry {
     std::string_view scene_id;
     RealtimeViewPreset preset;
 };
+
+constexpr int kBuiltinRealtimeWidth = 640;
+constexpr int kBuiltinRealtimeHeight = 480;
 
 Eigen::Vector3d legacy_renderer_to_world(const Eigen::Vector3d& v) {
     return Eigen::Vector3d {v.x(), -v.z(), v.y()};
@@ -136,7 +140,18 @@ CornellMaterials add_cornell_room(SceneIR& scene) {
 CpuCameraPreset make_cpu_camera(double vfov, const Eigen::Vector3d& lookfrom, const Eigen::Vector3d& lookat,
     double defocus_angle = 0.0) {
     CpuCameraPreset preset;
-    preset.vfov = vfov;
+    const double theta = vfov * std::numbers::pi / 180.0;
+    const int image_height = static_cast<int>(std::lround(static_cast<double>(preset.image_width) / preset.aspect_ratio));
+    const double fy = 0.5 * static_cast<double>(image_height) / std::tan(theta * 0.5);
+    preset.camera = CameraSpec {
+        .model = CameraModelType::pinhole32,
+        .width = preset.image_width,
+        .height = image_height,
+        .fx = fy,
+        .fy = fy,
+        .cx = 0.5 * static_cast<double>(preset.image_width),
+        .cy = 0.5 * static_cast<double>(image_height),
+    };
     preset.lookfrom = lookfrom;
     preset.lookat = lookat;
     preset.defocus_angle = defocus_angle;
@@ -181,11 +196,20 @@ viewer::BodyPose pose_from_look_at(const Eigen::Vector3d& lookfrom, const Eigen:
 
 RealtimeViewPreset make_realtime_view_preset(const Eigen::Vector3d& lookfrom, const Eigen::Vector3d& lookat,
     viewer::ViewerFrameConvention convention, double vfov_deg, double base_move_speed) {
+    const double theta = vfov_deg * std::numbers::pi / 180.0;
+    const double fy = 0.5 * static_cast<double>(kBuiltinRealtimeHeight) / std::tan(theta * 0.5);
     return RealtimeViewPreset {
         .initial_body_pose = pose_from_look_at(lookfrom, lookat, convention),
         .frame_convention = convention,
-        .vfov_deg = vfov_deg,
-        .use_default_viewer_intrinsics = false,
+        .camera = CameraSpec {
+            .model = CameraModelType::pinhole32,
+            .width = kBuiltinRealtimeWidth,
+            .height = kBuiltinRealtimeHeight,
+            .fx = fy,
+            .fy = fy,
+            .cx = 0.5 * static_cast<double>(kBuiltinRealtimeWidth),
+            .cy = 0.5 * static_cast<double>(kBuiltinRealtimeHeight),
+        },
         .base_move_speed = base_move_speed,
     };
 }
@@ -611,16 +635,30 @@ const std::vector<RealtimePresetRegistryEntry> kRealtimePresetRegistry {
                 .pitch_deg = 0.0,
             },
             .frame_convention = viewer::ViewerFrameConvention::world_z_up,
-            .vfov_deg = 67.38013505195957,
-            .use_default_viewer_intrinsics = false,
+            .camera = CameraSpec {
+                .model = CameraModelType::pinhole32,
+                .width = kBuiltinRealtimeWidth,
+                .height = kBuiltinRealtimeHeight,
+                .fx = 360.0,
+                .fy = 360.0,
+                .cx = 320.0,
+                .cy = 240.0,
+            },
             .base_move_speed = 2.0,
         }},
     {"final_room",
         RealtimeViewPreset {
             .initial_body_pose = viewer::default_spawn_pose(),
             .frame_convention = viewer::ViewerFrameConvention::world_z_up,
-            .vfov_deg = 67.38013505195957,
-            .use_default_viewer_intrinsics = true,
+            .camera = CameraSpec {
+                .model = CameraModelType::pinhole32,
+                .width = kBuiltinRealtimeWidth,
+                .height = kBuiltinRealtimeHeight,
+                .fx = 0.75 * static_cast<double>(kBuiltinRealtimeWidth),
+                .fy = 0.75 * static_cast<double>(kBuiltinRealtimeHeight),
+                .cx = 0.5 * static_cast<double>(kBuiltinRealtimeWidth),
+                .cy = 0.5 * static_cast<double>(kBuiltinRealtimeHeight),
+            },
             .base_move_speed = 1.8,
         }},
 };

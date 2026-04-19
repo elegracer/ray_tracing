@@ -11,7 +11,13 @@ int main() {
     const rt::scene::CpuRenderPreset* cornell_default =
         rt::scene::default_cpu_render_preset("cornell_box");
     expect_true(cornell_default != nullptr, "cornell_box default preset exists");
-    expect_near(cornell_default->camera.vfov, 40.0, 1e-12, "cornell vfov preserved");
+    expect_true(cornell_default->camera.camera.model == rt::CameraModelType::pinhole32,
+        "cornell preset carries pinhole model");
+    expect_true(cornell_default->camera.camera.width == 1280, "cornell preset camera width");
+    expect_true(cornell_default->camera.camera.height == 720, "cornell preset camera height");
+    expect_true(cornell_default->camera.camera.fx > 0.0, "cornell preset fx populated");
+    expect_true(cornell_default->camera.camera.fy > 0.0, "cornell preset fy populated");
+    expect_near(cornell_default->camera.camera.pinhole32.k1, 0.0, 1e-12, "cornell preset default k1");
     expect_vec3_near(cornell_default->camera.lookfrom, Eigen::Vector3d(278.0, 278.0, -800.0), 1e-12,
         "cornell lookfrom preserved");
 

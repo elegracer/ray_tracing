@@ -4,6 +4,8 @@
 
 #include "yaml-cpp/yaml.h"
 
+#include <cmath>
+#include <numbers>
 #include <type_traits>
 #include <stdexcept>
 #include <string>
@@ -298,9 +300,6 @@ CpuCameraPreset parse_camera_preset(const YAML::Node& node) {
     if (const YAML::Node max_depth = node["max_depth"]) {
         camera.max_depth = max_depth.as<int>();
     }
-    if (const YAML::Node vfov = node["vfov"]) {
-        camera.vfov = vfov.as<double>();
-    }
     if (const YAML::Node lookfrom = node["lookfrom"]) {
         camera.lookfrom = parse_vec3(lookfrom);
     }
@@ -315,6 +314,21 @@ CpuCameraPreset parse_camera_preset(const YAML::Node& node) {
     }
     if (const YAML::Node focus_dist = node["focus_dist"]) {
         camera.focus_dist = focus_dist.as<double>();
+    }
+    if (const YAML::Node vfov = node["vfov"]) {
+        const double theta = vfov.as<double>() * std::numbers::pi / 180.0;
+        const int image_height =
+            static_cast<int>(std::lround(static_cast<double>(camera.image_width) / camera.aspect_ratio));
+        const double fy = 0.5 * static_cast<double>(image_height) / std::tan(theta * 0.5);
+        camera.camera = CameraSpec {
+            .model = CameraModelType::pinhole32,
+            .width = camera.image_width,
+            .height = image_height,
+            .fx = fy,
+            .fy = fy,
+            .cx = 0.5 * static_cast<double>(camera.image_width),
+            .cy = 0.5 * static_cast<double>(image_height),
+        };
     }
     return camera;
 }
@@ -380,10 +394,30 @@ RealtimeViewPreset parse_realtime_preset(const YAML::Node& node) {
     }
     preset.frame_convention = parse_frame_convention(node["frame_convention"]);
     if (const YAML::Node vfov_deg = node["vfov_deg"]) {
-        preset.vfov_deg = vfov_deg.as<double>();
+        const double theta = vfov_deg.as<double>() * std::numbers::pi / 180.0;
+        const double fy = 0.5 * 480.0 / std::tan(theta * 0.5);
+        preset.camera = CameraSpec {
+            .model = CameraModelType::pinhole32,
+            .width = 640,
+            .height = 480,
+            .fx = fy,
+            .fy = fy,
+            .cx = 320.0,
+            .cy = 240.0,
+        };
     }
     if (const YAML::Node use_default_viewer_intrinsics = node["use_default_viewer_intrinsics"]) {
-        preset.use_default_viewer_intrinsics = use_default_viewer_intrinsics.as<bool>();
+        if (use_default_viewer_intrinsics.as<bool>()) {
+            preset.camera = CameraSpec {
+                .model = CameraModelType::pinhole32,
+                .width = 640,
+                .height = 480,
+                .fx = 480.0,
+                .fy = 360.0,
+                .cx = 320.0,
+                .cy = 240.0,
+            };
+        }
     }
     if (const YAML::Node base_move_speed = node["base_move_speed"]) {
         preset.base_move_speed = base_move_speed.as<double>();

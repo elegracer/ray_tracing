@@ -45,6 +45,7 @@ int main() {
 
     const rt::PackedCameraRig earth_rig = rt::default_camera_rig_for_scene("earth_sphere", 1, 640, 480).pack();
     expect_true(earth_rig.active_count == 1, "earth rig active camera count");
+    expect_true(earth_rig.cameras[0].model == rt::CameraModelType::pinhole32, "earth rig model");
     expect_vec3_near(Eigen::Vector3d(
                          earth_rig.cameras[0].T_rc(0, 3),
                          earth_rig.cameras[0].T_rc(1, 3),
@@ -54,7 +55,28 @@ int main() {
     const double expected_earth_fy =
         0.5 * 480.0 / std::tan((20.0 * std::numbers::pi / 180.0) * 0.5);
     expect_near(earth_rig.cameras[0].pinhole.fy, expected_earth_fy, 1e-9,
-        "earth rig preserves legacy scene vfov");
+        "earth rig preserves authored intrinsics at calibration size");
+    expect_near(earth_rig.cameras[0].pinhole.fx, expected_earth_fy, 1e-9,
+        "earth rig preserves authored fx at calibration size");
+
+    const rt::PackedCameraRig earth_rig_resized = rt::default_camera_rig_for_scene("earth_sphere", 1, 1280, 960).pack();
+    expect_true(earth_rig_resized.cameras[0].width == 1280, "earth resized width");
+    expect_true(earth_rig_resized.cameras[0].height == 960, "earth resized height");
+    expect_near(earth_rig_resized.cameras[0].pinhole.fx, 2.0 * expected_earth_fy, 1e-9,
+        "earth resized rig scales fx");
+    expect_near(earth_rig_resized.cameras[0].pinhole.fy, 2.0 * expected_earth_fy, 1e-9,
+        "earth resized rig scales fy");
+    expect_near(earth_rig_resized.cameras[0].pinhole.cx, 640.0, 1e-9,
+        "earth resized rig scales cx");
+    expect_near(earth_rig_resized.cameras[0].pinhole.cy, 480.0, 1e-9,
+        "earth resized rig scales cy");
+
+    const rt::PackedCameraRig final_room_rig = rt::default_camera_rig_for_scene("final_room", 1, 640, 480).pack();
+    expect_true(final_room_rig.cameras[0].model == rt::CameraModelType::pinhole32, "final_room rig model");
+    expect_near(final_room_rig.cameras[0].pinhole.fx, 480.0, 1e-9,
+        "final_room rig uses explicit authored default-viewer fx");
+    expect_near(final_room_rig.cameras[0].pinhole.fy, 360.0, 1e-9,
+        "final_room rig uses explicit authored default-viewer fy");
 
     const rt::PackedScene default_view = rt::viewer::make_default_viewer_scene().pack();
     expect_true(default_view.material_count == final_room.material_count, "default viewer materials match final_room");
