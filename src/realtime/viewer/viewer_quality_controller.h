@@ -4,6 +4,7 @@
 #include "realtime/render_profile.h"
 #include "realtime/viewer/body_pose.h"
 
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -15,11 +16,19 @@ enum class ViewerQualityMode {
     converge,
 };
 
+struct ResolvedBeautyFrameView {
+    int width = 0;
+    int height = 0;
+    double average_luminance = 0.0;
+    std::span<const float> beauty_rgba;
+};
+
 class ViewerQualityController {
 public:
     ViewerQualityController(RenderProfile preview_profile, RenderProfile converge_profile);
 
     void begin_frame(std::string_view scene_id, const BodyPose& pose);
+    ResolvedBeautyFrameView resolve_beauty_view(int camera_index, const RadianceFrame& raw_frame);
     RadianceFrame resolve_frame(int camera_index, const RadianceFrame& raw_frame);
     void reset_all();
 

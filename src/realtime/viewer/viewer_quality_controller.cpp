@@ -61,12 +61,25 @@ void ViewerQualityController::begin_frame(std::string_view scene_id, const BodyP
 }
 
 RadianceFrame ViewerQualityController::resolve_frame(int camera_index, const RadianceFrame& raw_frame) {
+    const ResolvedBeautyFrameView resolved_view = resolve_beauty_view(camera_index, raw_frame);
+    RadianceFrame resolved = raw_frame;
+    resolved.average_luminance = resolved_view.average_luminance;
+    resolved.beauty_rgba.assign(resolved_view.beauty_rgba.begin(), resolved_view.beauty_rgba.end());
+    return resolved;
+}
+
+ResolvedBeautyFrameView ViewerQualityController::resolve_beauty_view(int camera_index, const RadianceFrame& raw_frame) {
     CameraHistory& history = history_for(camera_index);
     const std::size_t expected_beauty_size =
         static_cast<std::size_t>(raw_frame.width) * static_cast<std::size_t>(raw_frame.height) * 4;
     if (raw_frame.width <= 0 || raw_frame.height <= 0 || raw_frame.beauty_rgba.size() < expected_beauty_size) {
         history = {};
-        return raw_frame;
+        return ResolvedBeautyFrameView {
+            .width = raw_frame.width,
+            .height = raw_frame.height,
+            .average_luminance = raw_frame.average_luminance,
+            .beauty_rgba = raw_frame.beauty_rgba,
+        };
     }
 
     if (history.width != raw_frame.width || history.height != raw_frame.height) {
@@ -75,7 +88,12 @@ RadianceFrame ViewerQualityController::resolve_frame(int camera_index, const Rad
 
     if (active_mode_ == ViewerQualityMode::preview) {
         history = {};
-        return raw_frame;
+        return ResolvedBeautyFrameView {
+            .width = raw_frame.width,
+            .height = raw_frame.height,
+            .average_luminance = raw_frame.average_luminance,
+            .beauty_rgba = raw_frame.beauty_rgba,
+        };
     }
 
     history.width = raw_frame.width;
@@ -98,10 +116,12 @@ RadianceFrame ViewerQualityController::resolve_frame(int camera_index, const Rad
         history.history_length = next_history_length;
     }
 
-    RadianceFrame resolved = raw_frame;
-    resolved.beauty_rgba = history.beauty_rgba;
-    resolved.average_luminance = compute_average_luminance(resolved.beauty_rgba);
-    return resolved;
+    return ResolvedBeautyFrameView {
+        .width = raw_frame.width,
+        .height = raw_frame.height,
+        .average_luminance = compute_average_luminance(history.beauty_rgba),
+        .beauty_rgba = history.beauty_rgba,
+    };
 }
 
 void ViewerQualityController::reset_all() {

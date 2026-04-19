@@ -61,24 +61,41 @@ int main() {
     controller.begin_frame("scene_a", pose);
     expect_true(controller.active_mode() == rt::viewer::ViewerQualityMode::preview, "first frame starts preview");
     expect_true(controller.active_profile().samples_per_pixel == preview_profile.samples_per_pixel, "preview profile active");
+    const rt::RadianceFrame preview_frame = make_frame(2, 1, 0.5f);
+    const auto preview_view = controller.resolve_beauty_view(0, preview_frame);
+    expect_true(preview_view.width == preview_frame.width, "preview beauty view keeps raw width");
+    expect_true(preview_view.height == preview_frame.height, "preview beauty view keeps raw height");
+    expect_true(preview_view.average_luminance == preview_frame.average_luminance,
+        "preview beauty view keeps raw luminance");
+    expect_true(preview_view.beauty_rgba.data() == preview_frame.beauty_rgba.data(),
+        "preview beauty view aliases raw beauty without copying");
+    expect_true(controller.history_length(0) == 0, "preview beauty view does not create history");
 
     controller.begin_frame("scene_a", pose);
     expect_true(controller.active_mode() == rt::viewer::ViewerQualityMode::converge, "stable second frame converges");
     expect_true(controller.active_profile().samples_per_pixel == converge_profile.samples_per_pixel, "converge profile active");
 
     const rt::RadianceFrame converge_frame = make_frame(2, 1, 1.0f);
+    const auto converge_view = controller.resolve_beauty_view(0, converge_frame);
+    expect_true(converge_view.beauty_rgba.data() != converge_frame.beauty_rgba.data(),
+        "converge beauty view aliases accumulated history instead of raw beauty");
+    expect_true(controller.history_length(0) == 1, "converge beauty view initializes history");
     const rt::RadianceFrame resolved_first = controller.resolve_frame(0, converge_frame);
     expect_true(resolved_first.width == converge_frame.width, "resolve returns raw frame width");
-    expect_true(controller.history_length(0) == 1, "first converge resolve initializes history");
+    expect_true(controller.history_length(0) == 2, "resolve_frame continues converge history after beauty view");
+    const auto second_converge_view = controller.resolve_beauty_view(0, converge_frame);
+    expect_true(second_converge_view.beauty_rgba.data() == converge_view.beauty_rgba.data(),
+        "converge beauty view reuses the same accumulated history buffer");
+    expect_true(controller.history_length(0) == 3, "repeated converge beauty views grow history to three frames");
     const rt::RadianceFrame resolved_second = controller.resolve_frame(0, converge_frame);
-    expect_true(controller.history_length(0) == 2, "repeated converge resolves grow history to two frames");
+    expect_true(controller.history_length(0) == 4, "repeated resolve_frame calls still grow converge history");
     expect_true(resolved_second.beauty_rgba[0] == 1.0f, "identical converge frames keep accumulated beauty");
     controller.resolve_frame(0, converge_frame);
-    expect_true(controller.history_length(0) == 3, "later converge resolves continue growing history");
+    expect_true(controller.history_length(0) == 5, "later converge resolves continue growing history");
 
     controller.resolve_frame(1, converge_frame);
     expect_true(controller.history_length(1) == 1, "other camera maintains independent history");
-    expect_true(controller.history_length(0) == 3, "primary camera history remains unchanged");
+    expect_true(controller.history_length(0) == 5, "primary camera history remains unchanged");
 
     const rt::RadianceFrame resized_frame = make_frame(1, 2, 2.0f);
     controller.resolve_frame(0, resized_frame);

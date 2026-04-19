@@ -192,7 +192,7 @@ enum class UploadStatus {
     incomplete_frame,
 };
 
-UploadStatus to_rgba8(const rt::RadianceFrame& frame, std::vector<std::uint8_t>& rgba8) {
+UploadStatus to_rgba8(const rt::viewer::ResolvedBeautyFrameView& frame, std::vector<std::uint8_t>& rgba8) {
     if (frame.width != kViewWidth || frame.height != kViewHeight) {
         return UploadStatus::resolution_mismatch;
     }
@@ -219,7 +219,9 @@ UploadStatus to_rgba8(const rt::RadianceFrame& frame, std::vector<std::uint8_t>&
     return UploadStatus::ok;
 }
 
-UploadStatus upload_texture(GLuint texture, const rt::RadianceFrame& frame, std::vector<std::uint8_t>& scratch) {
+UploadStatus upload_texture(GLuint texture,
+    const rt::viewer::ResolvedBeautyFrameView& frame,
+    std::vector<std::uint8_t>& scratch) {
     const UploadStatus status = to_rgba8(frame, scratch);
     if (status != UploadStatus::ok) {
         return status;
@@ -431,7 +433,8 @@ int main(int argc, char* argv[]) {
             if (idx < 0 || idx >= static_cast<int>(textures.size())) {
                 continue;
             }
-            const rt::RadianceFrame display_frame = quality_controller.resolve_frame(idx, result.profiled.frame);
+            const rt::viewer::ResolvedBeautyFrameView display_frame =
+                quality_controller.resolve_beauty_view(idx, result.profiled.frame);
             const UploadStatus upload_status = upload_texture(
                 textures[static_cast<std::size_t>(idx)],
                 display_frame,
