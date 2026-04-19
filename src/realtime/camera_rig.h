@@ -2,6 +2,7 @@
 
 #include "realtime/camera_models.h"
 #include "realtime/frame_convention.h"
+#include "scene/camera_spec.h"
 
 #include <Eigen/Geometry>
 
@@ -30,6 +31,7 @@ struct PackedCameraRig {
 
 class CameraRig {
    public:
+    void add_camera(const scene::CameraSpec& spec);
     void add_pinhole(const Pinhole32Params& params, const Eigen::Isometry3d& T_bc, int width, int height);
     void add_equi62(const Equi62Lut1DParams& params, const Eigen::Isometry3d& T_bc, int width, int height);
 

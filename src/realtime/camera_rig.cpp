@@ -4,10 +4,42 @@
 
 namespace rt {
 
+namespace {
+
+Pinhole32Params to_pinhole32_params(const scene::CameraSpec& spec) {
+    return Pinhole32Params {
+        spec.fx,
+        spec.fy,
+        spec.cx,
+        spec.cy,
+        spec.pinhole32.k1,
+        spec.pinhole32.k2,
+        spec.pinhole32.k3,
+        spec.pinhole32.p1,
+        spec.pinhole32.p2,
+    };
+}
+
+Equi62Lut1DParams to_equi62_lut1d_params(const scene::CameraSpec& spec) {
+    return make_equi62_lut1d_params(spec.width, spec.height, spec.fx, spec.fy, spec.cx, spec.cy,
+        spec.equi62_lut1d.radial, spec.equi62_lut1d.tangential);
+}
+
+}  // namespace
+
 PackedCamera::PackedCamera()
     : equi {} {
     equi.tangential = Eigen::Vector2d::Zero();
     equi.lut.fill(0.0);
+}
+
+void CameraRig::add_camera(const scene::CameraSpec& spec) {
+    if (spec.model == CameraModelType::pinhole32) {
+        add_pinhole(to_pinhole32_params(spec), spec.T_bc, spec.width, spec.height);
+        return;
+    }
+
+    add_equi62(to_equi62_lut1d_params(spec), spec.T_bc, spec.width, spec.height);
 }
 
 void CameraRig::add_pinhole(const Pinhole32Params& params, const Eigen::Isometry3d& T_bc, int width, int height) {
