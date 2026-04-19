@@ -6,7 +6,7 @@
 #include <string_view>
 
 int main() {
-    constexpr std::array<std::string_view, 16> expected_ids {
+    constexpr std::array<std::string_view, 12> expected_ids {
         "bouncing_spheres",
         "checkered_spheres",
         "earth_sphere",
@@ -14,13 +14,9 @@ int main() {
         "quads",
         "simple_light",
         "cornell_smoke",
-        "cornell_smoke_extreme",
         "cornell_box",
-        "cornell_box_extreme",
         "cornell_box_and_sphere",
-        "cornell_box_and_sphere_extreme",
         "rttnw_final_scene",
-        "rttnw_final_scene_extreme",
         "smoke",
         "final_room",
     };
@@ -37,10 +33,23 @@ int main() {
         expect_true(!scene.shapes().empty(), "scene has shapes");
     }
 
-    expect_true(rt::scene::scene_default_samples_per_pixel("cornell_box_extreme") == 10000, "extreme spp");
-    expect_true(rt::scene::scene_default_samples_per_pixel("cornell_box") == 1000, "cornell spp");
-
+    expect_true(rt::scene::find_scene_metadata("cornell_box_extreme") == nullptr,
+        "duplicate cornell_box_extreme removed from public metadata");
     expect_true(rt::scene::find_scene_metadata("unknown") == nullptr, "unknown metadata");
+
+    const rt::scene::CpuRenderPreset* cornell_default =
+        rt::scene::find_cpu_render_preset("cornell_box", "default");
+    const rt::scene::CpuRenderPreset* cornell_extreme =
+        rt::scene::find_cpu_render_preset("cornell_box", "extreme");
+    expect_true(cornell_default != nullptr, "cornell_box default CPU preset exists");
+    expect_true(cornell_extreme != nullptr, "cornell_box extreme CPU preset exists");
+    expect_true(cornell_default->samples_per_pixel == 1000, "cornell_box default spp preserved");
+    expect_true(cornell_extreme->samples_per_pixel == 10000, "cornell_box extreme spp preserved");
+
+    const rt::scene::RealtimeViewPreset* final_room_view =
+        rt::scene::find_realtime_view_preset("final_room");
+    expect_true(final_room_view != nullptr, "final_room realtime preset exists");
+    expect_true(final_room_view->base_move_speed > 0.0, "final_room move speed is positive");
 
     bool build_unknown_threw = false;
     try {
@@ -50,26 +59,21 @@ int main() {
     }
     expect_true(build_unknown_threw, "unknown build throws");
 
-    bool spp_unknown_threw = false;
+    bool cpu_preset_unknown_threw = false;
     try {
-        (void)rt::scene::scene_default_samples_per_pixel("unknown");
+        (void)rt::scene::default_cpu_render_preset("unknown");
     } catch (...) {
-        spp_unknown_threw = true;
+        cpu_preset_unknown_threw = true;
     }
-    expect_true(spp_unknown_threw, "unknown spp throws");
+    expect_true(cpu_preset_unknown_threw, "unknown cpu preset throws");
 
     for (std::string_view id : expected_ids) {
         const rt::SceneCatalogEntry* entry = rt::find_scene_catalog_entry(id);
         expect_true(entry != nullptr, "catalog entry exists for capability");
-
-        const bool is_realtime_only = (id == "smoke" || id == "final_room");
-        if (is_realtime_only) {
-            expect_true(!entry->supports_cpu_render, "realtime-only non-cpu");
-            expect_true(entry->supports_realtime, "realtime-only realtime");
-        } else {
-            expect_true(entry->supports_cpu_render, "offline cpu");
-            expect_true(entry->supports_realtime, "offline realtime");
-        }
+        expect_true(entry->supports_realtime, "catalog scene supports realtime");
     }
+
+    expect_true(!rt::find_scene_catalog_entry("smoke")->supports_cpu_render, "smoke remains realtime-only");
+    expect_true(rt::find_scene_catalog_entry("final_room")->supports_cpu_render, "final_room supports cpu reference");
     return 0;
 }

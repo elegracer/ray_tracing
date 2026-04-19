@@ -5,6 +5,7 @@
 #include "realtime/viewer/body_pose.h"
 #include "realtime/viewer/default_viewer_scene.h"
 #include "realtime/viewer/four_camera_rig.h"
+#include "realtime/viewer/move_speed.h"
 #include "realtime/viewer/viewer_quality_controller.h"
 #include "realtime/viewer/scene_switch_controller.h"
 
@@ -32,7 +33,6 @@ constexpr int kWindowHeight = 960;
 constexpr int kViewWidth = 640;
 constexpr int kViewHeight = 480;
 constexpr double kLookDegreesPerPixel = 0.08;
-constexpr double kMoveSpeedUnitsPerSecond = 1.8;
 constexpr float kLabelGlyphWidth = 1.0f;
 constexpr float kLabelGlyphHeight = 1.6f;
 constexpr float kLabelGlyphAdvance = 1.35f;
@@ -45,6 +45,11 @@ struct ViewerPanel {
     int camera_index;
     int column;
     int row;
+};
+
+struct ScrollWheelState {
+    double pending_yoffset = 0.0;
+    GLFWscrollfun chained_callback = nullptr;
 };
 
 enum class LabelCorner {
@@ -273,6 +278,15 @@ const char* quality_mode_label(rt::viewer::ViewerQualityMode mode) {
     return "unknown";
 }
 
+void handle_scroll_event(GLFWwindow* window, double xoffset, double yoffset) {
+    if (auto* state = static_cast<ScrollWheelState*>(glfwGetWindowUserPointer(window)); state != nullptr) {
+        state->pending_yoffset += yoffset;
+        if (state->chained_callback != nullptr) {
+            state->chained_callback(window, xoffset, yoffset);
+        }
+    }
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -322,6 +336,10 @@ int main(int argc, char* argv[]) {
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 120");
 
+    ScrollWheelState scroll_state;
+    glfwSetWindowUserPointer(window, &scroll_state);
+    scroll_state.chained_callback = glfwSetScrollCallback(window, handle_scroll_event);
+
     std::array<GLuint, 4> textures{};
     std::array<std::vector<std::uint8_t>, 4> texture_scratch{};
     std::array<bool, 4> warned_texture_mismatch{};
@@ -339,6 +357,7 @@ int main(int argc, char* argv[]) {
 
     rt::viewer::SceneSwitchController scene_controller(scene_name);
     rt::viewer::BodyPose pose = rt::default_spawn_pose_for_scene(scene_name);
+    rt::viewer::MoveSpeedState move_speed(rt::default_move_speed_for_scene(scene_name));
     rt::PackedScene scene = rt::make_realtime_scene(scene_name).pack();
     rt::viewer::ViewerQualityController quality_controller(
         rt::viewer::default_viewer_preview_profile(),
@@ -394,6 +413,7 @@ int main(int argc, char* argv[]) {
             rt::viewer_frame_convention_for_scene(scene_controller.current_scene_id());
 
         if (!ui_interaction_enabled) {
+            move_speed.apply_scroll(scroll_state.pending_yoffset);
             rt::viewer::integrate_mouse_look(pose, delta_x, delta_y, kLookDegreesPerPixel);
             rt::viewer::integrate_wasd(pose, glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS,
                 glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS,
@@ -401,9 +421,10 @@ int main(int argc, char* argv[]) {
                 glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS,
                 glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS,
                 glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS,
-                kMoveSpeedUnitsPerSecond * dt,
+                move_speed.current_speed() * dt,
                 frame_convention);
         }
+        scroll_state.pending_yoffset = 0.0;
 
         const std::string previous_scene_id = scene_controller.current_scene_id();
         const rt::viewer::SceneSwitchResult switch_result = scene_controller.resolve_pending();
@@ -413,6 +434,7 @@ int main(int argc, char* argv[]) {
                 pool.prepare_scene(next_scene);
                 scene = std::move(next_scene);
                 pose = rt::default_spawn_pose_for_scene(scene_controller.current_scene_id());
+                move_speed.reset(rt::default_move_speed_for_scene(scene_controller.current_scene_id()));
                 quality_controller.reset_all();
                 viewer_error_message.clear();
                 set_ui_interaction(window, ui_interaction_enabled, last_cursor_x, last_cursor_y);
@@ -506,9 +528,10 @@ int main(int argc, char* argv[]) {
         ImGui::Begin("Viewer");
         ImGui::Text("Scene: %s", scene_label(scene_controller.current_scene_id()).c_str());
         ImGui::Text("Quality: %s", quality_mode_label(quality_controller.active_mode()));
+        ImGui::Text("Move speed: %.3f", move_speed.current_speed());
         ImGui::Text("cam0 history: %d", quality_controller.history_length(0));
         ImGui::Text("Tab toggles UI cursor");
-        ImGui::Text("Controls: WASD + QE move, mouse look");
+        ImGui::Text("Controls: WASD + QE move, mouse look, wheel changes speed");
         const std::string preview_label = scene_label(scene_controller.current_scene_id());
         if (ImGui::BeginCombo("Switch Scene", preview_label.c_str())) {
             for (const rt::SceneCatalogEntry& entry : rt::scene_catalog()) {

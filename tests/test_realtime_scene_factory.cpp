@@ -4,6 +4,8 @@
 #include "realtime/viewer/default_viewer_scene.h"
 #include "test_support.h"
 
+#include <numbers>
+
 int main() {
     const rt::PackedScene smoke = rt::make_realtime_scene("smoke").pack();
     expect_true(smoke.sphere_count >= 1, "smoke scene has geometry");
@@ -17,6 +19,13 @@ int main() {
     expect_true(rt::realtime_scene_supported("smoke"), "smoke supported");
     expect_true(rt::realtime_scene_supported("cornell_box"), "cornell_box supported");
     expect_true(rt::realtime_scene_supported("rttnw_final_scene"), "shared final scene supported");
+    expect_true(!rt::realtime_scene_supported("rttnw_final_scene_extreme"),
+        "duplicate realtime scene id removed");
+
+    const rt::viewer::BodyPose earth_spawn = rt::default_spawn_pose_for_scene("earth_sphere");
+    expect_vec3_near(earth_spawn.position, Eigen::Vector3d {-3.0, 6.0, -10.0}, 1e-12,
+        "earth spawn uses realtime preset pose");
+    expect_true(rt::default_move_speed_for_scene("earth_sphere") > 0.0, "earth move speed is positive");
 
     const rt::PackedCameraRig earth_rig = rt::default_camera_rig_for_scene("earth_sphere", 1, 640, 480).pack();
     expect_true(earth_rig.active_count == 1, "earth rig active camera count");
@@ -26,6 +35,10 @@ int main() {
                          earth_rig.cameras[0].T_rc(2, 3)),
         Eigen::Vector3d {-3.0, 6.0, -10.0}, 1e-12,
         "earth rig uses scene camera preset");
+    const double expected_earth_fy =
+        0.5 * 480.0 / std::tan((20.0 * std::numbers::pi / 180.0) * 0.5);
+    expect_near(earth_rig.cameras[0].pinhole.fy, expected_earth_fy, 1e-9,
+        "earth rig preserves legacy scene vfov");
 
     const rt::PackedScene default_view = rt::viewer::make_default_viewer_scene().pack();
     expect_true(default_view.material_count == final_room.material_count, "default viewer materials match final_room");
@@ -67,5 +80,13 @@ int main() {
         expect_true(top_ray.y() > 0.0, "legacy scene top pixel points upward");
         expect_true(right_ray.x() > 0.0, "legacy scene right pixel points rightward");
     }
+
+    bool move_speed_unknown_threw = false;
+    try {
+        (void)rt::default_move_speed_for_scene("unknown");
+    } catch (...) {
+        move_speed_unknown_threw = true;
+    }
+    expect_true(move_speed_unknown_threw, "unknown move speed throws");
     return 0;
 }

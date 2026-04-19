@@ -5,7 +5,7 @@
 #include <string_view>
 
 int main() {
-    constexpr std::array<std::string_view, 16> expected_ids {
+    constexpr std::array<std::string_view, 12> expected_ids {
         "bouncing_spheres",
         "checkered_spheres",
         "earth_sphere",
@@ -13,13 +13,9 @@ int main() {
         "quads",
         "simple_light",
         "cornell_smoke",
-        "cornell_smoke_extreme",
         "cornell_box",
-        "cornell_box_extreme",
         "cornell_box_and_sphere",
-        "cornell_box_and_sphere_extreme",
         "rttnw_final_scene",
-        "rttnw_final_scene_extreme",
         "smoke",
         "final_room",
     };
@@ -39,5 +35,7 @@ int main() {
     expect_true(rt::find_scene_catalog_entry("quads")->supports_realtime, "quads realtime");
     expect_true(rt::find_scene_catalog_entry("quads")->supports_cpu_render, "quads cpu");
     expect_true(!rt::find_scene_catalog_entry("smoke")->supports_cpu_render, "smoke realtime-only");
+    expect_true(rt::find_scene_catalog_entry("cornell_box_extreme") == nullptr,
+        "extreme scene id removed from public catalog");
     return 0;
 }
