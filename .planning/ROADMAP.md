@@ -30,9 +30,9 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Loading the same scene through builtin and file-backed catalog paths keeps the declared per-camera model data intact for downstream renderers.
 **Plans**: 3 plans
 Plans:
-- [ ] 01-01-PLAN.md - Define the canonical CameraSpec contract and rig-packing adapter boundary.
-- [ ] 01-02-PLAN.md - Move builtin scene presets and shared-scene consumers onto CameraSpec.
-- [ ] 01-03-PLAN.md - Migrate YAML camera declarations and structural regressions onto the canonical schema.
+- [x] 01-01-PLAN.md - Define the canonical CameraSpec contract and rig-packing adapter boundary.
+- [x] 01-02-PLAN.md - Move builtin scene presets and shared-scene consumers onto CameraSpec.
+- [x] 01-03-PLAN.md - Migrate YAML camera declarations and structural regressions onto the canonical schema.
 
 ### Phase 2: Offline CPU Camera Models
 **Goal**: Offline CPU rendering uses the selected per-camera model from shared scene data instead of falling back to pinhole-only ray generation.
@@ -84,7 +84,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Shared Camera Schema | 0/3 | Planned | - |
+| 1. Shared Camera Schema | 3/3 | Ready to verify | - |
 | 2. Offline CPU Camera Models | 0/TBD | Not started | - |
 | 3. Realtime GPU And Viewer Camera Models | 0/TBD | Not started | - |
 | 4. Default Intrinsics And Fisheye Defaults | 0/TBD | Not started | - |
