@@ -2,9 +2,22 @@
 #include "realtime/viewer/viewer_quality_controller.h"
 #include "test_support.h"
 
+#include <algorithm>
+#include <cmath>
 #include <limits>
 
 namespace {
+
+double compute_average_luminance(const std::vector<float>& rgba) {
+    double sum = 0.0;
+    for (std::size_t i = 0; i + 3 < rgba.size(); i += 4) {
+        const double r = std::clamp(std::sqrt(std::max(0.0, static_cast<double>(rgba[i + 0]))), 0.0, 0.999);
+        const double g = std::clamp(std::sqrt(std::max(0.0, static_cast<double>(rgba[i + 1]))), 0.0, 0.999);
+        const double b = std::clamp(std::sqrt(std::max(0.0, static_cast<double>(rgba[i + 2]))), 0.0, 0.999);
+        sum += (r + g + b) / 3.0;
+    }
+    return rgba.empty() ? 0.0 : sum / static_cast<double>(rgba.size() / 4);
+}
 
 rt::RadianceFrame make_frame(int width, int height, float value) {
     return rt::RadianceFrame {
@@ -99,6 +112,8 @@ int main() {
     const rt::RadianceFrame averaged_second = controller.resolve_frame(0, average_second);
     expect_near(averaged_first.beauty_rgba[0], 0.20f, 1e-6, "first converge frame seeds accumulated beauty");
     expect_near(averaged_second.beauty_rgba[0], 0.40f, 1e-6, "converge mode averages beauty across frames");
+    expect_near(averaged_second.average_luminance, compute_average_luminance(averaged_second.beauty_rgba), 1e-9,
+        "resolve keeps average_luminance in sync with averaged beauty");
     expect_true(controller.history_length(0) == 2, "averaging path increments history length");
 
     controller.reset_all();
@@ -120,6 +135,28 @@ int main() {
     expect_true(sanitized.beauty_rgba[2] == seeded_history.beauty_rgba[2], "inf beauty falls back to previous history");
     expect_true(sanitized.beauty_rgba[3] == seeded_history.beauty_rgba[3], "invalid alpha falls back to previous history");
     expect_true(controller.history_length(0) == 2, "sanitized converge frame still advances history");
+
+    controller.reset_all();
+    begin_converged_frame(controller, pose);
+    rt::RadianceFrame ceiling_seed = make_frame(1, 1, 0.25f);
+    ceiling_seed.beauty_rgba[0] = 0.25f;
+    ceiling_seed.beauty_rgba[1] = 0.50f;
+    ceiling_seed.beauty_rgba[2] = 1.00f;
+    ceiling_seed.beauty_rgba[3] = 1.0f;
+    const rt::RadianceFrame seeded_ceiling = controller.resolve_frame(0, ceiling_seed);
+
+    rt::RadianceFrame above_ceiling = make_frame(1, 1, 0.75f);
+    above_ceiling.beauty_rgba[0] = 65.0f;
+    above_ceiling.beauty_rgba[1] = 128.0f;
+    above_ceiling.beauty_rgba[2] = 64.0f;
+    above_ceiling.beauty_rgba[3] = 1.0f;
+    const rt::RadianceFrame rejected_above_ceiling = controller.resolve_frame(0, above_ceiling);
+    expect_true(rejected_above_ceiling.beauty_rgba[0] == seeded_ceiling.beauty_rgba[0],
+        "finite beauty above the documented ceiling falls back to previous history");
+    expect_true(rejected_above_ceiling.beauty_rgba[1] == seeded_ceiling.beauty_rgba[1],
+        "all above-ceiling beauty channels are rejected");
+    expect_true(rejected_above_ceiling.beauty_rgba[2] != seeded_ceiling.beauty_rgba[2],
+        "beauty values at the documented ceiling remain valid");
 
     controller.reset_all();
     expect_true(controller.active_mode() == rt::viewer::ViewerQualityMode::preview, "reset_all returns preview mode");

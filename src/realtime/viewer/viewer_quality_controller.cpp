@@ -1,10 +1,13 @@
 #include "realtime/viewer/viewer_quality_controller.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace rt::viewer {
 
 namespace {
+
+constexpr float kMaxSanitizedBeautyValue = 64.0f;
 
 double pose_translation_delta(const BodyPose& a, const BodyPose& b) {
     return (a.position - b.position).norm();
@@ -14,8 +17,20 @@ double pose_rotation_delta_deg(const BodyPose& a, const BodyPose& b) {
     return std::max(std::abs(a.yaw_deg - b.yaw_deg), std::abs(a.pitch_deg - b.pitch_deg));
 }
 
+double compute_average_luminance(const std::vector<float>& rgba) {
+    double sum = 0.0;
+    for (std::size_t i = 0; i + 3 < rgba.size(); i += 4) {
+        const double r = std::clamp(std::sqrt(std::max(0.0, static_cast<double>(rgba[i + 0]))), 0.0, 0.999);
+        const double g = std::clamp(std::sqrt(std::max(0.0, static_cast<double>(rgba[i + 1]))), 0.0, 0.999);
+        const double b = std::clamp(std::sqrt(std::max(0.0, static_cast<double>(rgba[i + 2]))), 0.0, 0.999);
+        sum += (r + g + b) / 3.0;
+    }
+    return rgba.empty() ? 0.0 : sum / static_cast<double>(rgba.size() / 4);
+}
+
 bool is_valid_beauty_value(float value) {
-    return std::isfinite(value) && value >= 0.0f && value <= 64.0f;
+    // Task 3's approved sanitization rule treats unusually large finite beauty values as invalid samples.
+    return std::isfinite(value) && value >= 0.0f && value <= kMaxSanitizedBeautyValue;
 }
 
 float sanitized_value(float candidate, float fallback) {
@@ -84,6 +99,7 @@ RadianceFrame ViewerQualityController::resolve_frame(int camera_index, const Rad
 
     RadianceFrame resolved = raw_frame;
     resolved.beauty_rgba = history.beauty_rgba;
+    resolved.average_luminance = compute_average_luminance(resolved.beauty_rgba);
     return resolved;
 }
 
