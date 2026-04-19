@@ -224,6 +224,15 @@ target_sources(test_viewer_scene_switch_controller
 target_link_libraries(test_viewer_scene_switch_controller PRIVATE core)
 add_test(NAME test_viewer_scene_switch_controller COMMAND test_viewer_scene_switch_controller)
 
+add_executable(test_viewer_scene_reload)
+target_sources(test_viewer_scene_reload
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_viewer_scene_reload.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/viewer/scene_switch_controller.cpp
+)
+target_link_libraries(test_viewer_scene_reload PRIVATE core)
+add_test(NAME test_viewer_scene_reload COMMAND test_viewer_scene_reload)
+
 add_executable(test_viewer_move_speed)
 target_sources(test_viewer_move_speed
     PRIVATE

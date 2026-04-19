@@ -9,6 +9,7 @@
 #include "realtime/viewer/move_speed.h"
 #include "realtime/viewer/viewer_quality_controller.h"
 #include "realtime/viewer/scene_switch_controller.h"
+#include "scene/scene_file_catalog.h"
 
 #include <GLFW/glfw3.h>
 #include <argparse/argparse.hpp>
@@ -22,6 +23,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -34,6 +36,8 @@ constexpr int kWindowHeight = 960;
 constexpr int kViewWidth = 640;
 constexpr int kViewHeight = 480;
 constexpr double kLookDegreesPerPixel = 0.08;
+constexpr float kSceneComboWidth = 400.0f;
+constexpr float kSceneComboHeight = 360.0f;
 constexpr float kLabelGlyphWidth = 1.0f;
 constexpr float kLabelGlyphHeight = 1.6f;
 constexpr float kLabelGlyphAdvance = 1.35f;
@@ -343,17 +347,20 @@ int main(int argc, char* argv[]) {
 
     rt::viewer::SceneSwitchController scene_controller(scene_name);
     rt::viewer::BodyPose pose = rt::default_spawn_pose_for_scene(scene_name);
+    rt::viewer::ViewerFrameConvention frame_convention = rt::viewer_frame_convention_for_scene(scene_name);
     rt::viewer::MoveSpeedState move_speed(rt::default_move_speed_for_scene(scene_name));
-    rt::PackedScene scene = rt::make_realtime_scene(scene_name).pack();
+    rt::PackedScene packed_scene = rt::make_realtime_scene(scene_name).pack();
     rt::viewer::ViewerQualityController quality_controller(
         rt::viewer::default_viewer_preview_profile(),
         rt::viewer::default_viewer_converge_profile());
     std::string viewer_error_message;
     bool ui_interaction_enabled = false;
     bool previous_tab_down = false;
+    bool request_scene_reload = false;
+    std::optional<rt::scene::SceneFileCatalog> reload_catalog_snapshot;
 
     rt::RendererPool pool(4);
-    pool.prepare_scene(scene);
+    pool.prepare_scene(packed_scene);
 
     double last_time = glfwGetTime();
     double last_cursor_x = 0.0;
@@ -395,9 +402,6 @@ int main(int argc, char* argv[]) {
         const double delta_y = cursor_y - last_cursor_y;
         last_cursor_x = cursor_x;
         last_cursor_y = cursor_y;
-        const rt::viewer::ViewerFrameConvention frame_convention =
-            rt::viewer_frame_convention_for_scene(scene_controller.current_scene_id());
-
         if (!ui_interaction_enabled) {
             move_speed.apply_scroll(scroll_state.pending_yoffset);
             rt::viewer::integrate_mouse_look(pose, delta_x, delta_y, kLookDegreesPerPixel);
@@ -418,8 +422,9 @@ int main(int argc, char* argv[]) {
             try {
                 rt::PackedScene next_scene = rt::make_realtime_scene(scene_controller.current_scene_id()).pack();
                 pool.prepare_scene(next_scene);
-                scene = std::move(next_scene);
+                packed_scene = std::move(next_scene);
                 pose = rt::default_spawn_pose_for_scene(scene_controller.current_scene_id());
+                frame_convention = rt::viewer_frame_convention_for_scene(scene_controller.current_scene_id());
                 move_speed.reset(rt::default_move_speed_for_scene(scene_controller.current_scene_id()));
                 quality_controller.reset_all();
                 viewer_error_message.clear();
@@ -433,6 +438,27 @@ int main(int argc, char* argv[]) {
         } else if (!switch_result.error_message.empty()) {
             viewer_error_message = switch_result.error_message;
             fmt::print(stderr, "scene switch failed: {}\n", viewer_error_message);
+        }
+        if (request_scene_reload) {
+            try {
+                rt::PackedScene reloaded_scene = rt::make_realtime_scene(scene_controller.current_scene_id()).pack();
+                pool.prepare_scene(reloaded_scene);
+                packed_scene = std::move(reloaded_scene);
+                pose = rt::default_spawn_pose_for_scene(scene_controller.current_scene_id());
+                frame_convention = rt::viewer_frame_convention_for_scene(scene_controller.current_scene_id());
+                move_speed.reset(rt::default_move_speed_for_scene(scene_controller.current_scene_id()));
+                quality_controller.reset_all();
+                viewer_error_message.clear();
+                reload_catalog_snapshot.reset();
+            } catch (const std::exception& err) {
+                if (reload_catalog_snapshot.has_value()) {
+                    rt::scene::global_scene_file_catalog() = std::move(*reload_catalog_snapshot);
+                    reload_catalog_snapshot.reset();
+                }
+                viewer_error_message = err.what();
+                fmt::print(stderr, "scene reload failed: {}\n", viewer_error_message);
+            }
+            request_scene_reload = false;
         }
 
         quality_controller.begin_frame(scene_controller.current_scene_id(), pose);
@@ -518,8 +544,37 @@ int main(int argc, char* argv[]) {
         ImGui::Text("cam0 history: %d", quality_controller.history_length(0));
         ImGui::Text("Tab toggles UI cursor");
         ImGui::Text("Controls: WASD + QE move, mouse look, wheel changes speed");
+        if (ImGui::Button("Reload Current Scene")) {
+            rt::scene::SceneFileCatalog catalog_snapshot = rt::scene::global_scene_file_catalog();
+            const rt::viewer::SceneCatalogUpdateResult reload_result = scene_controller.reload_current_scene();
+            if (reload_result.ok) {
+                reload_catalog_snapshot = std::move(catalog_snapshot);
+                request_scene_reload = reload_result.reload_active_scene;
+                viewer_error_message.clear();
+            } else {
+                viewer_error_message = reload_result.error_message;
+                fmt::print(stderr, "scene reload failed: {}\n", viewer_error_message);
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Rescan Scene Directory")) {
+            rt::scene::SceneFileCatalog catalog_snapshot = rt::scene::global_scene_file_catalog();
+            const rt::viewer::SceneCatalogUpdateResult rescan_result =
+                scene_controller.rescan_scene_directory("assets/scenes");
+            if (rescan_result.ok) {
+                reload_catalog_snapshot = std::move(catalog_snapshot);
+                request_scene_reload = request_scene_reload || rescan_result.reload_active_scene;
+                viewer_error_message.clear();
+            } else {
+                viewer_error_message = rescan_result.error_message;
+                fmt::print(stderr, "scene rescan failed: {}\n", viewer_error_message);
+            }
+        }
         const std::string preview_label = scene_label(scene_controller.current_scene_id());
-        if (ImGui::BeginCombo("Switch Scene", preview_label.c_str())) {
+        ImGui::SetNextWindowSizeConstraints(
+            ImVec2(kSceneComboWidth, 0.0f), ImVec2(kSceneComboWidth, kSceneComboHeight));
+        ImGui::SetNextItemWidth(kSceneComboWidth);
+        if (ImGui::BeginCombo("Switch Scene", preview_label.c_str(), ImGuiComboFlags_HeightLargest)) {
             for (const rt::SceneCatalogEntry& entry : rt::scene_catalog()) {
                 const bool supported = entry.supports_realtime;
                 const bool selected = entry.id == scene_controller.current_scene_id();
@@ -529,6 +584,9 @@ int main(int argc, char* argv[]) {
                 const std::string label = std::string(entry.label);
                 if (ImGui::Selectable(label.c_str(), selected) && supported) {
                     scene_controller.request_scene(std::string(entry.id));
+                }
+                if (selected) {
+                    ImGui::SetItemDefaultFocus();
                 }
                 if (!supported) {
                     ImGui::EndDisabled();
