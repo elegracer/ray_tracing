@@ -212,11 +212,11 @@ int main() {
     materialize_resolved_frame(controller, 0, firefly_seed);
     rt::RadianceFrame firefly_frame = make_frame(1, 1, 8.0f);
     firefly_frame.beauty_rgba[3] = 1.0f;
-    const rt::RadianceFrame clamped_firefly = materialize_resolved_frame(controller, 0, firefly_frame);
-    expect_near(clamped_firefly.beauty_rgba[0], 0.50f, 1e-6,
-        "history-relative clamp limits sudden bright converge outliers before averaging");
-    expect_near(clamped_firefly.beauty_rgba[3], 1.0f, 1e-6,
-        "history-relative clamp does not alter valid alpha history");
+    const rt::RadianceFrame accumulated_firefly = materialize_resolved_frame(controller, 0, firefly_frame);
+    expect_near(accumulated_firefly.beauty_rgba[0], 0.625f, 1e-6,
+        "bright converge outliers are softly bounded instead of being crushed toward darker history");
+    expect_near(accumulated_firefly.beauty_rgba[3], 1.0f, 1e-6,
+        "valid alpha history still remains stable while bright samples accumulate");
 
     controller.reset_all();
     expect_true(controller.active_mode() == rt::viewer::ViewerQualityMode::preview, "reset_all returns preview mode");

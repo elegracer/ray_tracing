@@ -59,6 +59,7 @@ PackedScene SceneDescription::pack() const {
         .sphere_count = static_cast<int>(spheres_.size()),
         .quad_count = static_cast<int>(quads_.size()),
         .medium_count = static_cast<int>(media_.size()),
+        .background = background,
         .textures = textures_,
         .materials = materials_,
         .spheres = spheres_,

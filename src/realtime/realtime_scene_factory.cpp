@@ -96,7 +96,9 @@ SceneDescription make_realtime_scene(std::string_view scene_id) {
     if (!realtime_scene_supported(scene_id)) {
         throw std::invalid_argument("unsupported realtime scene");
     }
-    return scene::adapt_to_realtime(scene::build_scene(scene_id));
+    SceneDescription out = scene::adapt_to_realtime(scene::build_scene(scene_id));
+    out.background = scene::scene_background(scene_id);
+    return out;
 }
 
 viewer::ViewerFrameConvention viewer_frame_convention_for_scene(std::string_view scene_id) {

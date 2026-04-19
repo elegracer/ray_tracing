@@ -88,6 +88,7 @@ struct PackedScene {
     int sphere_count = 0;
     int quad_count = 0;
     int medium_count = 0;
+    Eigen::Vector3d background = Eigen::Vector3d::Zero();
     std::vector<TextureDesc> textures;
     std::vector<MaterialDesc> materials;
     std::vector<SpherePrimitive> spheres;
@@ -103,6 +104,8 @@ class SceneDescription {
     void add_quad(const QuadPrimitive& quad);
     void add_medium(const HomogeneousMediumPrimitive& medium);
     PackedScene pack() const;
+
+    Eigen::Vector3d background = Eigen::Vector3d::Zero();
 
    private:
     std::vector<TextureDesc> textures_;

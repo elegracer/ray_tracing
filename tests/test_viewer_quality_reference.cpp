@@ -38,6 +38,27 @@ bool frames_match_exactly(const rt::RadianceFrame& a, const rt::RadianceFrame& b
     return a.width == b.width && a.height == b.height && a.beauty_rgba == b.beauty_rgba;
 }
 
+rt::RadianceFrame accumulate_stationary_frame(rt::OptixRenderer& renderer,
+    const rt::PackedCameraRig& rig,
+    const rt::RenderProfile& preview_profile,
+    const rt::RenderProfile& converge_profile,
+    std::string_view scene_id,
+    const rt::viewer::BodyPose& pose,
+    int accumulation_frames) {
+    rt::viewer::ViewerQualityController controller(preview_profile, converge_profile);
+    controller.begin_frame(scene_id, pose);
+    controller.begin_frame(scene_id, pose);
+
+    rt::RadianceFrame accumulated_frame;
+    for (int i = 0; i < accumulation_frames; ++i) {
+        controller.begin_frame(scene_id, pose);
+        const rt::RadianceFrame raw_frame = renderer.render_prepared_radiance(rig, controller.active_profile(), 0).frame;
+        const rt::viewer::ResolvedBeautyFrameView resolved = controller.resolve_beauty_view(0, raw_frame);
+        accumulated_frame = rt::viewer::ViewerQualityController::materialize_frame(resolved, raw_frame);
+    }
+    return accumulated_frame;
+}
+
 double compute_mae_to_reference(const rt::RadianceFrame& frame, const cv::Mat& reference) {
     expect_true(frame.width == reference.cols, "frame width matches reference");
     expect_true(frame.height == reference.rows, "frame height matches reference");
@@ -134,5 +155,26 @@ int main() {
         "stationary accumulation should improve agreement beyond a single converge-profile frame");
     expect_true(accumulated_error < 0.25,
         "stationary converge accumulation should stay within an absolute CPU-reference error bound");
+
+    const rt::SceneDescription cornell_scene = rt::make_realtime_scene("cornell_box");
+    const rt::PackedScene packed_cornell_scene = cornell_scene.pack();
+    const rt::viewer::BodyPose cornell_pose = rt::default_spawn_pose_for_scene("cornell_box");
+    const rt::PackedCameraRig cornell_rig = rt::viewer::make_default_viewer_rig(
+                                                cornell_pose,
+                                                kWidth,
+                                                kHeight,
+                                                rt::viewer_frame_convention_for_scene("cornell_box"))
+                                                .pack();
+    const cv::Mat cornell_reference = rt::render_shared_scene_from_camera("cornell_box", cornell_rig.cameras[0], 64);
+
+    renderer.prepare_scene(packed_cornell_scene);
+    const rt::RadianceFrame cornell_short_accumulation =
+        accumulate_stationary_frame(renderer, cornell_rig, preview_profile, converge_profile, "cornell_box", cornell_pose, 4);
+    const rt::RadianceFrame cornell_long_accumulation =
+        accumulate_stationary_frame(renderer, cornell_rig, preview_profile, converge_profile, "cornell_box", cornell_pose, 24);
+    const double cornell_short_error = compute_mae_to_reference(cornell_short_accumulation, cornell_reference);
+    const double cornell_long_error = compute_mae_to_reference(cornell_long_accumulation, cornell_reference);
+    expect_true(cornell_long_error <= cornell_short_error + 0.02,
+        "black-background stationary accumulation should not drift farther from the CPU reference over time");
     return 0;
 }

@@ -554,6 +554,9 @@ void OptixRenderer::launch_radiance_pipeline(const PackedScene& scene, const Pac
     params.height = rig.cameras[camera_index].height;
     params.sample_stream = launch_sample_stream_++;
     params.active_camera = make_active_camera(rig.cameras[camera_index]);
+    params.background[0] = static_cast<float>(scene.background.x());
+    params.background[1] = static_cast<float>(scene.background.y());
+    params.background[2] = static_cast<float>(scene.background.z());
     allocate_frame_buffers(params.width, params.height);
     params.frame = device_frame_;
     params.scene.spheres = device_spheres_;

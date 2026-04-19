@@ -63,6 +63,27 @@ double compute_cpu_reference_mean_luminance() {
 }  // namespace
 
 int main() {
+    rt::SceneDescription background_only_scene;
+    background_only_scene.background = Eigen::Vector3d {0.70, 0.80, 1.00};
+    const int hidden_material =
+        background_only_scene.add_material(rt::LambertianMaterial {Eigen::Vector3d {0.2, 0.2, 0.2}});
+    background_only_scene.add_sphere(
+        rt::SpherePrimitive {hidden_material, Eigen::Vector3d {1000.0, 1000.0, 1000.0}, 1.0, false});
+
+    rt::CameraRig background_rig;
+    background_rig.add_pinhole(rt::Pinhole32Params {150.0, 150.0, 16.0, 16.0, 0.0, 0.0, 0.0, 0.0, 0.0},
+        Eigen::Isometry3d::Identity(), 32, 32);
+
+    rt::RenderProfile background_profile = rt::RenderProfile::realtime_default();
+    background_profile.samples_per_pixel = 8;
+    background_profile.max_bounces = 4;
+
+    rt::OptixRenderer background_renderer;
+    const rt::RadianceFrame background_frame =
+        background_renderer.render_radiance(background_only_scene.pack(), background_rig.pack(), background_profile, 0);
+    expect_true(background_frame.average_luminance > 0.70,
+        "realtime miss rays should preserve bright non-black background luminance");
+
     rt::SceneDescription scene;
     const int diffuse = scene.add_material(rt::LambertianMaterial {Eigen::Vector3d {0.75, 0.25, 0.2}});
     const int light = scene.add_material(rt::DiffuseLightMaterial {Eigen::Vector3d {10.0, 10.0, 10.0}});

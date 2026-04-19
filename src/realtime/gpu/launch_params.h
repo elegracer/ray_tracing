@@ -79,6 +79,7 @@ struct LaunchParams {
     DeviceFrameBuffers frame {};
     DeviceSceneView scene {};
     DeviceActiveCamera active_camera {};
+    float background[3] {};
     int width = 0;
     int height = 0;
     std::uint32_t sample_stream = 0;

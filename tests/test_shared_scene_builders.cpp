@@ -51,6 +51,11 @@ int main() {
     expect_true(final_room_view != nullptr, "final_room realtime preset exists");
     expect_true(final_room_view->base_move_speed > 0.0, "final_room move speed is positive");
 
+    expect_vec3_near(rt::scene::scene_background("bouncing_spheres"), Eigen::Vector3d(0.70, 0.80, 1.00), 1e-12,
+        "bouncing_spheres shared background preserved");
+    expect_vec3_near(rt::scene::scene_background("final_room"), Eigen::Vector3d::Zero(), 1e-12,
+        "final_room shared background stays black");
+
     bool build_unknown_threw = false;
     try {
         (void)rt::scene::build_scene("unknown");
@@ -66,6 +71,14 @@ int main() {
         cpu_preset_unknown_threw = true;
     }
     expect_true(cpu_preset_unknown_threw, "unknown cpu preset throws");
+
+    bool background_unknown_threw = false;
+    try {
+        (void)rt::scene::scene_background("unknown");
+    } catch (...) {
+        background_unknown_threw = true;
+    }
+    expect_true(background_unknown_threw, "unknown scene background throws");
 
     for (std::string_view id : expected_ids) {
         const rt::SceneCatalogEntry* entry = rt::find_scene_catalog_entry(id);

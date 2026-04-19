@@ -1,4 +1,5 @@
 #include "realtime/render_profile.h"
+#include "realtime/display_transfer.h"
 #include "realtime/realtime_scene_factory.h"
 #include "realtime/scene_catalog.h"
 #include "realtime/gpu/renderer_pool.h"
@@ -65,8 +66,6 @@ constexpr std::array<ViewerPanel, 4> kViewerPanels {{
     {.camera_index = 3, .column = 0, .row = 1},
     {.camera_index = 2, .column = 1, .row = 1},
 }};
-
-float clamp01(float v) { return std::clamp(v, 0.0f, 1.0f); }
 
 constexpr float label_text_width() {
     return 3.0f * kLabelGlyphAdvance + kLabelGlyphWidth;
@@ -197,7 +196,9 @@ enum class UploadStatus {
     incomplete_frame,
 };
 
-UploadStatus to_rgba8(const rt::viewer::ResolvedBeautyFrameView& frame, std::vector<std::uint8_t>& rgba8) {
+UploadStatus upload_texture(GLuint texture,
+    const rt::viewer::ResolvedBeautyFrameView& frame,
+    std::vector<std::uint8_t>& scratch) {
     if (frame.width != kViewWidth || frame.height != kViewHeight) {
         return UploadStatus::resolution_mismatch;
     }
@@ -209,27 +210,12 @@ UploadStatus to_rgba8(const rt::viewer::ResolvedBeautyFrameView& frame, std::vec
         return UploadStatus::incomplete_frame;
     }
 
-    rgba8.resize(expected);
+    scratch.resize(expected);
     for (std::size_t p = 0; p < pixel_count; ++p) {
-        const float r = clamp01(frame.beauty_rgba[p * 4 + 0]);
-        const float g = clamp01(frame.beauty_rgba[p * 4 + 1]);
-        const float b = clamp01(frame.beauty_rgba[p * 4 + 2]);
-
-        rgba8[p * 4 + 0] = static_cast<std::uint8_t>(std::lround(r * 255.0f));
-        rgba8[p * 4 + 1] = static_cast<std::uint8_t>(std::lround(g * 255.0f));
-        rgba8[p * 4 + 2] = static_cast<std::uint8_t>(std::lround(b * 255.0f));
-        rgba8[p * 4 + 3] = 255;
-    }
-
-    return UploadStatus::ok;
-}
-
-UploadStatus upload_texture(GLuint texture,
-    const rt::viewer::ResolvedBeautyFrameView& frame,
-    std::vector<std::uint8_t>& scratch) {
-    const UploadStatus status = to_rgba8(frame, scratch);
-    if (status != UploadStatus::ok) {
-        return status;
+        scratch[p * 4 + 0] = rt::linear_to_display_u8(frame.beauty_rgba[p * 4 + 0]);
+        scratch[p * 4 + 1] = rt::linear_to_display_u8(frame.beauty_rgba[p * 4 + 1]);
+        scratch[p * 4 + 2] = rt::linear_to_display_u8(frame.beauty_rgba[p * 4 + 2]);
+        scratch[p * 4 + 3] = 255;
     }
 
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);

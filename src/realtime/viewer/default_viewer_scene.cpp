@@ -19,7 +19,7 @@ RenderProfile default_viewer_profile() {
 RenderProfile default_viewer_preview_profile() {
     return RenderProfile {
         .samples_per_pixel = 1,
-        .max_bounces = 3,
+        .max_bounces = 4,
         .enable_denoise = false,
         .rr_start_bounce = 2,
         .accumulation_reset_rotation_deg = 2.0,

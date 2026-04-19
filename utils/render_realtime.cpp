@@ -1,6 +1,7 @@
 #include "core/version.h"
 
 #include "realtime/camera_rig.h"
+#include "realtime/display_transfer.h"
 #include "realtime/gpu/denoiser.h"
 #include "realtime/gpu/renderer_pool.h"
 #include "realtime/profiling/benchmark_report.h"
@@ -49,13 +50,10 @@ cv::Mat make_beauty_image(const rt::RadianceFrame& frame) {
         for (int x = 0; x < frame.width; ++x) {
             const std::size_t pixel_index = static_cast<std::size_t>(y * frame.width + x);
             const std::size_t rgba_index = pixel_index * 4U;
-            const float r = std::clamp(frame.beauty_rgba[rgba_index + 0], 0.0f, 1.0f);
-            const float g = std::clamp(frame.beauty_rgba[rgba_index + 1], 0.0f, 1.0f);
-            const float b = std::clamp(frame.beauty_rgba[rgba_index + 2], 0.0f, 1.0f);
             image.at<cv::Vec3b>(y, x) = cv::Vec3b {
-                static_cast<std::uint8_t>(255.0f * b),
-                static_cast<std::uint8_t>(255.0f * g),
-                static_cast<std::uint8_t>(255.0f * r),
+                rt::linear_to_display_u8(frame.beauty_rgba[rgba_index + 2]),
+                rt::linear_to_display_u8(frame.beauty_rgba[rgba_index + 1]),
+                rt::linear_to_display_u8(frame.beauty_rgba[rgba_index + 0]),
             };
         }
     }

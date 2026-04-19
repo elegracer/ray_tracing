@@ -37,7 +37,7 @@ int main() {
 
     const rt::RenderProfile viewer_preview = rt::viewer::default_viewer_preview_profile();
     expect_true(viewer_preview.samples_per_pixel == 1, "viewer preview spp");
-    expect_true(viewer_preview.max_bounces == 3, "viewer preview bounce budget");
+    expect_true(viewer_preview.max_bounces == 4, "viewer preview bounce budget");
     expect_true(!viewer_preview.enable_denoise, "viewer preview denoise disabled");
     expect_true(viewer_preview.rr_start_bounce == 2, "viewer preview rr start");
     expect_true(viewer_preview.accumulation_reset_rotation_deg == 2.0, "viewer preview accumulation rotation");

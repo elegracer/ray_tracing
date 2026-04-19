@@ -233,6 +233,14 @@ target_sources(test_viewer_quality_controller
 target_link_libraries(test_viewer_quality_controller PRIVATE core)
 add_test(NAME test_viewer_quality_controller COMMAND test_viewer_quality_controller)
 
+add_executable(test_display_transfer)
+target_sources(test_display_transfer
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_display_transfer.cpp
+)
+target_link_libraries(test_display_transfer PRIVATE core)
+add_test(NAME test_display_transfer COMMAND test_display_transfer)
+
 add_executable(test_viewer_quality_reference)
 target_sources(test_viewer_quality_reference
     PRIVATE

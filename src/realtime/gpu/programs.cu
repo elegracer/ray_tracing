@@ -39,6 +39,7 @@ struct PathState {
 };
 
 __device__ PathState trace_primary_ray(const LaunchParams& params, int x, int y);
+__device__ float3 scene_background(const LaunchParams& params);
 __device__ void accumulate_direct_light(const LaunchParams& params, const HitInfo& hit, PathState& state);
 __device__ void sample_bsdf(const LaunchParams& params, const HitInfo& hit, std::uint32_t& rng, PathState& state);
 
@@ -717,6 +718,7 @@ __global__ void radiance_kernel(const LaunchParams* params_ptr) {
         for (int bounce = 0; bounce < max_bounces && state.alive; ++bounce) {
             HitInfo hit = intersect_scene(params.scene, state.ray, kRayEpsilon, kRayFar, &rng);
             if (!hit.hit) {
+                state.radiance = add3(state.radiance, mul3(state.throughput, scene_background(params)));
                 state.alive = false;
                 break;
             }
@@ -782,6 +784,10 @@ __device__ PathState trace_primary_ray(const LaunchParams& params, int x, int y)
     state.ray.origin = camera_origin(camera);
     state.ray.direction = transform_direction(camera, dir_camera);
     return state;
+}
+
+__device__ float3 scene_background(const LaunchParams& params) {
+    return make_float3(params.background[0], params.background[1], params.background[2]);
 }
 
 __device__ void accumulate_direct_light(const LaunchParams& params, const HitInfo& hit, PathState& state) {

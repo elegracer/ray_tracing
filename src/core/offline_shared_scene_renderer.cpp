@@ -27,7 +27,6 @@ void configure_offline_camera(const scene::CpuRenderPreset& preset, const int sa
     cam.lookfrom = preset.camera.lookfrom;
     cam.lookat = preset.camera.lookat;
     cam.vup = preset.camera.vup;
-    cam.background = preset.camera.background;
     cam.defocus_angle = preset.camera.defocus_angle;
     cam.focus_dist = preset.camera.focus_dist;
 }
@@ -91,6 +90,7 @@ cv::Mat render_shared_scene(std::string_view scene_id, const int samples_per_pix
 
     Camera cam;
     configure_offline_camera(*preset, resolved_spp, cam);
+    cam.background = scene::scene_background(scene_id);
     cam.render(adapted.world, adapted.lights);
     return cam.img.clone();
 }
@@ -113,6 +113,7 @@ cv::Mat render_shared_scene_from_camera(std::string_view scene_id, const PackedC
     Camera cam;
     configure_offline_camera(*preset, resolved_spp, cam);
     configure_camera_from_packed(camera, resolved_spp, cam);
+    cam.background = scene::scene_background(scene_id);
     cam.render(adapted.world, adapted.lights);
     return cam.img.clone();
 }

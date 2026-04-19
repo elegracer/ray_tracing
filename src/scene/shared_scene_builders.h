@@ -11,6 +11,7 @@ namespace rt::scene {
 struct SceneMetadata {
     std::string_view id;
     std::string_view label;
+    Eigen::Vector3d background = Eigen::Vector3d::Zero();
     bool supports_cpu_render = false;
     bool supports_realtime = false;
 };
@@ -23,7 +24,6 @@ struct CpuCameraPreset {
     Eigen::Vector3d lookfrom = Eigen::Vector3d::Zero();
     Eigen::Vector3d lookat = Eigen::Vector3d::Zero();
     Eigen::Vector3d vup = Eigen::Vector3d::UnitY();
-    Eigen::Vector3d background = Eigen::Vector3d(0.70, 0.80, 1.00);
     double defocus_angle = 0.0;
     double focus_dist = 10.0;
 };
@@ -48,6 +48,7 @@ const SceneMetadata* find_scene_metadata(std::string_view scene_id);
 const CpuRenderPreset* find_cpu_render_preset(std::string_view scene_id, std::string_view preset_id);
 const CpuRenderPreset* default_cpu_render_preset(std::string_view scene_id);
 const RealtimeViewPreset* find_realtime_view_preset(std::string_view scene_id);
+Eigen::Vector3d scene_background(std::string_view scene_id);
 
 SceneIR build_scene(std::string_view scene_id);
 

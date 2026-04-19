@@ -9,6 +9,8 @@ namespace {
 
 constexpr float kMaxSanitizedBeautyValue = 64.0f;
 constexpr float kHistoryClampMultiplier = 1.5f;
+constexpr float kDarkHistoryClampMultiplier = 4.0f;
+constexpr float kDarkHistoryThreshold = 0.5f;
 constexpr float kHistoryClampFloor = 0.75f;
 
 double pose_translation_delta(const BodyPose& a, const BodyPose& b) {
@@ -39,12 +41,13 @@ float sanitized_value(float candidate, float fallback) {
     return is_valid_beauty_value(candidate) ? candidate : fallback;
 }
 
-float clamped_history_value(float candidate, float fallback, bool clamp_to_history) {
+float bounded_history_value(float candidate, float fallback, bool clamp_to_history) {
     const float sanitized = sanitized_value(candidate, fallback);
     if (!clamp_to_history) {
         return sanitized;
     }
-    const float allowed_max = std::max(fallback * kHistoryClampMultiplier, kHistoryClampFloor);
+    const float clamp_multiplier = fallback < kDarkHistoryThreshold ? kDarkHistoryClampMultiplier : kHistoryClampMultiplier;
+    const float allowed_max = std::max(fallback * clamp_multiplier, kHistoryClampFloor);
     return std::min(sanitized, allowed_max);
 }
 
@@ -122,7 +125,7 @@ ResolvedBeautyFrameView ViewerQualityController::resolve_beauty_view(int camera_
         for (std::size_t i = 0; i < expected_beauty_size; ++i) {
             const float previous = history.beauty_rgba[i];
             const bool clamp_to_history = (i % 4) != 3;
-            const float current = clamped_history_value(raw_frame.beauty_rgba[i], previous, clamp_to_history);
+            const float current = bounded_history_value(raw_frame.beauty_rgba[i], previous, clamp_to_history);
             history.beauty_rgba[i] = previous + (current - previous) * blend;
         }
         history.history_length = next_history_length;

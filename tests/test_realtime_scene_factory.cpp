@@ -12,6 +12,12 @@ int main() {
 
     const rt::PackedScene final_room = rt::make_realtime_scene("final_room").pack();
     expect_true(final_room.quad_count >= 7, "final_room quads");
+    expect_vec3_near(final_room.background, Eigen::Vector3d::Zero(), 1e-12,
+        "final_room realtime scene keeps black background");
+
+    const rt::PackedScene bouncing = rt::make_realtime_scene("bouncing_spheres").pack();
+    expect_vec3_near(bouncing.background, Eigen::Vector3d(0.70, 0.80, 1.00), 1e-12,
+        "bouncing_spheres realtime scene keeps shared sky background");
 
     const rt::PackedScene cornell_box = rt::make_realtime_scene("cornell_box").pack();
     expect_true(cornell_box.quad_count >= 12, "cornell_box box lowers to quads");
