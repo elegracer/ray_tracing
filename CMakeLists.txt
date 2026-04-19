@@ -92,6 +92,7 @@ target_sources(core
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/cpu_scene_adapter.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/realtime_scene_adapter.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/realtime_scene_adapter.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/scene_definition.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/shared_scene_ir.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/shared_scene_builders.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/camera_models.cpp
@@ -258,6 +259,14 @@ target_sources(test_scene_description
 )
 target_link_libraries(test_scene_description PRIVATE core)
 add_test(NAME test_scene_description COMMAND test_scene_description)
+
+add_executable(test_scene_definition)
+target_sources(test_scene_definition
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_scene_definition.cpp
+)
+target_link_libraries(test_scene_definition PRIVATE core)
+add_test(NAME test_scene_definition COMMAND test_scene_definition)
 
 add_executable(test_realtime_texture_materials)
 target_sources(test_realtime_texture_materials
