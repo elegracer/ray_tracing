@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-04-19)
 
 **Core value:** Camera behavior must stay consistent across offline and realtime rendering so the same scene and rig produce the intended image no matter which path is used.
-**Current focus:** Phase 1 - Shared Camera Schema
+**Current focus:** Phase 2 - Offline CPU Camera Models
 
 ## Current Position
 
-Phase: 1 of 5 (Shared Camera Schema)
-Plan: 3 of 3 in current phase
-Status: Ready to verify
-Last activity: 2026-04-20 - Phase 1 execution completed; all three shared camera schema plans have summaries and are awaiting verification
+Phase: 2 of 5 (Offline CPU Camera Models)
+Plan: 0 of TBD in current phase
+Status: Ready to discuss
+Last activity: 2026-04-20 - Phase 1 verification completed with all UAT checkpoints passing
 
 Progress: [██░░░░░░░░] 20%
 
@@ -65,5 +65,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-20 00:00
-Stopped at: Phase 1 execution finished; next step is verify-work for the shared camera schema
-Resume file: .planning/phases/01-shared-camera-schema/01-03-SUMMARY.md
+Stopped at: Phase 1 verified complete; next step is discuss Phase 2
+Resume file: .planning/ROADMAP.md
