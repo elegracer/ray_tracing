@@ -118,6 +118,27 @@ int main() {
 
     controller.reset_all();
     begin_converged_frame(controller, pose);
+    rt::RadianceFrame stale_first = make_frame(1, 1, 0.20f);
+    stale_first.beauty_rgba[3] = 1.0f;
+    rt::RadianceFrame stale_second = make_frame(1, 1, 0.60f);
+    stale_second.beauty_rgba[3] = 1.0f;
+    controller.resolve_frame(0, stale_first);
+    controller.resolve_frame(0, stale_second);
+    expect_true(controller.history_length(0) == 2, "accumulation starts before malformed frame regression");
+
+    rt::RadianceFrame undersized_frame = make_frame(1, 1, 0.80f);
+    undersized_frame.beauty_rgba.resize(3);
+    controller.resolve_frame(0, undersized_frame);
+    expect_true(controller.history_length(0) == 0, "undersized converge frame clears stale camera history");
+
+    rt::RadianceFrame restarted_frame = make_frame(1, 1, 0.90f);
+    restarted_frame.beauty_rgba[3] = 1.0f;
+    const rt::RadianceFrame restarted_resolve = controller.resolve_frame(0, restarted_frame);
+    expect_true(controller.history_length(0) == 1, "next valid converge frame restarts history from one sample");
+    expect_near(restarted_resolve.beauty_rgba[0], 0.90f, 1e-6, "next valid converge frame does not blend with stale history");
+
+    controller.reset_all();
+    begin_converged_frame(controller, pose);
     rt::RadianceFrame valid_history = make_frame(1, 1, 0.50f);
     valid_history.beauty_rgba[1] = 0.25f;
     valid_history.beauty_rgba[2] = 0.75f;

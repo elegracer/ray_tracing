@@ -65,6 +65,7 @@ RadianceFrame ViewerQualityController::resolve_frame(int camera_index, const Rad
     const std::size_t expected_beauty_size =
         static_cast<std::size_t>(raw_frame.width) * static_cast<std::size_t>(raw_frame.height) * 4;
     if (raw_frame.width <= 0 || raw_frame.height <= 0 || raw_frame.beauty_rgba.size() < expected_beauty_size) {
+        history = {};
         return raw_frame;
     }
 
