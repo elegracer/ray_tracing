@@ -14,6 +14,14 @@ double pose_rotation_delta_deg(const BodyPose& a, const BodyPose& b) {
     return std::max(std::abs(a.yaw_deg - b.yaw_deg), std::abs(a.pitch_deg - b.pitch_deg));
 }
 
+bool is_valid_beauty_value(float value) {
+    return std::isfinite(value) && value >= 0.0f && value <= 64.0f;
+}
+
+float sanitized_value(float candidate, float fallback) {
+    return is_valid_beauty_value(candidate) ? candidate : fallback;
+}
+
 }  // namespace
 
 ViewerQualityController::ViewerQualityController(RenderProfile preview_profile, RenderProfile converge_profile)
@@ -39,6 +47,12 @@ void ViewerQualityController::begin_frame(std::string_view scene_id, const BodyP
 
 RadianceFrame ViewerQualityController::resolve_frame(int camera_index, const RadianceFrame& raw_frame) {
     CameraHistory& history = history_for(camera_index);
+    const std::size_t expected_beauty_size =
+        static_cast<std::size_t>(raw_frame.width) * static_cast<std::size_t>(raw_frame.height) * 4;
+    if (raw_frame.width <= 0 || raw_frame.height <= 0 || raw_frame.beauty_rgba.size() < expected_beauty_size) {
+        return raw_frame;
+    }
+
     if (history.width != raw_frame.width || history.height != raw_frame.height) {
         history = {};
     }
@@ -50,14 +64,27 @@ RadianceFrame ViewerQualityController::resolve_frame(int camera_index, const Rad
 
     history.width = raw_frame.width;
     history.height = raw_frame.height;
-    history.beauty_rgba = raw_frame.beauty_rgba;
     if (history.history_length == 0) {
+        history.beauty_rgba.resize(expected_beauty_size);
+        for (std::size_t i = 0; i < expected_beauty_size; ++i) {
+            const float fallback = (i % 4 == 3) ? 1.0f : 0.0f;
+            history.beauty_rgba[i] = sanitized_value(raw_frame.beauty_rgba[i], fallback);
+        }
         history.history_length = 1;
     } else {
-        ++history.history_length;
+        const int next_history_length = history.history_length + 1;
+        const float blend = 1.0f / static_cast<float>(next_history_length);
+        for (std::size_t i = 0; i < expected_beauty_size; ++i) {
+            const float previous = history.beauty_rgba[i];
+            const float current = sanitized_value(raw_frame.beauty_rgba[i], previous);
+            history.beauty_rgba[i] = previous + (current - previous) * blend;
+        }
+        history.history_length = next_history_length;
     }
 
-    return raw_frame;
+    RadianceFrame resolved = raw_frame;
+    resolved.beauty_rgba = history.beauty_rgba;
+    return resolved;
 }
 
 void ViewerQualityController::reset_all() {

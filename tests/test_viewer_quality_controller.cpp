@@ -2,6 +2,8 @@
 #include "realtime/viewer/viewer_quality_controller.h"
 #include "test_support.h"
 
+#include <limits>
+
 namespace {
 
 rt::RadianceFrame make_frame(int width, int height, float value) {
@@ -55,9 +57,11 @@ int main() {
     const rt::RadianceFrame resolved_first = controller.resolve_frame(0, converge_frame);
     expect_true(resolved_first.width == converge_frame.width, "resolve returns raw frame width");
     expect_true(controller.history_length(0) == 1, "first converge resolve initializes history");
+    const rt::RadianceFrame resolved_second = controller.resolve_frame(0, converge_frame);
+    expect_true(controller.history_length(0) == 2, "repeated converge resolves grow history to two frames");
+    expect_true(resolved_second.beauty_rgba[0] == 1.0f, "identical converge frames keep accumulated beauty");
     controller.resolve_frame(0, converge_frame);
-    controller.resolve_frame(0, converge_frame);
-    expect_true(controller.history_length(0) == 3, "repeated converge resolves grow history");
+    expect_true(controller.history_length(0) == 3, "later converge resolves continue growing history");
 
     controller.resolve_frame(1, converge_frame);
     expect_true(controller.history_length(1) == 1, "other camera maintains independent history");
@@ -84,6 +88,38 @@ int main() {
     controller.resolve_frame(1, converge_frame);
     expect_true(controller.history_length(0) == 1, "camera 0 repopulates history after reconverge");
     expect_true(controller.history_length(1) == 1, "camera 1 repopulates history after reconverge");
+
+    controller.reset_all();
+    begin_converged_frame(controller, pose);
+    rt::RadianceFrame average_first = make_frame(1, 1, 0.20f);
+    average_first.beauty_rgba[3] = 1.0f;
+    rt::RadianceFrame average_second = make_frame(1, 1, 0.60f);
+    average_second.beauty_rgba[3] = 1.0f;
+    const rt::RadianceFrame averaged_first = controller.resolve_frame(0, average_first);
+    const rt::RadianceFrame averaged_second = controller.resolve_frame(0, average_second);
+    expect_near(averaged_first.beauty_rgba[0], 0.20f, 1e-6, "first converge frame seeds accumulated beauty");
+    expect_near(averaged_second.beauty_rgba[0], 0.40f, 1e-6, "converge mode averages beauty across frames");
+    expect_true(controller.history_length(0) == 2, "averaging path increments history length");
+
+    controller.reset_all();
+    begin_converged_frame(controller, pose);
+    rt::RadianceFrame valid_history = make_frame(1, 1, 0.50f);
+    valid_history.beauty_rgba[1] = 0.25f;
+    valid_history.beauty_rgba[2] = 0.75f;
+    valid_history.beauty_rgba[3] = 1.0f;
+    const rt::RadianceFrame seeded_history = controller.resolve_frame(0, valid_history);
+
+    rt::RadianceFrame invalid_frame = make_frame(1, 1, 0.60f);
+    invalid_frame.beauty_rgba[0] = -1.0f;
+    invalid_frame.beauty_rgba[1] = std::numeric_limits<float>::quiet_NaN();
+    invalid_frame.beauty_rgba[2] = std::numeric_limits<float>::infinity();
+    invalid_frame.beauty_rgba[3] = std::numeric_limits<float>::quiet_NaN();
+    const rt::RadianceFrame sanitized = controller.resolve_frame(0, invalid_frame);
+    expect_true(sanitized.beauty_rgba[0] == seeded_history.beauty_rgba[0], "negative beauty falls back to previous history");
+    expect_true(sanitized.beauty_rgba[1] == seeded_history.beauty_rgba[1], "nan beauty falls back to previous history");
+    expect_true(sanitized.beauty_rgba[2] == seeded_history.beauty_rgba[2], "inf beauty falls back to previous history");
+    expect_true(sanitized.beauty_rgba[3] == seeded_history.beauty_rgba[3], "invalid alpha falls back to previous history");
+    expect_true(controller.history_length(0) == 2, "sanitized converge frame still advances history");
 
     controller.reset_all();
     expect_true(controller.active_mode() == rt::viewer::ViewerQualityMode::preview, "reset_all returns preview mode");
