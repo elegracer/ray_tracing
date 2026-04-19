@@ -1,16 +1,21 @@
 #include "scene/yaml_scene_loader.h"
 
+#include "scene/obj_mtl_importer.h"
+
 #include "yaml-cpp/yaml.h"
 
+#include <type_traits>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace rt::scene {
 namespace {
 
 using IdTable = std::unordered_map<std::string, int>;
+using StringSet = std::unordered_set<std::string>;
 
 std::string scene_error_prefix(const std::filesystem::path& scene_file) {
     return scene_file.string() + ": ";
@@ -18,6 +23,15 @@ std::string scene_error_prefix(const std::filesystem::path& scene_file) {
 
 std::runtime_error scene_error(const std::filesystem::path& scene_file, std::string_view message) {
     return std::runtime_error(scene_error_prefix(scene_file) + std::string(message));
+}
+
+bool has_file_error_prefix(std::string_view message) {
+    const std::size_t separator = message.find(": ");
+    if (separator == std::string_view::npos) {
+        return false;
+    }
+    const std::string_view prefix = message.substr(0, separator);
+    return prefix.find('/') != std::string_view::npos || prefix.find('\\') != std::string_view::npos;
 }
 
 void ensure_map(const YAML::Node& node, std::string_view field_name) {
@@ -35,6 +49,13 @@ void ensure_sequence(const YAML::Node& node, std::string_view field_name) {
 void ensure_unique_id(const IdTable& ids, const std::string& id, std::string_view kind) {
     if (ids.find(id) != ids.end()) {
         throw std::runtime_error("duplicate " + std::string(kind) + " id: " + id);
+    }
+}
+
+void append_unique_dependency(std::vector<std::string>& dependencies, StringSet& seen, const std::filesystem::path& path) {
+    const std::string normalized = path.lexically_normal().string();
+    if (seen.insert(normalized).second) {
+        dependencies.push_back(normalized);
     }
 }
 
@@ -87,7 +108,7 @@ Transform parse_transform(const YAML::Node& node) {
 }
 
 void parse_textures(const YAML::Node& textures_node, const std::filesystem::path& scene_directory, SceneDefinition& out,
-    IdTable& texture_ids) {
+    IdTable& texture_ids, StringSet& dependency_set) {
     if (!textures_node) {
         return;
     }
@@ -118,7 +139,7 @@ void parse_textures(const YAML::Node& textures_node, const std::filesystem::path
                 texture_path = scene_directory / texture_path;
             }
             texture_path = texture_path.lexically_normal();
-            out.dependencies.push_back(texture_path.string());
+            append_unique_dependency(out.dependencies, dependency_set, texture_path);
             texture_ids.emplace(id, out.scene_ir.add_texture(ImageTextureDesc {.path = texture_path.string()}));
             continue;
         }
@@ -240,12 +261,12 @@ void parse_instances(const YAML::Node& instances_node, SceneIR& scene_ir, const 
     }
 }
 
-void parse_media(const YAML::Node& media_node, SceneIR& scene_ir, const IdTable& shape_ids, const IdTable& material_ids) {
+void parse_media(const YAML::Node& media_node, SceneIR& scene_ir, const IdTable& shape_ids, const IdTable& material_ids,
+    IdTable& medium_ids) {
     if (!media_node) {
         return;
     }
     ensure_map(media_node, "scene.media");
-    IdTable medium_ids;
 
     for (const auto& medium_entry : media_node) {
         const std::string id = medium_entry.first.as<std::string>();
@@ -299,13 +320,11 @@ CpuCameraPreset parse_camera_preset(const YAML::Node& node) {
 }
 
 void parse_cpu_presets(const YAML::Node& cpu_presets_node, const std::string& scene_id,
-    std::vector<SceneDefinitionCpuRenderPreset>& cpu_presets) {
+    std::vector<SceneDefinitionCpuRenderPreset>& cpu_presets, IdTable& preset_ids) {
     if (!cpu_presets_node) {
         return;
     }
     ensure_map(cpu_presets_node, "cpu_presets");
-
-    IdTable preset_ids;
 
     for (const auto& preset_entry : cpu_presets_node) {
         const std::string preset_id = preset_entry.first.as<std::string>();
@@ -372,52 +391,212 @@ RealtimeViewPreset parse_realtime_preset(const YAML::Node& node) {
     return preset;
 }
 
+void parse_realtime_section(const YAML::Node& realtime_node, std::optional<RealtimeViewPreset>& realtime_preset) {
+    if (realtime_node.IsDefined() && !realtime_node.IsMap()) {
+        throw std::runtime_error("realtime must be a map");
+    }
+    if (!realtime_node.IsDefined()) {
+        return;
+    }
+
+    const YAML::Node default_view = realtime_node["default_view"];
+    if (!default_view.IsDefined()) {
+        return;
+    }
+    if (realtime_preset.has_value()) {
+        throw std::runtime_error("duplicate realtime preset");
+    }
+    realtime_preset = parse_realtime_preset(default_view);
+}
+
+TextureDesc remap_texture_desc(const TextureDesc& texture_desc) {
+    return texture_desc;
+}
+
+MaterialDesc remap_material_desc(const MaterialDesc& material_desc, int texture_offset) {
+    return std::visit(
+        [texture_offset](const auto& material) -> MaterialDesc {
+            using T = std::decay_t<decltype(material)>;
+            if constexpr (std::is_same_v<T, DiffuseMaterial>) {
+                return DiffuseMaterial {.albedo_texture = material.albedo_texture + texture_offset};
+            } else if constexpr (std::is_same_v<T, MetalMaterial>) {
+                return MetalMaterial {
+                    .albedo_texture = material.albedo_texture + texture_offset,
+                    .fuzz = material.fuzz,
+                };
+            } else if constexpr (std::is_same_v<T, DielectricMaterial>) {
+                return material;
+            } else if constexpr (std::is_same_v<T, EmissiveMaterial>) {
+                return EmissiveMaterial {.emission_texture = material.emission_texture + texture_offset};
+            } else if constexpr (std::is_same_v<T, IsotropicVolumeMaterial>) {
+                return IsotropicVolumeMaterial {.albedo_texture = material.albedo_texture + texture_offset};
+            } else {
+                static_assert(!sizeof(T*), "unsupported material type");
+            }
+        },
+        material_desc);
+}
+
+ShapeDesc remap_shape_desc(const ShapeDesc& shape_desc) {
+    return shape_desc;
+}
+
+void append_imported_scene_ir(SceneIR& dst, const SceneIR& src) {
+    const int texture_offset = static_cast<int>(dst.textures().size());
+    const int material_offset = static_cast<int>(dst.materials().size());
+    const int shape_offset = static_cast<int>(dst.shapes().size());
+
+    for (const TextureDesc& texture : src.textures()) {
+        dst.add_texture(remap_texture_desc(texture));
+    }
+    for (const MaterialDesc& material : src.materials()) {
+        dst.add_material(remap_material_desc(material, texture_offset));
+    }
+    for (const ShapeDesc& shape : src.shapes()) {
+        dst.add_shape(remap_shape_desc(shape));
+    }
+    for (const SurfaceInstance& instance : src.surface_instances()) {
+        dst.add_instance(SurfaceInstance {
+            .shape_index = instance.shape_index + shape_offset,
+            .material_index = instance.material_index + material_offset,
+            .transform = instance.transform,
+        });
+    }
+    for (const MediumInstance& medium : src.media()) {
+        dst.add_medium(MediumInstance {
+            .shape_index = medium.shape_index + shape_offset,
+            .material_index = medium.material_index + material_offset,
+            .density = medium.density,
+            .transform = medium.transform,
+        });
+    }
+}
+
+void parse_imports(const YAML::Node& imports_node, const std::filesystem::path& scene_directory, SceneDefinition& out,
+    StringSet& dependency_set) {
+    if (!imports_node) {
+        return;
+    }
+    ensure_map(imports_node, "imports");
+
+    for (const auto& import_entry : imports_node) {
+        const YAML::Node import_node = import_entry.second;
+        ensure_map(import_node, "import");
+        const std::string type = import_node["type"].as<std::string>();
+        if (type != "obj_mtl") {
+            throw std::runtime_error("unsupported import type: " + type);
+        }
+        if (import_node["mtl"]) {
+            throw std::runtime_error("explicit mtl overrides are not supported");
+        }
+
+        std::filesystem::path obj_path = import_node["obj"].as<std::string>();
+        if (obj_path.is_relative()) {
+            obj_path = scene_directory / obj_path;
+        }
+        obj_path = obj_path.lexically_normal();
+
+        const ObjImportResult imported = import_obj_mtl(obj_path);
+        append_imported_scene_ir(out.scene_ir, imported.scene_ir);
+        for (const std::string& dependency : imported.dependencies) {
+            append_unique_dependency(out.dependencies, dependency_set, dependency);
+        }
+    }
+}
+
+void load_scene_file(const std::filesystem::path& scene_file, bool require_format_version, bool parse_metadata,
+    SceneDefinition& out, IdTable& texture_ids, IdTable& material_ids, IdTable& shape_ids, IdTable& medium_ids,
+    IdTable& preset_ids, StringSet& dependency_set, StringSet& active_files) {
+    const std::filesystem::path normalized_scene = scene_file.lexically_normal();
+    try {
+        if (!active_files.insert(normalized_scene.string()).second) {
+            throw std::runtime_error("include cycle detected");
+        }
+
+        const YAML::Node root = YAML::LoadFile(normalized_scene.string());
+        ensure_map(root, "root");
+        if (const YAML::Node format_version = root["format_version"]) {
+            if (format_version.as<int>() != 1) {
+                throw std::runtime_error("unsupported format_version");
+            }
+        } else if (require_format_version) {
+            throw std::runtime_error("unsupported format_version");
+        }
+
+        append_unique_dependency(out.dependencies, dependency_set, normalized_scene);
+
+        const YAML::Node scene_node = root["scene"];
+        ensure_map(scene_node, "scene");
+        if (parse_metadata) {
+            if (!scene_node.IsDefined()) {
+                throw std::runtime_error("scene must be a map");
+            }
+            out.metadata.id = scene_node["id"].as<std::string>();
+            out.metadata.label = scene_node["label"].as<std::string>();
+            if (const YAML::Node background = scene_node["background"]) {
+                out.metadata.background = parse_vec3(background);
+            }
+        }
+
+        const YAML::Node includes_node = root["includes"];
+        ensure_sequence(includes_node, "includes");
+        for (const YAML::Node& include_node : includes_node) {
+            if (!include_node.IsScalar()) {
+                throw std::runtime_error("include must be a scalar path");
+            }
+            std::filesystem::path include_path = include_node.as<std::string>();
+            if (include_path.is_relative()) {
+                include_path = normalized_scene.parent_path() / include_path;
+            }
+            load_scene_file(include_path.lexically_normal(), false, false, out, texture_ids, material_ids, shape_ids,
+                medium_ids, preset_ids, dependency_set, active_files);
+        }
+
+        if (scene_node.IsDefined()) {
+            parse_textures(scene_node["textures"], normalized_scene.parent_path(), out, texture_ids, dependency_set);
+            parse_materials(scene_node["materials"], out.scene_ir, texture_ids, material_ids);
+            parse_shapes(scene_node["shapes"], out.scene_ir, shape_ids);
+            parse_instances(scene_node["instances"], out.scene_ir, shape_ids, material_ids);
+            parse_media(scene_node["media"], out.scene_ir, shape_ids, material_ids, medium_ids);
+        }
+        parse_imports(root["imports"], normalized_scene.parent_path(), out, dependency_set);
+        parse_cpu_presets(root["cpu_presets"], out.metadata.id, out.cpu_presets, preset_ids);
+        parse_realtime_section(root["realtime"], out.realtime_preset);
+
+        active_files.erase(normalized_scene.string());
+    } catch (const YAML::Exception& ex) {
+        active_files.erase(normalized_scene.string());
+        throw scene_error(normalized_scene, ex.what());
+    } catch (const std::exception& ex) {
+        active_files.erase(normalized_scene.string());
+        if (has_file_error_prefix(ex.what())) {
+            throw;
+        }
+        throw scene_error(normalized_scene, ex.what());
+    }
+}
+
 }  // namespace
 
 SceneDefinition load_scene_definition(const std::filesystem::path& scene_file) {
     try {
-        const YAML::Node root = YAML::LoadFile(scene_file.string());
-        if (const YAML::Node format_version = root["format_version"]; !format_version || format_version.as<int>() != 1) {
-            throw std::runtime_error("unsupported format_version");
-        }
-
-        const YAML::Node scene_node = root["scene"];
-        const YAML::Node realtime_node = root["realtime"];
-
         SceneDefinition out;
-        out.metadata.id = scene_node["id"].as<std::string>();
-        out.metadata.label = scene_node["label"].as<std::string>();
-        if (const YAML::Node background = scene_node["background"]) {
-            out.metadata.background = parse_vec3(background);
-        }
-        out.metadata.supports_cpu_render = root["cpu_presets"] && root["cpu_presets"].size() > 0;
-        out.metadata.supports_realtime =
-            realtime_node.IsDefined() && realtime_node.IsMap() && realtime_node["default_view"].IsDefined();
-        out.dependencies.push_back(scene_file.lexically_normal().string());
-
         IdTable texture_ids;
         IdTable material_ids;
         IdTable shape_ids;
-        parse_textures(scene_node["textures"], scene_file.parent_path(), out, texture_ids);
-        parse_materials(scene_node["materials"], out.scene_ir, texture_ids, material_ids);
-        parse_shapes(scene_node["shapes"], out.scene_ir, shape_ids);
-        parse_instances(scene_node["instances"], out.scene_ir, shape_ids, material_ids);
-        parse_media(scene_node["media"], out.scene_ir, shape_ids, material_ids);
-        parse_cpu_presets(root["cpu_presets"], out.metadata.id, out.cpu_presets);
-        if (realtime_node.IsDefined() && !realtime_node.IsMap()) {
-            throw std::runtime_error("realtime must be a map");
-        }
-        if (realtime_node.IsDefined()) {
-            const YAML::Node default_view = realtime_node["default_view"];
-            if (default_view.IsDefined()) {
-            out.realtime_preset = parse_realtime_preset(default_view);
-            }
-        }
+        IdTable medium_ids;
+        IdTable preset_ids;
+        StringSet dependency_set;
+        StringSet active_files;
+        load_scene_file(scene_file, true, true, out, texture_ids, material_ids, shape_ids, medium_ids, preset_ids,
+            dependency_set, active_files);
+        out.metadata.supports_cpu_render = !out.cpu_presets.empty();
+        out.metadata.supports_realtime = out.realtime_preset.has_value();
         return out;
     } catch (const YAML::Exception& ex) {
         throw scene_error(scene_file, ex.what());
     } catch (const std::exception& ex) {
-        if (std::string_view(ex.what()).rfind(scene_error_prefix(scene_file), 0) == 0) {
+        if (has_file_error_prefix(ex.what())) {
             throw;
         }
         throw scene_error(scene_file, ex.what());

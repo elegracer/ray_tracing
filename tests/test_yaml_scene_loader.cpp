@@ -257,6 +257,187 @@ scene:
     expect_throws_contains([&]() { rt::scene::load_scene_definition(scene_file); }, "duplicate medium id: smoke");
 }
 
+void test_includes_are_merged_and_tracked() {
+    const fs::path root = fs::temp_directory_path() / "yaml_scene_loader_include";
+    fs::remove_all(root);
+    const fs::path include_file = root / "common" / "materials.yaml";
+    const fs::path scene_file = root / "scene.yaml";
+    write_text_file(include_file, R"(scene:
+  textures:
+    white:
+      type: constant
+      color: [1.0, 1.0, 1.0]
+  materials:
+    matte:
+      type: diffuse
+      albedo: white
+)");
+    write_text_file(scene_file, R"(format_version: 1
+includes:
+  - common/materials.yaml
+scene:
+  id: include_room
+  label: Include Room
+  background: [0.0, 0.0, 0.0]
+  shapes:
+    ball:
+      type: sphere
+      center: [0.0, 0.0, 0.0]
+      radius: 1.0
+  instances:
+    - shape: ball
+      material: matte
+)");
+
+    const rt::scene::SceneDefinition loaded = rt::scene::load_scene_definition(scene_file);
+    expect_true(loaded.scene_ir.textures().size() == 1, "included texture count");
+    expect_true(loaded.scene_ir.materials().size() == 1, "included material count");
+    expect_true(loaded.scene_ir.surface_instances().size() == 1, "instance count");
+    expect_true(loaded.dependencies.size() == 2, "include dependency count");
+    expect_true(loaded.dependencies[0] == scene_file.lexically_normal().string(), "scene file dependency");
+    expect_true(loaded.dependencies[1] == include_file.lexically_normal().string(), "include dependency");
+}
+
+void test_includes_can_provide_cpu_and_realtime_presets() {
+    const fs::path root = fs::temp_directory_path() / "yaml_scene_loader_include_presets";
+    fs::remove_all(root);
+    const fs::path include_file = root / "common" / "presets.yaml";
+    const fs::path scene_file = root / "scene.yaml";
+    write_text_file(include_file, R"(cpu_presets:
+  preview:
+    samples_per_pixel: 32
+    camera:
+      image_width: 320
+realtime:
+  default_view:
+    initial_body_pose:
+      position: [1.0, 2.0, 3.0]
+      yaw_deg: 10.0
+      pitch_deg: -5.0
+    frame_convention: world_z_up
+    vfov_deg: 70.0
+    use_default_viewer_intrinsics: false
+    base_move_speed: 4.0
+)");
+    write_text_file(scene_file, R"(format_version: 1
+includes:
+  - common/presets.yaml
+scene:
+  id: include_presets
+  label: Include Presets
+)");
+
+    const rt::scene::SceneDefinition loaded = rt::scene::load_scene_definition(scene_file);
+    expect_true(loaded.metadata.supports_cpu_render, "cpu preset support");
+    expect_true(loaded.metadata.supports_realtime, "realtime preset support");
+    expect_true(loaded.cpu_presets.size() == 1, "cpu preset count");
+    expect_true(loaded.cpu_presets.front().scene_id == "include_presets", "included cpu preset scene id");
+    expect_true(loaded.cpu_presets.front().preset_id == "preview", "included cpu preset id");
+    expect_true(loaded.cpu_presets.front().samples_per_pixel == 32, "included cpu preset spp");
+    expect_true(loaded.realtime_preset.has_value(), "included realtime preset");
+    expect_true(loaded.realtime_preset->frame_convention == rt::viewer::ViewerFrameConvention::world_z_up,
+        "included realtime convention");
+    expect_true(loaded.realtime_preset->base_move_speed == 4.0, "included realtime speed");
+}
+
+void test_obj_imports_are_rebased_and_merged() {
+    const fs::path root = fs::temp_directory_path() / "yaml_scene_loader_obj_import";
+    fs::remove_all(root);
+    const fs::path scene_file = root / "scene.yaml";
+    const fs::path obj_file = root / "models" / "triangle.obj";
+    const fs::path mtl_file = root / "models" / "triangle.mtl";
+    write_text_file(obj_file,
+        "mtllib triangle.mtl\n"
+        "usemtl matte\n"
+        "v 0 0 0\n"
+        "v 1 0 0\n"
+        "v 0 1 0\n"
+        "f 1 2 3\n");
+    write_text_file(mtl_file, "newmtl matte\nKd 0.8 0.7 0.6\n");
+    write_text_file(scene_file, R"(format_version: 1
+scene:
+  id: imported_triangle
+  label: Imported Triangle
+imports:
+  triangle_mesh:
+    type: obj_mtl
+    obj: models/triangle.obj
+)");
+
+    const rt::scene::SceneDefinition loaded = rt::scene::load_scene_definition(scene_file);
+    expect_true(loaded.scene_ir.shapes().size() == 1, "imported shape count");
+    expect_true(std::holds_alternative<rt::scene::TriangleMeshShape>(loaded.scene_ir.shapes().front()),
+        "imported shape type");
+    expect_true(loaded.scene_ir.materials().size() == 1, "imported material count");
+    expect_true(loaded.scene_ir.surface_instances().size() == 1, "imported instance count");
+    expect_true(loaded.dependencies.size() == 3, "import dependencies");
+    expect_true(loaded.dependencies[1] == obj_file.lexically_normal().string(), "obj dependency");
+    expect_true(loaded.dependencies[2] == mtl_file.lexically_normal().string(), "mtl dependency");
+}
+
+void test_duplicate_medium_ids_across_includes_are_rejected() {
+    const fs::path root = fs::temp_directory_path() / "yaml_scene_loader_duplicate_medium_include";
+    fs::remove_all(root);
+    const fs::path include_file = root / "common" / "media.yaml";
+    const fs::path scene_file = root / "scene.yaml";
+    write_text_file(include_file, R"(scene:
+  textures:
+    white:
+      type: constant
+      color: [1.0, 1.0, 1.0]
+  materials:
+    fog:
+      type: isotropic
+      albedo: white
+  shapes:
+    volume:
+      type: sphere
+      center: [0.0, 0.0, 0.0]
+      radius: 1.0
+  media:
+    smoke:
+      shape: volume
+      material: fog
+      density: 0.01
+)");
+    write_text_file(scene_file, R"(format_version: 1
+includes:
+  - common/media.yaml
+scene:
+  id: duplicate_include_media
+  label: Duplicate Include Media
+  media:
+    smoke:
+      shape: volume
+      material: fog
+      density: 0.02
+)");
+
+    expect_throws_contains([&]() { rt::scene::load_scene_definition(scene_file); }, "duplicate medium id: smoke");
+}
+
+void test_include_errors_are_attributed_to_the_included_file() {
+    const fs::path root = fs::temp_directory_path() / "yaml_scene_loader_include_error_path";
+    fs::remove_all(root);
+    const fs::path include_file = root / "common" / "bad_materials.yaml";
+    const fs::path scene_file = root / "scene.yaml";
+    write_text_file(include_file, R"(scene:
+  materials: nope
+)");
+    write_text_file(scene_file, R"(format_version: 1
+includes:
+  - common/bad_materials.yaml
+scene:
+  id: include_error
+  label: Include Error
+)");
+
+    const std::string error = require_error([&]() { rt::scene::load_scene_definition(scene_file); });
+    const std::string expected_prefix = include_file.lexically_normal().string() + ": ";
+    expect_true(error.rfind(expected_prefix, 0) == 0, "include error prefix");
+    expect_true(error.find("scene.materials must be a map") != std::string::npos, "include error body");
+}
+
 void test_malformed_optional_transform_is_rejected() {
     const fs::path root = fs::temp_directory_path() / "yaml_scene_loader_bad_transform";
     fs::remove_all(root);
@@ -539,6 +720,11 @@ int main() {
     test_duplicate_material_ids_are_rejected();
     test_duplicate_shape_ids_are_rejected();
     test_duplicate_medium_ids_are_rejected();
+    test_includes_are_merged_and_tracked();
+    test_includes_can_provide_cpu_and_realtime_presets();
+    test_obj_imports_are_rebased_and_merged();
+    test_duplicate_medium_ids_across_includes_are_rejected();
+    test_include_errors_are_attributed_to_the_included_file();
     test_malformed_optional_transform_is_rejected();
     test_malformed_optional_camera_is_rejected();
     test_malformed_optional_default_view_is_rejected();

@@ -1,0 +1,36 @@
+format_version: 1
+
+scene:
+  id: imported_obj_smoke
+  label: Imported Obj Smoke
+  background: [0.0, 0.0, 0.0]
+
+imports:
+  triangle_mesh:
+    type: obj_mtl
+    obj: models/triangle.obj
+
+cpu_presets:
+  default:
+    samples_per_pixel: 64
+    camera:
+      lookfrom: [0.0, 0.0, 3.0]
+      lookat: [0.0, 0.0, 0.0]
+      vfov: 40.0
+      aspect_ratio: 1.7777778
+      image_width: 640
+      max_depth: 16
+      vup: [0.0, 1.0, 0.0]
+      defocus_angle: 0.0
+      focus_dist: 3.0
+
+realtime:
+  default_view:
+    initial_body_pose:
+      position: [0.0, 0.0, 2.0]
+      yaw_deg: 0.0
+      pitch_deg: 0.0
+    frame_convention: legacy_y_up
+    vfov_deg: 67.0
+    use_default_viewer_intrinsics: false
+    base_move_speed: 1.8

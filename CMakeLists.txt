@@ -54,6 +54,7 @@ find_path(ICECREAM_CPP_INCLUDE_DIRS "icecream.hpp")
 find_package(TBB CONFIG REQUIRED)
 find_package(indicators CONFIG REQUIRED)
 find_package(yaml-cpp CONFIG REQUIRED)
+find_package(tinyobjloader CONFIG REQUIRED)
 find_path(OPTIX_INCLUDE_DIR optix.h
     PATHS ${CMAKE_CURRENT_SOURCE_DIR}/NVIDIA-OptiX-SDK-9.1.0-linux64-x86_64
     PATH_SUFFIXES include
@@ -90,6 +91,7 @@ target_sources(core
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/offline_shared_scene_renderer.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/offline_shared_scene_renderer.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/cpu_scene_adapter.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/obj_mtl_importer.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/cpu_scene_adapter.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/realtime_scene_adapter.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/realtime_scene_adapter.h
@@ -124,6 +126,7 @@ target_link_libraries(core
         indicators::indicators
     PRIVATE
         yaml-cpp::yaml-cpp
+        tinyobjloader::tinyobjloader
 )
 
 # utils
@@ -279,6 +282,14 @@ target_sources(test_yaml_scene_loader
 )
 target_link_libraries(test_yaml_scene_loader PRIVATE core)
 add_test(NAME test_yaml_scene_loader COMMAND test_yaml_scene_loader)
+
+add_executable(test_obj_mtl_importer)
+target_sources(test_obj_mtl_importer
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_obj_mtl_importer.cpp
+)
+target_link_libraries(test_obj_mtl_importer PRIVATE core)
+add_test(NAME test_obj_mtl_importer COMMAND test_obj_mtl_importer)
 
 add_executable(test_realtime_texture_materials)
 target_sources(test_realtime_texture_materials
