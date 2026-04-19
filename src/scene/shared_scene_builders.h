@@ -8,6 +8,8 @@
 
 namespace rt::scene {
 
+struct SceneDefinition;
+
 struct SceneMetadata {
     std::string_view id;
     std::string_view label;
@@ -51,5 +53,8 @@ const RealtimeViewPreset* find_realtime_view_preset(std::string_view scene_id);
 Eigen::Vector3d scene_background(std::string_view scene_id);
 
 SceneIR build_scene(std::string_view scene_id);
+
+const std::vector<SceneDefinition>& builtin_scene_definitions();
+const SceneDefinition* find_builtin_scene_definition(std::string_view scene_id);
 
 }  // namespace rt::scene

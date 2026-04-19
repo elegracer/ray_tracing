@@ -1,5 +1,8 @@
 #include "scene/shared_scene_builders.h"
 
+#include "scene/scene_definition.h"
+#include "scene/scene_file_catalog.h"
+
 #include <Eigen/Geometry>
 
 #include <algorithm>
@@ -660,59 +663,98 @@ const RealtimePresetRegistryEntry* find_realtime_preset_registry_entry(std::stri
 
 }  // namespace
 
-const std::vector<SceneMetadata>& scene_metadata() {
-    static const std::vector<SceneMetadata> metadata = []() {
-        std::vector<SceneMetadata> out;
+const std::vector<SceneDefinition>& builtin_scene_definitions() {
+    static const std::vector<SceneDefinition> definitions = []() {
+        std::vector<SceneDefinition> out;
         out.reserve(kSceneRegistry.size());
         for (const SceneRegistryEntry& entry : kSceneRegistry) {
-            out.push_back(entry.metadata);
+            SceneDefinition definition;
+            definition.metadata.id = std::string(entry.metadata.id);
+            definition.metadata.label = std::string(entry.metadata.label);
+            definition.metadata.background = entry.metadata.background;
+            definition.metadata.supports_cpu_render = entry.metadata.supports_cpu_render;
+            definition.metadata.supports_realtime = entry.metadata.supports_realtime;
+            definition.scene_ir = entry.builder();
+
+            for (const CpuPresetRegistryEntry& preset : kCpuPresetRegistry) {
+                if (preset.preset.scene_id != entry.metadata.id) {
+                    continue;
+                }
+                definition.cpu_presets.push_back(SceneDefinitionCpuRenderPreset {
+                    .scene_id = std::string(preset.preset.scene_id),
+                    .preset_id = std::string(preset.preset.preset_id),
+                    .samples_per_pixel = preset.preset.samples_per_pixel,
+                    .camera = preset.preset.camera,
+                });
+            }
+
+            if (const RealtimePresetRegistryEntry* preset = find_realtime_preset_registry_entry(entry.metadata.id);
+                preset != nullptr) {
+                definition.realtime_preset = preset->preset;
+            }
+
+            out.push_back(std::move(definition));
         }
         return out;
     }();
-    return metadata;
+    return definitions;
+}
+
+const SceneDefinition* find_builtin_scene_definition(std::string_view scene_id) {
+    for (const SceneDefinition& definition : builtin_scene_definitions()) {
+        if (definition.metadata.id == scene_id) {
+            return &definition;
+        }
+    }
+    return nullptr;
+}
+
+const std::vector<SceneMetadata>& scene_metadata() {
+    return global_scene_file_catalog().entries();
 }
 
 const SceneMetadata* find_scene_metadata(std::string_view scene_id) {
-    const SceneRegistryEntry* entry = find_scene_registry_entry(scene_id);
-    return entry != nullptr ? &entry->metadata : nullptr;
+    for (const SceneMetadata& entry : scene_metadata()) {
+        if (entry.id == scene_id) {
+            return &entry;
+        }
+    }
+    return nullptr;
 }
 
 const CpuRenderPreset* find_cpu_render_preset(std::string_view scene_id, std::string_view preset_id) {
-    const CpuPresetRegistryEntry* entry = find_cpu_preset_registry_entry(scene_id, preset_id);
-    return entry != nullptr ? &entry->preset : nullptr;
+    return global_scene_file_catalog().find_cpu_render_preset(scene_id, preset_id);
 }
 
 const CpuRenderPreset* default_cpu_render_preset(std::string_view scene_id) {
-    const SceneRegistryEntry* scene_entry = find_scene_registry_entry(scene_id);
-    if (scene_entry == nullptr) {
+    if (find_scene_metadata(scene_id) == nullptr) {
         throw std::invalid_argument("unknown shared scene id");
     }
-    const CpuPresetRegistryEntry* preset_entry = find_default_cpu_preset_registry_entry(scene_id);
-    if (preset_entry == nullptr) {
+    const CpuRenderPreset* preset = global_scene_file_catalog().default_cpu_render_preset(scene_id);
+    if (preset == nullptr) {
         throw std::runtime_error("shared scene is missing its default CPU preset");
     }
-    return &preset_entry->preset;
+    return preset;
 }
 
 const RealtimeViewPreset* find_realtime_view_preset(std::string_view scene_id) {
-    const RealtimePresetRegistryEntry* entry = find_realtime_preset_registry_entry(scene_id);
-    return entry != nullptr ? &entry->preset : nullptr;
+    return global_scene_file_catalog().find_realtime_view_preset(scene_id);
 }
 
 Eigen::Vector3d scene_background(std::string_view scene_id) {
-    const SceneRegistryEntry* entry = find_scene_registry_entry(scene_id);
-    if (entry == nullptr) {
+    const SceneMetadata* metadata = find_scene_metadata(scene_id);
+    if (metadata == nullptr) {
         throw std::invalid_argument("unknown shared scene id");
     }
-    return entry->metadata.background;
+    return metadata->background;
 }
 
 SceneIR build_scene(std::string_view scene_id) {
-    const SceneRegistryEntry* entry = find_scene_registry_entry(scene_id);
-    if (entry == nullptr || entry->builder == nullptr) {
+    const SceneDefinition* definition = global_scene_file_catalog().find_scene(scene_id);
+    if (definition == nullptr) {
         throw std::invalid_argument("unknown shared scene id");
     }
-    return entry->builder();
+    return definition->scene_ir;
 }
 
 }  // namespace rt::scene

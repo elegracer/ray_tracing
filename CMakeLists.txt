@@ -95,6 +95,7 @@ target_sources(core
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/cpu_scene_adapter.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/realtime_scene_adapter.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/realtime_scene_adapter.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/scene_file_catalog.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/scene_definition.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/yaml_scene_loader.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/shared_scene_ir.cpp
@@ -290,6 +291,14 @@ target_sources(test_obj_mtl_importer
 )
 target_link_libraries(test_obj_mtl_importer PRIVATE core)
 add_test(NAME test_obj_mtl_importer COMMAND test_obj_mtl_importer)
+
+add_executable(test_scene_file_catalog)
+target_sources(test_scene_file_catalog
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_scene_file_catalog.cpp
+)
+target_link_libraries(test_scene_file_catalog PRIVATE core)
+add_test(NAME test_scene_file_catalog COMMAND test_scene_file_catalog)
 
 add_executable(test_realtime_texture_materials)
 target_sources(test_realtime_texture_materials
