@@ -60,8 +60,8 @@ void ViewerQualityController::begin_frame(std::string_view scene_id, const BodyP
     has_last_pose_ = true;
 }
 
-RadianceFrame ViewerQualityController::resolve_frame(int camera_index, const RadianceFrame& raw_frame) {
-    const ResolvedBeautyFrameView resolved_view = resolve_beauty_view(camera_index, raw_frame);
+RadianceFrame ViewerQualityController::materialize_frame(const ResolvedBeautyFrameView& resolved_view,
+    const RadianceFrame& raw_frame) {
     RadianceFrame resolved = raw_frame;
     resolved.average_luminance = resolved_view.average_luminance;
     resolved.beauty_rgba.assign(resolved_view.beauty_rgba.begin(), resolved_view.beauty_rgba.end());

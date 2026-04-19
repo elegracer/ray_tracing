@@ -29,7 +29,8 @@ public:
 
     void begin_frame(std::string_view scene_id, const BodyPose& pose);
     ResolvedBeautyFrameView resolve_beauty_view(int camera_index, const RadianceFrame& raw_frame);
-    RadianceFrame resolve_frame(int camera_index, const RadianceFrame& raw_frame);
+    static RadianceFrame materialize_frame(const ResolvedBeautyFrameView& resolved_beauty,
+        const RadianceFrame& raw_frame);
     void reset_all();
 
     ViewerQualityMode active_mode() const;

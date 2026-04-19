@@ -35,6 +35,13 @@ void begin_converged_frame(rt::viewer::ViewerQualityController& controller,
     expect_true(controller.active_mode() == rt::viewer::ViewerQualityMode::converge, "stable frame converges");
 }
 
+rt::RadianceFrame materialize_resolved_frame(rt::viewer::ViewerQualityController& controller,
+    int camera_index,
+    const rt::RadianceFrame& raw_frame) {
+    const rt::viewer::ResolvedBeautyFrameView resolved = controller.resolve_beauty_view(camera_index, raw_frame);
+    return rt::viewer::ViewerQualityController::materialize_frame(resolved, raw_frame);
+}
+
 }  // namespace
 
 int main() {
@@ -80,25 +87,27 @@ int main() {
     expect_true(converge_view.beauty_rgba.data() != converge_frame.beauty_rgba.data(),
         "converge beauty view aliases accumulated history instead of raw beauty");
     expect_true(controller.history_length(0) == 1, "converge beauty view initializes history");
-    const rt::RadianceFrame resolved_first = controller.resolve_frame(0, converge_frame);
+    const rt::RadianceFrame resolved_first =
+        rt::viewer::ViewerQualityController::materialize_frame(converge_view, converge_frame);
     expect_true(resolved_first.width == converge_frame.width, "resolve returns raw frame width");
-    expect_true(controller.history_length(0) == 2, "resolve_frame continues converge history after beauty view");
+    expect_true(controller.history_length(0) == 1, "materialize_frame does not advance converge history");
     const auto second_converge_view = controller.resolve_beauty_view(0, converge_frame);
     expect_true(second_converge_view.beauty_rgba.data() == converge_view.beauty_rgba.data(),
         "converge beauty view reuses the same accumulated history buffer");
-    expect_true(controller.history_length(0) == 3, "repeated converge beauty views grow history to three frames");
-    const rt::RadianceFrame resolved_second = controller.resolve_frame(0, converge_frame);
-    expect_true(controller.history_length(0) == 4, "repeated resolve_frame calls still grow converge history");
+    expect_true(controller.history_length(0) == 2, "repeated converge beauty views grow history by one frame each");
+    const rt::RadianceFrame resolved_second =
+        rt::viewer::ViewerQualityController::materialize_frame(second_converge_view, converge_frame);
+    expect_true(controller.history_length(0) == 2, "repeated materialize_frame calls still avoid history changes");
     expect_true(resolved_second.beauty_rgba[0] == 1.0f, "identical converge frames keep accumulated beauty");
-    controller.resolve_frame(0, converge_frame);
-    expect_true(controller.history_length(0) == 5, "later converge resolves continue growing history");
+    controller.resolve_beauty_view(0, converge_frame);
+    expect_true(controller.history_length(0) == 3, "later converge beauty resolves continue growing history");
 
-    controller.resolve_frame(1, converge_frame);
+    controller.resolve_beauty_view(1, converge_frame);
     expect_true(controller.history_length(1) == 1, "other camera maintains independent history");
-    expect_true(controller.history_length(0) == 5, "primary camera history remains unchanged");
+    expect_true(controller.history_length(0) == 3, "primary camera history remains unchanged");
 
     const rt::RadianceFrame resized_frame = make_frame(1, 2, 2.0f);
-    controller.resolve_frame(0, resized_frame);
+    controller.resolve_beauty_view(0, resized_frame);
     expect_true(controller.history_length(0) == 1, "resolution change resets history for camera");
     expect_true(controller.history_length(1) == 1, "resolution change does not affect other camera");
 
@@ -114,8 +123,8 @@ int main() {
     expect_true(controller.history_length(0) == 0, "scene change keeps history cleared");
 
     begin_converged_frame(controller, rotated);
-    controller.resolve_frame(0, converge_frame);
-    controller.resolve_frame(1, converge_frame);
+    controller.resolve_beauty_view(0, converge_frame);
+    controller.resolve_beauty_view(1, converge_frame);
     expect_true(controller.history_length(0) == 1, "camera 0 repopulates history after reconverge");
     expect_true(controller.history_length(1) == 1, "camera 1 repopulates history after reconverge");
 
@@ -125,8 +134,8 @@ int main() {
     average_first.beauty_rgba[3] = 1.0f;
     rt::RadianceFrame average_second = make_frame(1, 1, 0.60f);
     average_second.beauty_rgba[3] = 1.0f;
-    const rt::RadianceFrame averaged_first = controller.resolve_frame(0, average_first);
-    const rt::RadianceFrame averaged_second = controller.resolve_frame(0, average_second);
+    const rt::RadianceFrame averaged_first = materialize_resolved_frame(controller, 0, average_first);
+    const rt::RadianceFrame averaged_second = materialize_resolved_frame(controller, 0, average_second);
     expect_near(averaged_first.beauty_rgba[0], 0.20f, 1e-6, "first converge frame seeds accumulated beauty");
     expect_near(averaged_second.beauty_rgba[0], 0.40f, 1e-6, "converge mode averages beauty across frames");
     expect_near(averaged_second.average_luminance, compute_average_luminance(averaged_second.beauty_rgba), 1e-9,
@@ -139,18 +148,18 @@ int main() {
     stale_first.beauty_rgba[3] = 1.0f;
     rt::RadianceFrame stale_second = make_frame(1, 1, 0.60f);
     stale_second.beauty_rgba[3] = 1.0f;
-    controller.resolve_frame(0, stale_first);
-    controller.resolve_frame(0, stale_second);
+    controller.resolve_beauty_view(0, stale_first);
+    controller.resolve_beauty_view(0, stale_second);
     expect_true(controller.history_length(0) == 2, "accumulation starts before malformed frame regression");
 
     rt::RadianceFrame undersized_frame = make_frame(1, 1, 0.80f);
     undersized_frame.beauty_rgba.resize(3);
-    controller.resolve_frame(0, undersized_frame);
+    controller.resolve_beauty_view(0, undersized_frame);
     expect_true(controller.history_length(0) == 0, "undersized converge frame clears stale camera history");
 
     rt::RadianceFrame restarted_frame = make_frame(1, 1, 0.90f);
     restarted_frame.beauty_rgba[3] = 1.0f;
-    const rt::RadianceFrame restarted_resolve = controller.resolve_frame(0, restarted_frame);
+    const rt::RadianceFrame restarted_resolve = materialize_resolved_frame(controller, 0, restarted_frame);
     expect_true(controller.history_length(0) == 1, "next valid converge frame restarts history from one sample");
     expect_near(restarted_resolve.beauty_rgba[0], 0.90f, 1e-6, "next valid converge frame does not blend with stale history");
 
@@ -160,14 +169,14 @@ int main() {
     valid_history.beauty_rgba[1] = 0.25f;
     valid_history.beauty_rgba[2] = 0.75f;
     valid_history.beauty_rgba[3] = 1.0f;
-    const rt::RadianceFrame seeded_history = controller.resolve_frame(0, valid_history);
+    const rt::RadianceFrame seeded_history = materialize_resolved_frame(controller, 0, valid_history);
 
     rt::RadianceFrame invalid_frame = make_frame(1, 1, 0.60f);
     invalid_frame.beauty_rgba[0] = -1.0f;
     invalid_frame.beauty_rgba[1] = std::numeric_limits<float>::quiet_NaN();
     invalid_frame.beauty_rgba[2] = std::numeric_limits<float>::infinity();
     invalid_frame.beauty_rgba[3] = std::numeric_limits<float>::quiet_NaN();
-    const rt::RadianceFrame sanitized = controller.resolve_frame(0, invalid_frame);
+    const rt::RadianceFrame sanitized = materialize_resolved_frame(controller, 0, invalid_frame);
     expect_true(sanitized.beauty_rgba[0] == seeded_history.beauty_rgba[0], "negative beauty falls back to previous history");
     expect_true(sanitized.beauty_rgba[1] == seeded_history.beauty_rgba[1], "nan beauty falls back to previous history");
     expect_true(sanitized.beauty_rgba[2] == seeded_history.beauty_rgba[2], "inf beauty falls back to previous history");
@@ -181,14 +190,14 @@ int main() {
     ceiling_seed.beauty_rgba[1] = 0.50f;
     ceiling_seed.beauty_rgba[2] = 1.00f;
     ceiling_seed.beauty_rgba[3] = 1.0f;
-    const rt::RadianceFrame seeded_ceiling = controller.resolve_frame(0, ceiling_seed);
+    const rt::RadianceFrame seeded_ceiling = materialize_resolved_frame(controller, 0, ceiling_seed);
 
     rt::RadianceFrame above_ceiling = make_frame(1, 1, 0.75f);
     above_ceiling.beauty_rgba[0] = 65.0f;
     above_ceiling.beauty_rgba[1] = 128.0f;
     above_ceiling.beauty_rgba[2] = 64.0f;
     above_ceiling.beauty_rgba[3] = 1.0f;
-    const rt::RadianceFrame rejected_above_ceiling = controller.resolve_frame(0, above_ceiling);
+    const rt::RadianceFrame rejected_above_ceiling = materialize_resolved_frame(controller, 0, above_ceiling);
     expect_true(rejected_above_ceiling.beauty_rgba[0] == seeded_ceiling.beauty_rgba[0],
         "finite beauty above the documented ceiling falls back to previous history");
     expect_true(rejected_above_ceiling.beauty_rgba[1] == seeded_ceiling.beauty_rgba[1],
