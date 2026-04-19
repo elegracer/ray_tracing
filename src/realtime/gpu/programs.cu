@@ -922,6 +922,40 @@ __device__ void accumulate_direct_light(const LaunchParams& params, const HitInf
         direct = add3(direct, mul3(emission, attenuation));
     }
 
+    for (int i = 0; i < params.scene.triangle_count; ++i) {
+        const PackedTriangle& triangle = params.scene.triangles[i];
+        if (triangle.material_index < 0 || triangle.material_index >= params.scene.material_count) {
+            continue;
+        }
+        const MaterialSample& material = params.scene.materials[triangle.material_index];
+        if (material.type != 3) {
+            continue;
+        }
+        const float3 p0 = vector3f_to_float3(triangle.p0);
+        const float3 p1 = vector3f_to_float3(triangle.p1);
+        const float3 p2 = vector3f_to_float3(triangle.p2);
+        const float3 light_pos = div3(add3(add3(p0, p1), p2), 3.0f);
+        const float3 emission =
+            evaluate_texture(params.scene, material.emission_texture, 1.0f / 3.0f, 1.0f / 3.0f, light_pos);
+        const float3 to_light = sub3(light_pos, surface_point);
+        const float dist_sq = fmaxf(length_sq3(to_light), 1e-6f);
+        const float dist = sqrtf(dist_sq);
+        const float3 light_dir = div3(to_light, dist);
+        const bool isotropic = hit.material_type == 4;
+        const float n_dot_l = isotropic ? (1.0f / (4.0f * kPi)) : fmaxf(dot3(hit.shading_normal, light_dir), 0.0f);
+        if (!isotropic && n_dot_l <= 0.0f) {
+            continue;
+        }
+        Ray shadow_ray {};
+        shadow_ray.origin = surface_point;
+        shadow_ray.direction = light_dir;
+        if (is_occluded(params.scene, shadow_ray, dist - kRayEpsilon)) {
+            continue;
+        }
+        const float attenuation = kShadowScale * n_dot_l / dist_sq;
+        direct = add3(direct, mul3(emission, attenuation));
+    }
+
     state.radiance = add3(state.radiance, mul3(state.throughput, mul3(hit.base_color, direct)));
 }
 

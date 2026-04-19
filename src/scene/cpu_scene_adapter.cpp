@@ -196,6 +196,9 @@ CpuSceneAdapterResult adapt_to_cpu(const SceneIR& scene) {
         if (isotropic == nullptr) {
             throw std::invalid_argument("medium requires isotropic volume material");
         }
+        if (std::holds_alternative<QuadShape>(shape_desc)) {
+            throw std::invalid_argument("quad boundaries are unsupported for homogeneous media");
+        }
         if (std::holds_alternative<TriangleMeshShape>(shape_desc)) {
             throw std::invalid_argument("triangle mesh boundaries are unsupported for homogeneous media");
         }

@@ -49,6 +49,18 @@ std::filesystem::path make_unique_image_texture_fixture_path() {
     throw std::runtime_error("unable to allocate unique image-texture fixture path");
 }
 
+template <typename Fn>
+void expect_invalid_argument_with_message(Fn&& fn, const std::string& message, const std::string& label) {
+    try {
+        fn();
+    } catch (const std::invalid_argument& ex) {
+        expect_true(std::string {ex.what()} == message, label + " message");
+        return;
+    } catch (...) {
+    }
+    throw std::runtime_error("expect_invalid_argument_with_message failed: " + label);
+}
+
 void test_cpu_adapter_accepts_triangle_mesh() {
     rt::scene::SceneIR scene;
     const int white = scene.add_texture(rt::scene::ConstantColorTextureDesc {.color = Eigen::Vector3d::Ones()});
@@ -59,8 +71,6 @@ void test_cpu_adapter_accepts_triangle_mesh() {
             Eigen::Vector3d {1.0, 0.0, 0.0},
             Eigen::Vector3d {0.0, 1.0, 0.0},
         },
-        .normals = {},
-        .uvs = {},
         .triangles = {Eigen::Vector3i {0, 1, 2}},
     });
     scene.add_instance(rt::scene::SurfaceInstance {.shape_index = mesh, .material_index = matte});
@@ -244,6 +254,26 @@ int main() {
         "isotropic scatter attenuation should match configured albedo");
     expect_near(medium_hit.mat->scattering_pdf(medium_ray, medium_hit, Ray {medium_hit.p, Vec3d {1.0, 0.0, 0.0}}),
         1.0 / (4.0 * pi), 1e-12, "isotropic scattering pdf should be uniform over sphere");
+
+    rt::scene::SceneIR quad_medium_scene;
+    const int quad_medium_texture = quad_medium_scene.add_texture(
+        rt::scene::ConstantColorTextureDesc {.color = Eigen::Vector3d {0.8, 0.8, 0.8}});
+    const int quad_medium_material =
+        quad_medium_scene.add_material(rt::scene::IsotropicVolumeMaterial {.albedo_texture = quad_medium_texture});
+    const int quad_medium_boundary = quad_medium_scene.add_shape(rt::scene::QuadShape {
+        .origin = Eigen::Vector3d {-1.0, -1.0, 0.0},
+        .edge_u = Eigen::Vector3d {2.0, 0.0, 0.0},
+        .edge_v = Eigen::Vector3d {0.0, 2.0, 0.0},
+    });
+    quad_medium_scene.add_medium(rt::scene::MediumInstance {
+        .shape_index = quad_medium_boundary,
+        .material_index = quad_medium_material,
+        .density = 0.5,
+    });
+    expect_invalid_argument_with_message(
+        [&]() { (void)rt::scene::adapt_to_cpu(quad_medium_scene); },
+        "quad boundaries are unsupported for homogeneous media",
+        "CPU adapter should reject quad medium boundaries");
 
     rt::scene::SceneIR transformed_emissive_scene;
     const int emissive_texture = transformed_emissive_scene.add_texture(

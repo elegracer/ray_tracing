@@ -14,8 +14,6 @@ int main() {
             Eigen::Vector3d {1.0, 0.0, 0.0},
             Eigen::Vector3d {0.0, 1.0, 0.0},
         },
-        .normals = {},
-        .uvs = {},
         .triangles = {Eigen::Vector3i {0, 1, 2}},
     });
     triangle_scene.add_instance(rt::scene::SurfaceInstance {.shape_index = mesh, .material_index = matte});
