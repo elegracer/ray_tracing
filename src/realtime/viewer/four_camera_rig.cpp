@@ -40,7 +40,7 @@ CameraRig make_default_viewer_rig(const BodyPose& pose, int width, int height, V
     };
 
     for (const double yaw_offset : rt::kDefaultSurroundYawOffsetsDeg) {
-        Eigen::Isometry3d T_bc = Eigen::Isometry3d::Identity();
+        Sophus::SE3d T_bc {};
         T_bc.translation() = body_to_world_matrix().transpose() * pose.position;
         BodyPose camera_pose = pose;
         camera_pose.yaw_deg += yaw_offset;
@@ -54,7 +54,7 @@ CameraRig make_default_viewer_rig(const BodyPose& pose, int width, int height, V
         R_rc.col(0) = right;
         R_rc.col(1) = -up;
         R_rc.col(2) = forward;
-        T_bc.linear() = camera_to_renderer_matrix().transpose() * R_rc;
+        T_bc.so3() = Sophus::SO3d(camera_to_renderer_matrix().transpose() * R_rc);
         rig.add_pinhole(pinhole, T_bc, width, height);
     }
 

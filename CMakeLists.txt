@@ -55,6 +55,7 @@ find_package(TBB CONFIG REQUIRED)
 find_package(indicators CONFIG REQUIRED)
 find_package(yaml-cpp CONFIG REQUIRED)
 find_package(tinyobjloader CONFIG REQUIRED)
+find_package(Sophus CONFIG REQUIRED)
 find_path(OPTIX_INCLUDE_DIR optix.h
     PATHS ${CMAKE_CURRENT_SOURCE_DIR}/NVIDIA-OptiX-SDK-9.1.0-linux64-x86_64
     PATH_SUFFIXES include
@@ -118,6 +119,7 @@ target_include_directories(core
 target_link_libraries(core
     PUBLIC
         Eigen3::Eigen
+        Sophus::Sophus
         fmt::fmt
         argparse::argparse
         range-v3::meta range-v3::concepts range-v3::range-v3

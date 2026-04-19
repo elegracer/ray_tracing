@@ -210,14 +210,16 @@ DeviceActiveCamera make_active_camera(const PackedCamera& camera) {
     active.height = camera.height;
     active.model = camera.model;
 
-    active.origin[0] = camera.T_rc(0, 3);
-    active.origin[1] = camera.T_rc(1, 3);
-    active.origin[2] = camera.T_rc(2, 3);
+    const Eigen::Vector3d origin = camera.T_rc.translation();
+    const Eigen::Matrix3d rotation = camera.T_rc.rotationMatrix();
+    active.origin[0] = origin.x();
+    active.origin[1] = origin.y();
+    active.origin[2] = origin.z();
 
     for (int row = 0; row < 3; ++row) {
-        active.basis_x[row] = camera.T_rc(row, 0);
-        active.basis_y[row] = camera.T_rc(row, 1);
-        active.basis_z[row] = camera.T_rc(row, 2);
+        active.basis_x[row] = rotation(row, 0);
+        active.basis_y[row] = rotation(row, 1);
+        active.basis_z[row] = rotation(row, 2);
     }
 
     active.pinhole.fx = camera.pinhole.fx;

@@ -114,18 +114,18 @@ Transform parse_transform(const YAML::Node& node) {
     return transform;
 }
 
-Eigen::Isometry3d parse_isometry(const YAML::Node& node, std::string_view field_name) {
+Sophus::SE3d parse_isometry(const YAML::Node& node, std::string_view field_name) {
     if (!node) {
         throw std::runtime_error(std::string(field_name) + " must be a map");
     }
     ensure_map(node, field_name);
 
-    Eigen::Isometry3d transform = Eigen::Isometry3d::Identity();
+    Sophus::SE3d transform {};
     if (const YAML::Node translation = node["translation"]) {
         transform.translation() = parse_vec3(translation);
     }
     if (const YAML::Node rotation = node["rotation"]) {
-        transform.linear() = parse_mat3(rotation);
+        transform.so3() = Sophus::SO3d(parse_mat3(rotation));
     }
     return transform;
 }

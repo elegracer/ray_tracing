@@ -7,10 +7,10 @@
 int main() {
     rt::CameraRig rig;
     rig.add_pinhole(rt::Pinhole32Params {320.0, 320.0, 320.0, 240.0, 0.0, 0.0, 0.0, 0.0, 0.0},
-        Eigen::Isometry3d::Identity(), 640, 480);
+        Sophus::SE3d(), 640, 480);
     rig.add_equi62(rt::make_equi62_lut1d_params(640, 480, 320.0, 320.0, 320.0, 240.0,
             std::array<double, 6> {0.0, 0.0, 0.0, 0.0, 0.0, 0.0}, Eigen::Vector2d::Zero()),
-        Eigen::Translation3d(0.1, 0.0, 0.0) * Eigen::Isometry3d::Identity(), 640, 480);
+        Sophus::SE3d(Sophus::SO3d(), Eigen::Vector3d(0.1, 0.0, 0.0)), 640, 480);
 
     const rt::PackedCameraRig packed = rig.pack();
     expect_near(static_cast<double>(packed.active_count), 2.0, 1e-12, "active camera count");
@@ -20,7 +20,7 @@ int main() {
     expect_true(packed.cameras[3].enabled == 0, "camera 3 disabled");
     expect_true(packed.cameras[0].model == rt::CameraModelType::pinhole32, "camera 0 model");
     expect_true(packed.cameras[1].model == rt::CameraModelType::equi62_lut1d, "camera 1 model");
-    expect_vec3_near(packed.cameras[1].T_rc.block<3, 1>(0, 3), Eigen::Vector3d {0.0, 0.0, 0.1}, 1e-12,
+    expect_vec3_near(packed.cameras[1].T_rc.translation(), Eigen::Vector3d {0.0, 0.0, 0.1}, 1e-12,
         "camera 1 translation");
     expect_near(packed.cameras[1].equi.tangential.x(), 0.0, 1e-12, "camera 1 tangential x");
     expect_near(packed.cameras[1].equi.tangential.y(), 0.0, 1e-12, "camera 1 tangential y");
@@ -33,7 +33,7 @@ int main() {
     authored_pinhole.fy = 510.0;
     authored_pinhole.cx = 400.0;
     authored_pinhole.cy = 300.0;
-    authored_pinhole.T_bc = Eigen::Translation3d(0.0, 0.2, 0.0) * Eigen::Isometry3d::Identity();
+    authored_pinhole.T_bc = Sophus::SE3d(Sophus::SO3d(), Eigen::Vector3d(0.0, 0.2, 0.0));
 
     rt::scene::CameraSpec authored_equi {};
     authored_equi.model = rt::CameraModelType::equi62_lut1d;
@@ -43,7 +43,7 @@ int main() {
     authored_equi.fy = 645.0;
     authored_equi.cx = 639.5;
     authored_equi.cy = 359.5;
-    authored_equi.T_bc = Eigen::Translation3d(0.3, 0.0, 0.1) * Eigen::Isometry3d::Identity();
+    authored_equi.T_bc = Sophus::SE3d(Sophus::SO3d(), Eigen::Vector3d(0.3, 0.0, 0.1));
 
     rt::CameraRig authored_rig;
     authored_rig.add_camera(authored_pinhole);
@@ -56,21 +56,21 @@ int main() {
     expect_near(authored_packed.cameras[0].pinhole.k1, 0.0, 1e-12, "authored pinhole default k1");
     expect_near(authored_packed.cameras[1].equi.fx, 640.0, 1e-12, "authored equi fx");
     expect_near(authored_packed.cameras[1].equi.tangential.x(), 0.0, 1e-12, "authored equi default tangential x");
-    expect_vec3_near(authored_packed.cameras[0].T_rc.block<3, 1>(0, 3), Eigen::Vector3d {-0.2, 0.0, 0.0}, 1e-12,
+    expect_vec3_near(authored_packed.cameras[0].T_rc.translation(), Eigen::Vector3d {-0.2, 0.0, 0.0}, 1e-12,
         "authored camera 0 translation");
-    expect_vec3_near(authored_packed.cameras[1].T_rc.block<3, 1>(0, 3), Eigen::Vector3d {0.0, -0.1, 0.3}, 1e-12,
+    expect_vec3_near(authored_packed.cameras[1].T_rc.translation(), Eigen::Vector3d {0.0, -0.1, 0.3}, 1e-12,
         "authored camera 1 translation");
 
     rt::CameraRig overflow;
     const rt::Pinhole32Params pinhole {160.0, 120.0, 80.0, 60.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-    overflow.add_pinhole(pinhole, Eigen::Isometry3d::Identity(), 320, 240);
-    overflow.add_pinhole(pinhole, Eigen::Isometry3d::Identity(), 320, 240);
-    overflow.add_pinhole(pinhole, Eigen::Isometry3d::Identity(), 320, 240);
-    overflow.add_pinhole(pinhole, Eigen::Isometry3d::Identity(), 320, 240);
+    overflow.add_pinhole(pinhole, Sophus::SE3d(), 320, 240);
+    overflow.add_pinhole(pinhole, Sophus::SE3d(), 320, 240);
+    overflow.add_pinhole(pinhole, Sophus::SE3d(), 320, 240);
+    overflow.add_pinhole(pinhole, Sophus::SE3d(), 320, 240);
 
     bool threw = false;
     try {
-        overflow.add_pinhole(pinhole, Eigen::Isometry3d::Identity(), 320, 240);
+        overflow.add_pinhole(pinhole, Sophus::SE3d(), 320, 240);
     } catch (const std::runtime_error&) {
         threw = true;
     }

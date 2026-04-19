@@ -57,13 +57,10 @@ int main() {
         expect_true(camera.width == 640, "camera width");
         expect_true(camera.height == 480, "camera height");
 
-        const Eigen::Vector3d camera_translation(
-            camera.T_rc(0, 3),
-            camera.T_rc(1, 3),
-            camera.T_rc(2, 3));
+        const Eigen::Vector3d camera_translation = camera.T_rc.translation();
         expect_vec3_near(camera_translation, expected_translation, 1e-12, "camera translation");
 
-        const Eigen::Matrix3d R_rc = camera.T_rc.block<3, 3>(0, 0);
+        const Eigen::Matrix3d R_rc = camera.T_rc.rotationMatrix();
         const Eigen::Vector3d camera_forward_renderer = R_rc * Eigen::Vector3d(0.0, 0.0, 1.0);
         const Eigen::Vector3d expected_forward = rt::body_to_world(
             body_yaw_rotation(pose.yaw_deg)
@@ -78,9 +75,9 @@ int main() {
         rt::viewer::integrate_wasd(moved, true, false, false, false, false, false, 1.0);
         const rt::PackedCameraRig moved_rig = rt::viewer::make_default_viewer_rig(moved, 640, 480).pack();
         const Eigen::Vector3d translation_delta =
-            moved_rig.cameras[0].T_rc.block<3, 1>(0, 3) - packed_rig.cameras[0].T_rc.block<3, 1>(0, 3);
+            moved_rig.cameras[0].T_rc.translation() - packed_rig.cameras[0].T_rc.translation();
         const Eigen::Vector3d front_forward_renderer =
-            packed_rig.cameras[0].T_rc.block<3, 3>(0, 0) * Eigen::Vector3d(0.0, 0.0, 1.0);
+            packed_rig.cameras[0].T_rc.rotationMatrix() * Eigen::Vector3d(0.0, 0.0, 1.0);
         expect_near((translation_delta.normalized() - front_forward_renderer.normalized()).norm(), 0.0, 1e-9,
             "W follows front camera forward");
     }
@@ -90,9 +87,9 @@ int main() {
         rt::viewer::integrate_wasd(moved, false, false, false, true, false, false, 1.0);
         const rt::PackedCameraRig moved_rig = rt::viewer::make_default_viewer_rig(moved, 640, 480).pack();
         const Eigen::Vector3d translation_delta =
-            moved_rig.cameras[0].T_rc.block<3, 1>(0, 3) - packed_rig.cameras[0].T_rc.block<3, 1>(0, 3);
+            moved_rig.cameras[0].T_rc.translation() - packed_rig.cameras[0].T_rc.translation();
         const Eigen::Vector3d front_right_renderer =
-            packed_rig.cameras[0].T_rc.block<3, 3>(0, 0) * Eigen::Vector3d(1.0, 0.0, 0.0);
+            packed_rig.cameras[0].T_rc.rotationMatrix() * Eigen::Vector3d(1.0, 0.0, 0.0);
         expect_near((translation_delta.normalized() - front_right_renderer.normalized()).norm(), 0.0, 1e-9,
             "D follows front camera right");
     }
@@ -110,8 +107,8 @@ int main() {
         };
         const rt::PackedCameraRig neutral_rig = rt::viewer::make_default_viewer_rig(neutral_side_pose, 640, 480).pack();
         const rt::PackedCameraRig pitched_rig = rt::viewer::make_default_viewer_rig(pitched_side_pose, 640, 480).pack();
-        const Eigen::Matrix3d R_neutral = neutral_rig.cameras[1].T_rc.block<3, 3>(0, 0);
-        const Eigen::Matrix3d R_pitched = pitched_rig.cameras[1].T_rc.block<3, 3>(0, 0);
+        const Eigen::Matrix3d R_neutral = neutral_rig.cameras[1].T_rc.rotationMatrix();
+        const Eigen::Matrix3d R_pitched = pitched_rig.cameras[1].T_rc.rotationMatrix();
         const Eigen::Matrix3d relative = R_neutral.transpose() * R_pitched;
         expect_vec3_near(relative * Eigen::Vector3d(1.0, 0.0, 0.0), Eigen::Vector3d(1.0, 0.0, 0.0), 1e-9,
             "side camera pitch keeps local right axis");

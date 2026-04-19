@@ -68,7 +68,7 @@ rt::SceneDescription make_scene() {
 rt::CameraRig make_rig(int camera_count) {
     rt::CameraRig rig;
     for (int i = 0; i < camera_count; ++i) {
-        Eigen::Isometry3d T_bc = Eigen::Isometry3d::Identity();
+        Sophus::SE3d T_bc {};
         T_bc.translation() = Eigen::Vector3d {0.03 * static_cast<double>(i), 0.0, 0.0};
         rig.add_pinhole(rt::Pinhole32Params {150.0, 150.0, 16.0, 16.0, 0.0, 0.0, 0.0, 0.0, 0.0},
             T_bc, 32, 32);

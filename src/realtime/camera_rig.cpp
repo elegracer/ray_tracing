@@ -42,7 +42,7 @@ void CameraRig::add_camera(const scene::CameraSpec& spec) {
     add_equi62(to_equi62_lut1d_params(spec), spec.T_bc, spec.width, spec.height);
 }
 
-void CameraRig::add_pinhole(const Pinhole32Params& params, const Eigen::Isometry3d& T_bc, int width, int height) {
+void CameraRig::add_pinhole(const Pinhole32Params& params, const Sophus::SE3d& T_bc, int width, int height) {
     if (slots_.size() >= 4) {
         throw std::runtime_error("camera rig supports at most 4 cameras");
     }
@@ -56,7 +56,7 @@ void CameraRig::add_pinhole(const Pinhole32Params& params, const Eigen::Isometry
     });
 }
 
-void CameraRig::add_equi62(const Equi62Lut1DParams& params, const Eigen::Isometry3d& T_bc, int width, int height) {
+void CameraRig::add_equi62(const Equi62Lut1DParams& params, const Sophus::SE3d& T_bc, int width, int height) {
     if (slots_.size() >= 4) {
         throw std::runtime_error("camera rig supports at most 4 cameras");
     }
@@ -82,10 +82,9 @@ PackedCameraRig CameraRig::pack() const {
         packed.height = slot.height;
         packed.model = slot.model;
 
-        Eigen::Isometry3d T_rc = Eigen::Isometry3d::Identity();
-        T_rc.linear() = camera_to_renderer_matrix() * slot.T_bc.linear();
-        T_rc.translation() = body_to_renderer_matrix() * slot.T_bc.translation();
-        packed.T_rc = T_rc.matrix();
+        packed.T_rc = Sophus::SE3d(
+            camera_to_renderer_matrix() * slot.T_bc.rotationMatrix(),
+            body_to_renderer_matrix() * slot.T_bc.translation());
 
         if (slot.model == CameraModelType::pinhole32) {
             packed.pinhole = std::get<Pinhole32Params>(slot.params);

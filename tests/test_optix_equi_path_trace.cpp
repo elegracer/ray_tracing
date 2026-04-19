@@ -42,7 +42,7 @@ int main() {
     rt::CameraRig rig;
     rig.add_equi62(
         rt::make_equi62_lut1d_params(64, 64, 55.0, 55.0, 32.0, 32.0, std::array<double, 6> {}, Eigen::Vector2d::Zero()),
-        Eigen::Isometry3d::Identity(), 64, 64);
+        Sophus::SE3d(), 64, 64);
 
     rt::RenderProfile profile = rt::RenderProfile::realtime_default();
     profile.samples_per_pixel = 4;

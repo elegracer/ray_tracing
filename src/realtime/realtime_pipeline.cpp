@@ -38,7 +38,7 @@ PackedCameraRig make_smoke_rig(int active_cameras, double pose_jump_translation)
     const double center = 0.5 * static_cast<double>(active_cameras - 1);
 
     for (int i = 0; i < active_cameras; ++i) {
-        Eigen::Isometry3d T_bc = Eigen::Isometry3d::Identity();
+        Sophus::SE3d T_bc {};
         T_bc.translation() = Eigen::Vector3d {0.06 * (static_cast<double>(i) - center) + pose_jump_translation, 0.0, 0.0};
         rig.add_pinhole(intrinsics, T_bc, kWidth, kHeight);
     }

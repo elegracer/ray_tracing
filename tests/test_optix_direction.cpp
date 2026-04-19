@@ -5,7 +5,7 @@
 int main() {
     rt::CameraRig rig;
     rig.add_pinhole(rt::Pinhole32Params {320.0, 320.0, 160.0, 120.0, 0.0, 0.0, 0.0, 0.0, 0.0},
-        Eigen::Isometry3d::Identity(), 320, 240);
+        Sophus::SE3d(), 320, 240);
 
     rt::OptixRenderer renderer;
     const rt::DirectionDebugFrame frame = renderer.render_direction_debug(rig.pack());

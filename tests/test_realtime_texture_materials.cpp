@@ -122,8 +122,8 @@ Eigen::Vector3d pixel_rgb(const std::vector<float>& rgba, int width, int x, int 
 
 bool quad_uv_for_pixel(
     const rt::PackedCamera& camera, const rt::QuadPrimitive& quad, int x, int y, double& u, double& v) {
-    const Eigen::Matrix3d R_rc = camera.T_rc.block<3, 3>(0, 0);
-    const Eigen::Vector3d origin = camera.T_rc.block<3, 1>(0, 3);
+    const Eigen::Matrix3d R_rc = camera.T_rc.rotationMatrix();
+    const Eigen::Vector3d origin = camera.T_rc.translation();
     const Eigen::Vector3d direction = (R_rc
         * rt::unproject_pinhole32(camera.pinhole, Eigen::Vector2d {static_cast<double>(x) + 0.5,
               static_cast<double>(y) + 0.5}))
@@ -167,8 +167,8 @@ Eigen::Vector3d checker_color(double u, double v) {
 
 bool sphere_uv_for_pixel(
     const rt::PackedCamera& camera, const rt::SpherePrimitive& sphere, int x, int y, double& u, double& v) {
-    const Eigen::Matrix3d R_rc = camera.T_rc.block<3, 3>(0, 0);
-    const Eigen::Vector3d origin = camera.T_rc.block<3, 1>(0, 3);
+    const Eigen::Matrix3d R_rc = camera.T_rc.rotationMatrix();
+    const Eigen::Vector3d origin = camera.T_rc.translation();
     const Eigen::Vector3d direction = (R_rc
         * rt::unproject_pinhole32(camera.pinhole, Eigen::Vector2d {static_cast<double>(x) + 0.5,
               static_cast<double>(y) + 0.5}))
@@ -219,7 +219,7 @@ int main() {
 
     rt::CameraRig rig;
     rig.add_pinhole(rt::Pinhole32Params {80.0, 80.0, 32.0, 32.0, 0.0, 0.0, 0.0, 0.0, 0.0},
-        Eigen::Isometry3d::Identity(), 64, 64);
+        Sophus::SE3d(), 64, 64);
     const rt::PackedCameraRig packed_rig = rig.pack();
 
     rt::RenderProfile profile = rt::RenderProfile::realtime();
@@ -289,8 +289,8 @@ int main() {
     const rt::RadianceFrame sphere_frame = renderer.render_radiance(sphere_packed, packed_rig, profile, 0);
     expect_true(!sphere_frame.albedo_rgba.empty(), "sphere albedo buffer present");
 
-    const Eigen::Matrix3d R_rc = camera.T_rc.block<3, 3>(0, 0);
-    const Eigen::Vector3d t_rc = camera.T_rc.block<3, 1>(0, 3);
+    const Eigen::Matrix3d R_rc = camera.T_rc.rotationMatrix();
+    const Eigen::Vector3d t_rc = camera.T_rc.translation();
     const rt::SpherePrimitive& packed_sphere = sphere_packed.spheres[0];
     const Eigen::Vector3d sphere_center_camera = R_rc.transpose() * (packed_sphere.center - t_rc);
     const Eigen::Vector2d sphere_center_pixel = rt::project_pinhole32(camera.pinhole, sphere_center_camera);

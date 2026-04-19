@@ -2,7 +2,7 @@
 
 #include "realtime/camera_models.h"
 
-#include <Eigen/Geometry>
+#include <sophus/se3.hpp>
 
 #include <array>
 
@@ -29,7 +29,7 @@ struct CameraSpec {
     double fy = 0.0;
     double cx = 0.0;
     double cy = 0.0;
-    Eigen::Isometry3d T_bc = Eigen::Isometry3d::Identity();
+    Sophus::SE3d T_bc {};
     Pinhole32Slot pinhole32 {};
     Equi62Lut1DSlot equi62_lut1d {};
 };

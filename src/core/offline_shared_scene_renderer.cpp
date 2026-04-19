@@ -54,8 +54,8 @@ void configure_camera_from_packed(const PackedCamera& packed, const int samples_
             "offline shared-scene packed-camera render only supports centered pinhole cameras without distortion");
     }
 
-    const Eigen::Vector3d origin = packed.T_rc.block<3, 1>(0, 3);
-    const Eigen::Matrix3d rotation = packed.T_rc.block<3, 3>(0, 0);
+    const Eigen::Vector3d origin = packed.T_rc.translation();
+    const Eigen::Matrix3d rotation = packed.T_rc.rotationMatrix();
     const Eigen::Vector3d forward = rotation * Eigen::Vector3d::UnitZ();
     const Eigen::Vector3d up = rotation * -Eigen::Vector3d::UnitY();
     const double vfov_rad =

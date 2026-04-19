@@ -72,7 +72,7 @@ int main() {
 
     rt::CameraRig background_rig;
     background_rig.add_pinhole(rt::Pinhole32Params {150.0, 150.0, 16.0, 16.0, 0.0, 0.0, 0.0, 0.0, 0.0},
-        Eigen::Isometry3d::Identity(), 32, 32);
+        Sophus::SE3d(), 32, 32);
 
     rt::RenderProfile background_profile = rt::RenderProfile::realtime_default();
     background_profile.samples_per_pixel = 8;
@@ -98,7 +98,7 @@ int main() {
 
     rt::CameraRig rig;
     rig.add_pinhole(rt::Pinhole32Params {150.0, 150.0, 16.0, 16.0, 0.0, 0.0, 0.0, 0.0, 0.0},
-        Eigen::Isometry3d::Identity(), 32, 32);
+        Sophus::SE3d(), 32, 32);
 
     rt::RenderProfile profile = rt::RenderProfile::realtime_default();
     profile.samples_per_pixel = 16;

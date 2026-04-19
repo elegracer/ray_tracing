@@ -53,7 +53,7 @@ int main() {
 
     rt::CameraRig rig;
     rig.add_pinhole(rt::Pinhole32Params {150.0, 150.0, 16.0, 16.0, 0.0, 0.0, 0.0, 0.0, 0.0},
-        Eigen::Isometry3d::Identity(), 32, 32);
+        Sophus::SE3d(), 32, 32);
 
     const rt::PackedScene packed_scene = scene.pack();
     const rt::PackedCameraRig packed_rig = rig.pack();

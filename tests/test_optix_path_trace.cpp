@@ -13,7 +13,7 @@ constexpr int kCenterPixel = kImageSize / 2;
 rt::CameraRig make_test_rig() {
     rt::CameraRig rig;
     rig.add_pinhole(rt::Pinhole32Params {200.0, 200.0, 32.0, 32.0, 0.0, 0.0, 0.0, 0.0, 0.0},
-        Eigen::Isometry3d::Identity(), kImageSize, kImageSize);
+        Sophus::SE3d(), kImageSize, kImageSize);
     return rig;
 }
 

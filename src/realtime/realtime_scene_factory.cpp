@@ -16,7 +16,7 @@ namespace rt {
 namespace {
 
 scene::CameraSpec runtime_camera_spec(
-    const scene::CameraSpec& authored, int width, int height, const Eigen::Isometry3d& T_bc) {
+    const scene::CameraSpec& authored, int width, int height, const Sophus::SE3d& T_bc) {
     if (authored.width <= 0 || authored.height <= 0) {
         throw std::invalid_argument("authored camera dimensions must be positive");
     }
@@ -38,7 +38,7 @@ CameraRig make_camera_rig_from_preset(const scene::RealtimeViewPreset& preset, i
     CameraRig rig;
 
     for (int i = 0; i < camera_count; ++i) {
-        Eigen::Isometry3d T_bc = Eigen::Isometry3d::Identity();
+        Sophus::SE3d T_bc {};
         T_bc.translation() = body_to_renderer_matrix().transpose() * preset.initial_body_pose.position;
         viewer::BodyPose camera_pose = preset.initial_body_pose;
         camera_pose.yaw_deg += kDefaultSurroundYawOffsetsDeg[static_cast<std::size_t>(i)];
@@ -54,7 +54,7 @@ CameraRig make_camera_rig_from_preset(const scene::RealtimeViewPreset& preset, i
         R_rc.col(0) = right;
         R_rc.col(1) = -up;
         R_rc.col(2) = forward;
-        T_bc.linear() = camera_to_renderer_matrix().transpose() * R_rc;
+        T_bc.so3() = Sophus::SO3d(camera_to_renderer_matrix().transpose() * R_rc);
         rig.add_camera(runtime_camera_spec(preset.camera, width, height, T_bc));
     }
 

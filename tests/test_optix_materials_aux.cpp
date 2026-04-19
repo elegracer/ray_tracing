@@ -79,7 +79,7 @@ int main() {
 
     rt::CameraRig rig;
     rig.add_pinhole(rt::Pinhole32Params {80.0, 80.0, 48.0, 48.0, 0.0, 0.0, 0.0, 0.0, 0.0},
-        Eigen::Isometry3d::Identity(), 96, 96);
+        Sophus::SE3d(), 96, 96);
     const rt::PackedCameraRig packed_rig = rig.pack();
 
     rt::OptixRenderer renderer;
@@ -96,8 +96,8 @@ int main() {
     expect_true(frame.albedo_rgba.size() >= expected_albedo_size, "albedo has expected rgba size");
 
     const rt::PackedCamera& camera = packed_rig.cameras[0];
-    const Eigen::Matrix3d R_rc = camera.T_rc.block<3, 3>(0, 0);
-    const Eigen::Vector3d t_rc = camera.T_rc.block<3, 1>(0, 3);
+    const Eigen::Matrix3d R_rc = camera.T_rc.rotationMatrix();
+    const Eigen::Vector3d t_rc = camera.T_rc.translation();
     const auto project_renderer_point = [&](const Eigen::Vector3d& point_renderer) {
         const Eigen::Vector3d point_camera = R_rc.transpose() * (point_renderer - t_rc);
         return rt::project_pinhole32(camera.pinhole, point_camera);

@@ -46,10 +46,7 @@ int main() {
     const rt::PackedCameraRig earth_rig = rt::default_camera_rig_for_scene("earth_sphere", 1, 640, 480).pack();
     expect_true(earth_rig.active_count == 1, "earth rig active camera count");
     expect_true(earth_rig.cameras[0].model == rt::CameraModelType::pinhole32, "earth rig model");
-    expect_vec3_near(Eigen::Vector3d(
-                         earth_rig.cameras[0].T_rc(0, 3),
-                         earth_rig.cameras[0].T_rc(1, 3),
-                         earth_rig.cameras[0].T_rc(2, 3)),
+    expect_vec3_near(earth_rig.cameras[0].T_rc.translation(),
         Eigen::Vector3d {-3.0, 6.0, -10.0}, 1e-12,
         "earth rig uses scene camera preset");
     const double expected_earth_fy =
@@ -93,15 +90,15 @@ int main() {
             const rt::PackedCameraRig preset_rig = rt::default_camera_rig_for_scene(scene_id, 1, 640, 480).pack();
 
             const Eigen::Vector3d viewer_forward =
-                viewer_rig.cameras[0].T_rc.block<3, 3>(0, 0) * Eigen::Vector3d(0.0, 0.0, 1.0);
+                viewer_rig.cameras[0].T_rc.rotationMatrix() * Eigen::Vector3d(0.0, 0.0, 1.0);
             const Eigen::Vector3d preset_forward =
-                preset_rig.cameras[0].T_rc.block<3, 3>(0, 0) * Eigen::Vector3d(0.0, 0.0, 1.0);
+                preset_rig.cameras[0].T_rc.rotationMatrix() * Eigen::Vector3d(0.0, 0.0, 1.0);
             expect_vec3_near(viewer_forward, preset_forward, 1e-9, "viewer spawn forward matches scene preset");
 
             const Eigen::Vector3d viewer_up =
-                viewer_rig.cameras[0].T_rc.block<3, 3>(0, 0) * Eigen::Vector3d(0.0, -1.0, 0.0);
+                viewer_rig.cameras[0].T_rc.rotationMatrix() * Eigen::Vector3d(0.0, -1.0, 0.0);
             const Eigen::Vector3d preset_up =
-                preset_rig.cameras[0].T_rc.block<3, 3>(0, 0) * Eigen::Vector3d(0.0, -1.0, 0.0);
+                preset_rig.cameras[0].T_rc.rotationMatrix() * Eigen::Vector3d(0.0, -1.0, 0.0);
             expect_vec3_near(viewer_up, preset_up, 1e-9, "viewer spawn up matches scene preset");
         }
     }
@@ -109,7 +106,7 @@ int main() {
     {
         const rt::PackedCameraRig quads_rig = rt::default_camera_rig_for_scene("quads", 1, 640, 480).pack();
         const rt::PackedCamera& camera = quads_rig.cameras[0];
-        const Eigen::Matrix3d R = camera.T_rc.block<3, 3>(0, 0);
+        const Eigen::Matrix3d R = camera.T_rc.rotationMatrix();
         const Eigen::Vector3d top_ray =
             (R * rt::unproject_pinhole32(camera.pinhole, Eigen::Vector2d {320.0, 0.0})).normalized();
         const Eigen::Vector3d right_ray =
