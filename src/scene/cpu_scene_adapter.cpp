@@ -8,6 +8,7 @@
 #include "common/quad.h"
 #include "common/sphere.h"
 #include "common/texture.h"
+#include "common/triangle.h"
 
 #include <Eigen/Geometry>
 
@@ -82,6 +83,21 @@ pro::proxy<Hittable> make_shape_hittable(const ShapeDesc& shape, const pro::prox
                     to_vec3(desc.origin), to_vec3(desc.edge_u), to_vec3(desc.edge_v), material);
             } else if constexpr (std::is_same_v<T, BoxShape>) {
                 return box(to_vec3(desc.min_corner), to_vec3(desc.max_corner), material);
+            } else if constexpr (std::is_same_v<T, TriangleMeshShape>) {
+                HittableList mesh_world;
+                for (const Eigen::Vector3i& tri : desc.triangles) {
+                    for (int vertex = 0; vertex < 3; ++vertex) {
+                        if (tri[vertex] < 0 || tri[vertex] >= static_cast<int>(desc.positions.size())) {
+                            throw std::out_of_range("triangle mesh vertex index out of range");
+                        }
+                    }
+                    mesh_world.add(pro::make_proxy_shared<Hittable, Triangle>(
+                        to_vec3(desc.positions[tri.x()]),
+                        to_vec3(desc.positions[tri.y()]),
+                        to_vec3(desc.positions[tri.z()]),
+                        material));
+                }
+                return pro::make_proxy_shared<Hittable, HittableList>(mesh_world);
             } else {
                 static_assert(std::is_same_v<T, void>, "unsupported shape type");
             }
@@ -179,6 +195,12 @@ CpuSceneAdapterResult adapt_to_cpu(const SceneIR& scene) {
         const auto* isotropic = std::get_if<IsotropicVolumeMaterial>(&material_desc);
         if (isotropic == nullptr) {
             throw std::invalid_argument("medium requires isotropic volume material");
+        }
+        if (std::holds_alternative<QuadShape>(shape_desc)) {
+            throw std::invalid_argument("quad boundaries are unsupported for homogeneous media");
+        }
+        if (std::holds_alternative<TriangleMeshShape>(shape_desc)) {
+            throw std::invalid_argument("triangle mesh boundaries are unsupported for homogeneous media");
         }
 
         pro::proxy<Hittable> boundary = make_shape_hittable(shape_desc, empty_material);

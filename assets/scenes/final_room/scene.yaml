@@ -1,0 +1,176 @@
+format_version: 1
+
+scene:
+  id: final_room
+  label: Final Room
+  background: [0.0, 0.0, 0.0]
+  textures:
+    white_tex:
+      type: constant
+      color: [0.73, 0.73, 0.73]
+    green_tex:
+      type: constant
+      color: [0.30, 0.70, 0.35]
+    red_tex:
+      type: constant
+      color: [0.72, 0.25, 0.22]
+    blue_tex:
+      type: constant
+      color: [0.25, 0.35, 0.75]
+    light_tex:
+      type: constant
+      color: [10.0, 10.0, 10.0]
+  materials:
+    white:
+      type: diffuse
+      albedo: white_tex
+    green:
+      type: diffuse
+      albedo: green_tex
+    red:
+      type: diffuse
+      albedo: red_tex
+    blue:
+      type: diffuse
+      albedo: blue_tex
+    light:
+      type: emissive
+      emission: light_tex
+  shapes:
+    floor_quad:
+      type: quad
+      origin: [-4.0, 4.0, -1.0]
+      edge_u: [0.0, -8.0, 0.0]
+      edge_v: [8.0, 0.0, 0.0]
+    ceiling_quad:
+      type: quad
+      origin: [-4.0, 4.0, 3.5]
+      edge_u: [8.0, 0.0, 0.0]
+      edge_v: [0.0, -8.0, 0.0]
+    green_wall:
+      type: quad
+      origin: [-4.0, 4.0, -1.0]
+      edge_u: [0.0, 0.0, 4.5]
+      edge_v: [0.0, -8.0, 0.0]
+    red_wall:
+      type: quad
+      origin: [4.0, 4.0, -1.0]
+      edge_u: [0.0, -8.0, 0.0]
+      edge_v: [0.0, 0.0, 4.5]
+    back_wall:
+      type: quad
+      origin: [-4.0, 4.0, -1.0]
+      edge_u: [8.0, 0.0, 0.0]
+      edge_v: [0.0, 0.0, 4.5]
+    front_wall:
+      type: quad
+      origin: [-4.0, -4.0, -1.0]
+      edge_u: [0.0, 0.0, 4.5]
+      edge_v: [8.0, 0.0, 0.0]
+    light_quad:
+      type: quad
+      origin: [-1.0, 1.0, 3.15]
+      edge_u: [2.0, 0.0, 0.0]
+      edge_v: [0.0, -2.0, 0.0]
+    shelf_quad_left:
+      type: quad
+      origin: [-3.2, 3.0, -0.25]
+      edge_u: [0.0, -1.8, 0.0]
+      edge_v: [1.8, 0.0, 0.0]
+    shelf_quad_right:
+      type: quad
+      origin: [1.2, -1.0, 0.15]
+      edge_u: [0.0, -1.6, 0.0]
+      edge_v: [1.6, 0.0, 0.0]
+    sphere_0:
+      type: sphere
+      center: [0.0, 1.2, 0.25]
+      radius: 0.55
+    sphere_1:
+      type: sphere
+      center: [-1.6, -1.7, 0.35]
+      radius: 0.55
+    sphere_2:
+      type: sphere
+      center: [-3.1, -0.8, 1.0]
+      radius: 0.55
+    sphere_3:
+      type: sphere
+      center: [3.0, 0.9, 1.35]
+      radius: 0.65
+    sphere_4:
+      type: sphere
+      center: [1.1, 3.0, 1.1]
+      radius: 0.60
+    sphere_5:
+      type: sphere
+      center: [-0.8, -2.2, 2.55]
+      radius: 0.45
+    sphere_6:
+      type: sphere
+      center: [0.9, 0.1, 0.55]
+      radius: 0.45
+    sphere_7:
+      type: sphere
+      center: [-0.35, 1.15, 0.4]
+      radius: 0.35
+  instances:
+    - shape: floor_quad
+      material: white
+    - shape: ceiling_quad
+      material: white
+    - shape: green_wall
+      material: green
+    - shape: red_wall
+      material: red
+    - shape: back_wall
+      material: white
+    - shape: front_wall
+      material: blue
+    - shape: light_quad
+      material: light
+    - shape: shelf_quad_left
+      material: white
+    - shape: shelf_quad_right
+      material: white
+    - shape: sphere_0
+      material: white
+    - shape: sphere_1
+      material: white
+    - shape: sphere_2
+      material: white
+    - shape: sphere_3
+      material: white
+    - shape: sphere_4
+      material: white
+    - shape: sphere_5
+      material: white
+    - shape: sphere_6
+      material: white
+    - shape: sphere_7
+      material: white
+
+cpu_presets:
+  default:
+    samples_per_pixel: 500
+    camera:
+      lookfrom: [13.0, 2.0, 3.0]
+      lookat: [0.0, 0.0, 0.0]
+      vfov: 20.0
+      aspect_ratio: 1.7777777777777777
+      image_width: 1280
+      max_depth: 50
+      vup: [0.0, 1.0, 0.0]
+      defocus_angle: 0.0
+      focus_dist: 10.0
+
+realtime:
+  default_view:
+    initial_body_pose:
+      position: [0.0, -0.8, 0.35]
+      yaw_deg: 0.0
+      pitch_deg: 0.0
+    frame_convention: world_z_up
+    vfov_deg: 67.38013505195957
+    use_default_viewer_intrinsics: true
+    base_move_speed: 1.8

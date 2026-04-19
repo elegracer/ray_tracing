@@ -1,0 +1,27 @@
+scene:
+  textures:
+    cornell_white_tex:
+      type: constant
+      color: [0.73, 0.73, 0.73]
+    cornell_red_tex:
+      type: constant
+      color: [0.65, 0.05, 0.05]
+    cornell_green_tex:
+      type: constant
+      color: [0.12, 0.45, 0.15]
+    cornell_light_tex:
+      type: constant
+      color: [15.0, 15.0, 15.0]
+  materials:
+    cornell_white:
+      type: diffuse
+      albedo: cornell_white_tex
+    cornell_red:
+      type: diffuse
+      albedo: cornell_red_tex
+    cornell_green:
+      type: diffuse
+      albedo: cornell_green_tex
+    cornell_light:
+      type: emissive
+      emission: cornell_light_tex

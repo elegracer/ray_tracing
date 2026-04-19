@@ -80,6 +80,7 @@ class OptixRenderer {
     DeviceFrameBuffers device_frame_{};
     PackedSphere* device_spheres_ = nullptr;
     PackedQuad* device_quads_ = nullptr;
+    PackedTriangle* device_triangles_ = nullptr;
     PackedMedium* device_media_ = nullptr;
     PackedTexture* device_textures_ = nullptr;
     Eigen::Vector3f* device_image_texels_ = nullptr;
@@ -93,6 +94,7 @@ class OptixRenderer {
     int last_camera_index_ = 0;
     int sphere_gas_count_ = 0;
     int quad_gas_count_ = 0;
+    int triangle_gas_count_ = 0;
     int tlas_instance_count_ = 0;
     RenderProfile last_profile_{};
     bool scene_prepared_ = false;

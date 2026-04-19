@@ -1,0 +1,114 @@
+format_version: 1
+
+includes:
+  - ../common/materials/common_materials.yaml
+
+scene:
+  id: cornell_box
+  label: Cornell Box
+  background: [0.0, 0.0, 0.0]
+  shapes:
+    left_wall:
+      type: quad
+      origin: [555.0, 0.0, 0.0]
+      edge_u: [0.0, 555.0, 0.0]
+      edge_v: [0.0, 0.0, 555.0]
+    right_wall:
+      type: quad
+      origin: [0.0, 0.0, 0.0]
+      edge_u: [0.0, 555.0, 0.0]
+      edge_v: [0.0, 0.0, 555.0]
+    light_quad:
+      type: quad
+      origin: [343.0, 554.0, 332.0]
+      edge_u: [-130.0, 0.0, 0.0]
+      edge_v: [0.0, 0.0, -105.0]
+    floor_quad:
+      type: quad
+      origin: [0.0, 0.0, 0.0]
+      edge_u: [555.0, 0.0, 0.0]
+      edge_v: [0.0, 0.0, 555.0]
+    ceiling_quad:
+      type: quad
+      origin: [555.0, 555.0, 555.0]
+      edge_u: [-555.0, 0.0, 0.0]
+      edge_v: [0.0, 0.0, -555.0]
+    back_wall:
+      type: quad
+      origin: [0.0, 0.0, 555.0]
+      edge_u: [555.0, 0.0, 0.0]
+      edge_v: [0.0, 555.0, 0.0]
+    tall_box_shape:
+      type: box
+      min_corner: [0.0, 0.0, 0.0]
+      max_corner: [165.0, 330.0, 165.0]
+    short_box_shape:
+      type: box
+      min_corner: [0.0, 0.0, 0.0]
+      max_corner: [165.0, 165.0, 165.0]
+  instances:
+    - shape: left_wall
+      material: cornell_green
+    - shape: right_wall
+      material: cornell_red
+    - shape: light_quad
+      material: cornell_light
+    - shape: floor_quad
+      material: cornell_white
+    - shape: ceiling_quad
+      material: cornell_white
+    - shape: back_wall
+      material: cornell_white
+    - shape: tall_box_shape
+      material: cornell_white
+      transform:
+        translation: [265.0, 0.0, 295.0]
+        rotation:
+          - [0.9659258262890683, 0.0, 0.25881904510252074]
+          - [0.0, 1.0, 0.0]
+          - [-0.25881904510252074, 0.0, 0.9659258262890683]
+    - shape: short_box_shape
+      material: cornell_white
+      transform:
+        translation: [130.0, 0.0, 65.0]
+        rotation:
+          - [0.9510565162951535, 0.0, -0.3090169943749474]
+          - [0.0, 1.0, 0.0]
+          - [0.3090169943749474, 0.0, 0.9510565162951535]
+
+cpu_presets:
+  default:
+    samples_per_pixel: 1000
+    camera:
+      lookfrom: [278.0, 278.0, -800.0]
+      lookat: [278.0, 278.0, 0.0]
+      vfov: 40.0
+      aspect_ratio: 1.7777777777777777
+      image_width: 1280
+      max_depth: 50
+      vup: [0.0, 1.0, 0.0]
+      defocus_angle: 0.0
+      focus_dist: 10.0
+  extreme:
+    samples_per_pixel: 10000
+    camera:
+      lookfrom: [278.0, 278.0, -800.0]
+      lookat: [278.0, 278.0, 0.0]
+      vfov: 40.0
+      aspect_ratio: 1.7777777777777777
+      image_width: 1280
+      max_depth: 50
+      vup: [0.0, 1.0, 0.0]
+      defocus_angle: 0.0
+      focus_dist: 10.0
+
+realtime:
+  default_view:
+    initial_body_pose:
+      position: [278.0, 278.0, -120.0]
+      yaw_deg: -180.0
+      pitch_deg: 0.0
+    frame_convention: legacy_y_up
+    vfov_deg: 40.0
+    use_default_viewer_intrinsics: false
+    base_move_speed: 120.0

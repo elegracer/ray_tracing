@@ -48,8 +48,16 @@ void SceneDescription::add_quad(const QuadPrimitive& quad) {
     quads_.push_back(quad);
 }
 
+void SceneDescription::add_triangle(const TrianglePrimitive& triangle) {
+    triangles_.push_back(triangle);
+}
+
 void SceneDescription::add_medium(const HomogeneousMediumPrimitive& medium) {
     media_.push_back(medium);
+}
+
+const std::vector<TrianglePrimitive>& SceneDescription::triangles() const {
+    return triangles_;
 }
 
 PackedScene SceneDescription::pack() const {
@@ -58,12 +66,14 @@ PackedScene SceneDescription::pack() const {
         .material_count = static_cast<int>(materials_.size()),
         .sphere_count = static_cast<int>(spheres_.size()),
         .quad_count = static_cast<int>(quads_.size()),
+        .triangle_count = static_cast<int>(triangles_.size()),
         .medium_count = static_cast<int>(media_.size()),
         .background = background,
         .textures = textures_,
         .materials = materials_,
         .spheres = spheres_,
         .quads = quads_,
+        .triangles = triangles_,
         .media = media_,
     };
 }

@@ -63,6 +63,7 @@ int checked_scene_count(std::size_t count, const char* label) {
 struct PrimitiveCounts {
     int sphere_count = 0;
     int quad_count = 0;
+    int triangle_count = 0;
     int medium_count = 0;
 };
 
@@ -70,6 +71,7 @@ PrimitiveCounts primitive_counts(const PackedScene& scene) {
     return PrimitiveCounts {
         .sphere_count = checked_scene_count(scene.spheres.size(), "sphere"),
         .quad_count = checked_scene_count(scene.quads.size(), "quad"),
+        .triangle_count = checked_scene_count(scene.triangles.size(), "triangle"),
         .medium_count = checked_scene_count(scene.media.size(), "medium"),
     };
 }
@@ -88,6 +90,15 @@ PackedQuad pack_quad(const QuadPrimitive& quad) {
         .edge_u = quad.edge_u.cast<float>(),
         .edge_v = quad.edge_v.cast<float>(),
         .material_index = quad.material_index,
+    };
+}
+
+PackedTriangle pack_triangle(const TrianglePrimitive& triangle) {
+    return PackedTriangle {
+        .p0 = triangle.p0.cast<float>(),
+        .p1 = triangle.p1.cast<float>(),
+        .p2 = triangle.p2.cast<float>(),
+        .material_index = triangle.material_index,
     };
 }
 
@@ -252,16 +263,18 @@ void free_frame_buffers(DeviceFrameBuffers& frame) {
     frame = DeviceFrameBuffers {};
 }
 
-void free_scene_buffers(PackedSphere*& spheres, PackedQuad*& quads, PackedMedium*& media, PackedTexture*& textures,
-    Eigen::Vector3f*& image_texels, MaterialSample*& materials) {
+void free_scene_buffers(PackedSphere*& spheres, PackedQuad*& quads, PackedTriangle*& triangles, PackedMedium*& media,
+    PackedTexture*& textures, Eigen::Vector3f*& image_texels, MaterialSample*& materials) {
     free_device_ptr(spheres);
     free_device_ptr(quads);
+    free_device_ptr(triangles);
     free_device_ptr(media);
     free_device_ptr(textures);
     free_device_ptr(image_texels);
     free_device_ptr(materials);
     spheres = nullptr;
     quads = nullptr;
+    triangles = nullptr;
     media = nullptr;
     textures = nullptr;
     image_texels = nullptr;
@@ -406,8 +419,8 @@ DirectionDebugFrame OptixRenderer::render_direction_debug(const PackedCameraRig&
 void OptixRenderer::upload_scene(const PackedScene& scene) {
     scene_prepared_ = false;
     device_image_texel_count_ = 0;
-    free_scene_buffers(
-        device_spheres_, device_quads_, device_media_, device_textures_, device_image_texels_, device_materials_);
+    free_scene_buffers(device_spheres_, device_quads_, device_triangles_, device_media_, device_textures_,
+        device_image_texels_, device_materials_);
 
     if (!scene.spheres.empty()) {
         std::vector<PackedSphere> packed_spheres;
@@ -431,6 +444,18 @@ void OptixRenderer::upload_scene(const PackedScene& scene) {
             packed_quads.size() * sizeof(PackedQuad)));
         RT_CUDA_CHECK(cudaMemcpy(device_quads_, packed_quads.data(),
             packed_quads.size() * sizeof(PackedQuad), cudaMemcpyHostToDevice));
+    }
+
+    if (!scene.triangles.empty()) {
+        std::vector<PackedTriangle> packed_triangles;
+        packed_triangles.reserve(scene.triangles.size());
+        for (const TrianglePrimitive& triangle : scene.triangles) {
+            packed_triangles.push_back(pack_triangle(triangle));
+        }
+        RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&device_triangles_),
+            packed_triangles.size() * sizeof(PackedTriangle)));
+        RT_CUDA_CHECK(cudaMemcpy(device_triangles_, packed_triangles.data(),
+            packed_triangles.size() * sizeof(PackedTriangle), cudaMemcpyHostToDevice));
     }
 
     if (!scene.media.empty()) {
@@ -484,8 +509,8 @@ void OptixRenderer::upload_scene(const PackedScene& scene) {
 
 void OptixRenderer::free_device_resources() {
     free_frame_buffers(device_frame_);
-    free_scene_buffers(
-        device_spheres_, device_quads_, device_media_, device_textures_, device_image_texels_, device_materials_);
+    free_scene_buffers(device_spheres_, device_quads_, device_triangles_, device_media_, device_textures_,
+        device_image_texels_, device_materials_);
     device_image_texel_count_ = 0;
     allocated_width_ = 0;
     allocated_height_ = 0;
@@ -503,7 +528,7 @@ void OptixRenderer::free_staging_buffers() {
 
 void OptixRenderer::build_or_refit_accels(const PackedScene& scene) {
     const PrimitiveCounts counts = primitive_counts(scene);
-    if (counts.sphere_count == 0 && counts.quad_count == 0 && counts.medium_count == 0) {
+    if (counts.sphere_count == 0 && counts.quad_count == 0 && counts.triangle_count == 0 && counts.medium_count == 0) {
         throw std::runtime_error("render_radiance requires at least one primitive");
     }
     build_geometry_accels(scene);
@@ -513,7 +538,8 @@ void OptixRenderer::build_geometry_accels(const PackedScene& scene) {
     const PrimitiveCounts counts = primitive_counts(scene);
     sphere_gas_count_ = counts.sphere_count;
     quad_gas_count_ = counts.quad_count;
-    tlas_instance_count_ = counts.sphere_count + counts.quad_count;
+    triangle_gas_count_ = counts.triangle_count;
+    tlas_instance_count_ = counts.sphere_count + counts.quad_count + counts.triangle_count;
 }
 
 void OptixRenderer::launch_radiance(const PackedCameraRig& rig, const RenderProfile& profile, int camera_index,
@@ -561,12 +587,14 @@ void OptixRenderer::launch_radiance_pipeline(const PackedScene& scene, const Pac
     params.frame = device_frame_;
     params.scene.spheres = device_spheres_;
     params.scene.quads = device_quads_;
+    params.scene.triangles = device_triangles_;
     params.scene.media = device_media_;
     params.scene.textures = device_textures_;
     params.scene.image_texels = device_image_texels_;
     params.scene.materials = device_materials_;
     params.scene.sphere_count = checked_scene_count(scene.spheres.size(), "sphere");
     params.scene.quad_count = checked_scene_count(scene.quads.size(), "quad");
+    params.scene.triangle_count = checked_scene_count(scene.triangles.size(), "triangle");
     params.scene.medium_count = checked_scene_count(scene.media.size(), "medium");
     params.scene.texture_count = checked_scene_count(scene.textures.size(), "texture");
     params.scene.image_texel_count = device_image_texel_count_;

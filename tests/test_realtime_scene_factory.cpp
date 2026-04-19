@@ -15,6 +15,11 @@ int main() {
     expect_vec3_near(final_room.background, Eigen::Vector3d::Zero(), 1e-12,
         "final_room realtime scene keeps black background");
 
+    const rt::PackedScene imported = rt::make_realtime_scene("imported_obj_smoke").pack();
+    expect_true(imported.triangle_count >= 1, "file-backed imported scene keeps triangle geometry");
+    expect_vec3_near(imported.background, Eigen::Vector3d::Zero(), 1e-12,
+        "file-backed imported scene keeps yaml background");
+
     const rt::PackedScene bouncing = rt::make_realtime_scene("bouncing_spheres").pack();
     expect_vec3_near(bouncing.background, Eigen::Vector3d(0.70, 0.80, 1.00), 1e-12,
         "bouncing_spheres realtime scene keeps shared sky background");
@@ -23,6 +28,7 @@ int main() {
     expect_true(cornell_box.quad_count >= 12, "cornell_box box lowers to quads");
 
     expect_true(rt::realtime_scene_supported("smoke"), "smoke supported");
+    expect_true(rt::realtime_scene_supported("imported_obj_smoke"), "file-backed imported scene supported");
     expect_true(rt::realtime_scene_supported("cornell_box"), "cornell_box supported");
     expect_true(rt::realtime_scene_supported("rttnw_final_scene"), "shared final scene supported");
     expect_true(!rt::realtime_scene_supported("rttnw_final_scene_extreme"),
@@ -32,6 +38,10 @@ int main() {
     expect_vec3_near(earth_spawn.position, Eigen::Vector3d {-3.0, 6.0, -10.0}, 1e-12,
         "earth spawn uses realtime preset pose");
     expect_true(rt::default_move_speed_for_scene("earth_sphere") > 0.0, "earth move speed is positive");
+
+    const rt::viewer::BodyPose imported_spawn = rt::default_spawn_pose_for_scene("imported_obj_smoke");
+    expect_vec3_near(imported_spawn.position, Eigen::Vector3d {0.0, 0.0, 2.0}, 1e-12,
+        "file-backed imported spawn uses yaml preset pose");
 
     const rt::PackedCameraRig earth_rig = rt::default_camera_rig_for_scene("earth_sphere", 1, 640, 480).pack();
     expect_true(earth_rig.active_count == 1, "earth rig active camera count");

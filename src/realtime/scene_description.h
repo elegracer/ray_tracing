@@ -71,6 +71,14 @@ struct QuadPrimitive {
     bool dynamic;
 };
 
+struct TrianglePrimitive {
+    int material_index = -1;
+    Eigen::Vector3d p0 = Eigen::Vector3d::Zero();
+    Eigen::Vector3d p1 = Eigen::Vector3d::Zero();
+    Eigen::Vector3d p2 = Eigen::Vector3d::Zero();
+    bool dynamic = false;
+};
+
 struct HomogeneousMediumPrimitive {
     int material_index = -1;
     double density = 0.0;
@@ -87,12 +95,14 @@ struct PackedScene {
     int material_count = 0;
     int sphere_count = 0;
     int quad_count = 0;
+    int triangle_count = 0;
     int medium_count = 0;
     Eigen::Vector3d background = Eigen::Vector3d::Zero();
     std::vector<TextureDesc> textures;
     std::vector<MaterialDesc> materials;
     std::vector<SpherePrimitive> spheres;
     std::vector<QuadPrimitive> quads;
+    std::vector<TrianglePrimitive> triangles;
     std::vector<HomogeneousMediumPrimitive> media;
 };
 
@@ -102,7 +112,9 @@ class SceneDescription {
     int add_material(const MaterialDesc& material);
     void add_sphere(const SpherePrimitive& sphere);
     void add_quad(const QuadPrimitive& quad);
+    void add_triangle(const TrianglePrimitive& triangle);
     void add_medium(const HomogeneousMediumPrimitive& medium);
+    const std::vector<TrianglePrimitive>& triangles() const;
     PackedScene pack() const;
 
     Eigen::Vector3d background = Eigen::Vector3d::Zero();
@@ -112,6 +124,7 @@ class SceneDescription {
     std::vector<MaterialDesc> materials_;
     std::vector<SpherePrimitive> spheres_;
     std::vector<QuadPrimitive> quads_;
+    std::vector<TrianglePrimitive> triangles_;
     std::vector<HomogeneousMediumPrimitive> media_;
 };
 

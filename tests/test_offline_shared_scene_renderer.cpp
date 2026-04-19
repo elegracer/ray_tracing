@@ -20,6 +20,11 @@ int main() {
     expect_true(rttnw_extreme != nullptr, "rttnw extreme preset exists");
     expect_true(rttnw_extreme->samples_per_pixel == 10000, "rttnw extreme spp preserved");
 
+    const rt::scene::CpuRenderPreset* imported_default =
+        rt::scene::default_cpu_render_preset("imported_obj_smoke");
+    expect_true(imported_default != nullptr, "file-backed default preset exists");
+    expect_true(imported_default->samples_per_pixel == 64, "file-backed default spp preserved");
+
     const cv::Mat image = rt::render_shared_scene("quads", 1);
     expect_true(!image.empty(), "offline shared-scene render should return a non-empty image");
     expect_true(image.data != nullptr, "offline shared-scene render should populate image data");
@@ -31,5 +36,9 @@ int main() {
     const double aspect_ratio = static_cast<double>(image.cols) / static_cast<double>(image.rows);
     expect_true(aspect_ratio > 1.5 && aspect_ratio < 2.1,
         "offline shared-scene render should produce a plausible widescreen aspect ratio");
+
+    const cv::Mat imported_image = rt::render_shared_scene("imported_obj_smoke", 1);
+    expect_true(!imported_image.empty(), "file-backed offline render should return a non-empty image");
+    expect_true(imported_image.cols == 640, "file-backed offline render width follows yaml preset");
     return 0;
 }

@@ -69,7 +69,12 @@ struct BoxShape {
     Eigen::Vector3d max_corner = Eigen::Vector3d::Zero();
 };
 
-using ShapeDesc = std::variant<SphereShape, QuadShape, BoxShape>;
+struct TriangleMeshShape {
+    std::vector<Eigen::Vector3d> positions;
+    std::vector<Eigen::Vector3i> triangles;
+};
+
+using ShapeDesc = std::variant<SphereShape, QuadShape, BoxShape, TriangleMeshShape>;
 
 struct Transform {
     Eigen::Vector3d translation = Eigen::Vector3d::Zero();
