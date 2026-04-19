@@ -2,6 +2,7 @@
 
 #include <Eigen/Geometry>
 
+#include <algorithm>
 #include <numbers>
 #include <stdexcept>
 
@@ -13,6 +14,16 @@ using BuilderFn = SceneIR (*)();
 struct SceneRegistryEntry {
     SceneMetadata metadata;
     BuilderFn builder = nullptr;
+};
+
+struct CpuPresetRegistryEntry {
+    CpuRenderPreset preset;
+    bool is_default = false;
+};
+
+struct RealtimePresetRegistryEntry {
+    std::string_view scene_id;
+    RealtimeViewPreset preset;
 };
 
 Eigen::Vector3d legacy_renderer_to_world(const Eigen::Vector3d& v) {
@@ -117,6 +128,64 @@ CornellMaterials add_cornell_room(SceneIR& scene) {
         Eigen::Vector3d {555.0, 0.0, 0.0},
         Eigen::Vector3d {0.0, 555.0, 0.0});
     return materials;
+}
+
+CpuCameraPreset make_cpu_camera(double vfov, const Eigen::Vector3d& lookfrom, const Eigen::Vector3d& lookat,
+    const Eigen::Vector3d& background, double defocus_angle = 0.0) {
+    CpuCameraPreset preset;
+    preset.vfov = vfov;
+    preset.lookfrom = lookfrom;
+    preset.lookat = lookat;
+    preset.background = background;
+    preset.defocus_angle = defocus_angle;
+    return preset;
+}
+
+Eigen::Vector3d scene_world_up(viewer::ViewerFrameConvention convention) {
+    if (convention == viewer::ViewerFrameConvention::legacy_y_up) {
+        return Eigen::Vector3d::UnitY();
+    }
+    return Eigen::Vector3d::UnitZ();
+}
+
+Eigen::Vector3d scene_neutral_forward(viewer::ViewerFrameConvention convention) {
+    if (convention == viewer::ViewerFrameConvention::legacy_y_up) {
+        return Eigen::Vector3d(0.0, 0.0, -1.0);
+    }
+    return Eigen::Vector3d(0.0, 1.0, 0.0);
+}
+
+Eigen::Vector3d scene_neutral_right() {
+    return Eigen::Vector3d::UnitX();
+}
+
+viewer::BodyPose pose_from_look_at(const Eigen::Vector3d& lookfrom, const Eigen::Vector3d& lookat,
+    viewer::ViewerFrameConvention convention) {
+    const Eigen::Vector3d direction = (lookat - lookfrom).normalized();
+    const Eigen::Vector3d up = scene_world_up(convention);
+    const double pitch_rad = std::asin(std::clamp(direction.dot(up), -1.0, 1.0));
+    const Eigen::Vector3d horizontal = direction - direction.dot(up) * up;
+    const Eigen::Vector3d projected =
+        horizontal.squaredNorm() > 1e-12 ? horizontal.normalized() : scene_neutral_forward(convention);
+    const double yaw_rad = std::atan2(
+        projected.dot(-scene_neutral_right()),
+        projected.dot(scene_neutral_forward(convention)));
+    return viewer::BodyPose {
+        .position = lookfrom,
+        .yaw_deg = yaw_rad * 180.0 / std::numbers::pi,
+        .pitch_deg = pitch_rad * 180.0 / std::numbers::pi,
+    };
+}
+
+RealtimeViewPreset make_realtime_view_preset(const Eigen::Vector3d& lookfrom, const Eigen::Vector3d& lookat,
+    viewer::ViewerFrameConvention convention, double vfov_deg, double base_move_speed) {
+    return RealtimeViewPreset {
+        .initial_body_pose = pose_from_look_at(lookfrom, lookat, convention),
+        .frame_convention = convention,
+        .vfov_deg = vfov_deg,
+        .use_default_viewer_intrinsics = false,
+        .base_move_speed = base_move_speed,
+    };
 }
 
 SceneIR make_bouncing_spheres_scene() {
@@ -433,28 +502,166 @@ SceneIR make_final_room_scene() {
 }
 
 const std::vector<SceneRegistryEntry> kSceneRegistry {
-    {SceneMetadata {"bouncing_spheres", "Bouncing Spheres", 500, true, true}, &make_bouncing_spheres_scene},
-    {SceneMetadata {"checkered_spheres", "Checkered Spheres", 500, true, true}, &make_checkered_spheres_scene},
-    {SceneMetadata {"earth_sphere", "Earth Sphere", 500, true, true}, &make_earth_sphere_scene},
-    {SceneMetadata {"perlin_spheres", "Perlin Spheres", 500, true, true}, &make_perlin_spheres_scene},
-    {SceneMetadata {"quads", "Quads", 500, true, true}, &make_quads_scene},
-    {SceneMetadata {"simple_light", "Simple Light", 500, true, true}, &make_simple_light_scene},
-    {SceneMetadata {"cornell_smoke", "Cornell Smoke", 500, true, true}, &make_cornell_smoke_scene},
-    {SceneMetadata {"cornell_smoke_extreme", "Cornell Smoke Extreme", 10000, true, true}, &make_cornell_smoke_scene},
-    {SceneMetadata {"cornell_box", "Cornell Box", 1000, true, true}, &make_cornell_box_scene},
-    {SceneMetadata {"cornell_box_extreme", "Cornell Box Extreme", 10000, true, true}, &make_cornell_box_scene},
-    {SceneMetadata {"cornell_box_and_sphere", "Cornell Box And Sphere", 1000, true, true}, &make_cornell_box_and_sphere_scene},
-    {SceneMetadata {"cornell_box_and_sphere_extreme", "Cornell Box And Sphere Extreme", 10000, true, true},
-        &make_cornell_box_and_sphere_scene},
-    {SceneMetadata {"rttnw_final_scene", "RTTNW Final Scene", 500, true, true}, &make_rttnw_final_scene},
-    {SceneMetadata {"rttnw_final_scene_extreme", "RTTNW Final Scene Extreme", 10000, true, true}, &make_rttnw_final_scene},
-    {SceneMetadata {"smoke", "Realtime Smoke", 500, false, true}, &make_realtime_smoke_scene},
-    {SceneMetadata {"final_room", "Final Room", 500, true, true}, &make_final_room_scene},
+    {SceneMetadata {"bouncing_spheres", "Bouncing Spheres", true, true}, &make_bouncing_spheres_scene},
+    {SceneMetadata {"checkered_spheres", "Checkered Spheres", true, true}, &make_checkered_spheres_scene},
+    {SceneMetadata {"earth_sphere", "Earth Sphere", true, true}, &make_earth_sphere_scene},
+    {SceneMetadata {"perlin_spheres", "Perlin Spheres", true, true}, &make_perlin_spheres_scene},
+    {SceneMetadata {"quads", "Quads", true, true}, &make_quads_scene},
+    {SceneMetadata {"simple_light", "Simple Light", true, true}, &make_simple_light_scene},
+    {SceneMetadata {"cornell_smoke", "Cornell Smoke", true, true}, &make_cornell_smoke_scene},
+    {SceneMetadata {"cornell_box", "Cornell Box", true, true}, &make_cornell_box_scene},
+    {SceneMetadata {"cornell_box_and_sphere", "Cornell Box And Sphere", true, true}, &make_cornell_box_and_sphere_scene},
+    {SceneMetadata {"rttnw_final_scene", "RTTNW Final Scene", true, true}, &make_rttnw_final_scene},
+    {SceneMetadata {"smoke", "Realtime Smoke", false, true}, &make_realtime_smoke_scene},
+    {SceneMetadata {"final_room", "Final Room", true, true}, &make_final_room_scene},
+};
+
+const std::vector<CpuPresetRegistryEntry> kCpuPresetRegistry {
+    {CpuRenderPreset {"bouncing_spheres", "default", 500,
+         make_cpu_camera(20.0, Eigen::Vector3d {13.0, 2.0, 3.0}, Eigen::Vector3d::Zero(),
+             Eigen::Vector3d {0.70, 0.80, 1.00}, 0.6)},
+        true},
+    {CpuRenderPreset {"checkered_spheres", "default", 500,
+         make_cpu_camera(20.0, Eigen::Vector3d {13.0, 2.0, 3.0}, Eigen::Vector3d::Zero(),
+             Eigen::Vector3d {0.70, 0.80, 1.00})},
+        true},
+    {CpuRenderPreset {"earth_sphere", "default", 500,
+         make_cpu_camera(20.0, Eigen::Vector3d {-3.0, 6.0, -10.0}, Eigen::Vector3d::Zero(),
+             Eigen::Vector3d {0.70, 0.80, 1.00})},
+        true},
+    {CpuRenderPreset {"perlin_spheres", "default", 500,
+         make_cpu_camera(20.0, Eigen::Vector3d {13.0, 2.0, 3.0}, Eigen::Vector3d::Zero(),
+             Eigen::Vector3d {0.70, 0.80, 1.00})},
+        true},
+    {CpuRenderPreset {"quads", "default", 500,
+         make_cpu_camera(80.0, Eigen::Vector3d {0.0, 0.0, 9.0}, Eigen::Vector3d::Zero(),
+             Eigen::Vector3d {0.70, 0.80, 1.00})},
+        true},
+    {CpuRenderPreset {"simple_light", "default", 500,
+         make_cpu_camera(20.0, Eigen::Vector3d {26.0, 3.0, 6.0}, Eigen::Vector3d {0.0, 2.0, 0.0},
+             Eigen::Vector3d::Zero())},
+        true},
+    {CpuRenderPreset {"cornell_smoke", "default", 500,
+         make_cpu_camera(40.0, Eigen::Vector3d {278.0, 278.0, -800.0}, Eigen::Vector3d {278.0, 278.0, 0.0},
+             Eigen::Vector3d::Zero())},
+        true},
+    {CpuRenderPreset {"cornell_smoke", "extreme", 10000,
+         make_cpu_camera(40.0, Eigen::Vector3d {278.0, 278.0, -800.0}, Eigen::Vector3d {278.0, 278.0, 0.0},
+             Eigen::Vector3d::Zero())},
+        false},
+    {CpuRenderPreset {"cornell_box", "default", 1000,
+         make_cpu_camera(40.0, Eigen::Vector3d {278.0, 278.0, -800.0}, Eigen::Vector3d {278.0, 278.0, 0.0},
+             Eigen::Vector3d::Zero())},
+        true},
+    {CpuRenderPreset {"cornell_box", "extreme", 10000,
+         make_cpu_camera(40.0, Eigen::Vector3d {278.0, 278.0, -800.0}, Eigen::Vector3d {278.0, 278.0, 0.0},
+             Eigen::Vector3d::Zero())},
+        false},
+    {CpuRenderPreset {"cornell_box_and_sphere", "default", 1000,
+         make_cpu_camera(40.0, Eigen::Vector3d {278.0, 278.0, -800.0}, Eigen::Vector3d {278.0, 278.0, 0.0},
+             Eigen::Vector3d::Zero())},
+        true},
+    {CpuRenderPreset {"cornell_box_and_sphere", "extreme", 10000,
+         make_cpu_camera(40.0, Eigen::Vector3d {278.0, 278.0, -800.0}, Eigen::Vector3d {278.0, 278.0, 0.0},
+             Eigen::Vector3d::Zero())},
+        false},
+    {CpuRenderPreset {"rttnw_final_scene", "default", 500,
+         make_cpu_camera(40.0, Eigen::Vector3d {478.0, 278.0, -600.0}, Eigen::Vector3d {278.0, 278.0, 0.0},
+             Eigen::Vector3d::Zero())},
+        true},
+    {CpuRenderPreset {"rttnw_final_scene", "extreme", 10000,
+         make_cpu_camera(40.0, Eigen::Vector3d {478.0, 278.0, -600.0}, Eigen::Vector3d {278.0, 278.0, 0.0},
+             Eigen::Vector3d::Zero())},
+        false},
+    {CpuRenderPreset {"final_room", "default", 500,
+         make_cpu_camera(20.0, Eigen::Vector3d {13.0, 2.0, 3.0}, Eigen::Vector3d::Zero(),
+             Eigen::Vector3d {0.70, 0.80, 1.00})},
+        true},
+};
+
+const std::vector<RealtimePresetRegistryEntry> kRealtimePresetRegistry {
+    {"bouncing_spheres",
+        make_realtime_view_preset(Eigen::Vector3d {13.0, 2.0, 3.0}, Eigen::Vector3d::Zero(),
+            viewer::ViewerFrameConvention::legacy_y_up, 20.0, 2.0)},
+    {"checkered_spheres",
+        make_realtime_view_preset(Eigen::Vector3d {13.0, 2.0, 3.0}, Eigen::Vector3d::Zero(),
+            viewer::ViewerFrameConvention::legacy_y_up, 20.0, 2.0)},
+    {"earth_sphere",
+        make_realtime_view_preset(Eigen::Vector3d {-3.0, 6.0, -10.0}, Eigen::Vector3d::Zero(),
+            viewer::ViewerFrameConvention::legacy_y_up, 20.0, 2.5)},
+    {"perlin_spheres",
+        make_realtime_view_preset(Eigen::Vector3d {13.0, 2.0, 3.0}, Eigen::Vector3d::Zero(),
+            viewer::ViewerFrameConvention::legacy_y_up, 20.0, 2.0)},
+    {"quads",
+        make_realtime_view_preset(Eigen::Vector3d {0.0, 0.0, 9.0}, Eigen::Vector3d::Zero(),
+            viewer::ViewerFrameConvention::legacy_y_up, 80.0, 2.5)},
+    {"simple_light",
+        make_realtime_view_preset(Eigen::Vector3d {10.0, 3.0, 6.0}, Eigen::Vector3d {0.0, 2.0, 0.0},
+            viewer::ViewerFrameConvention::legacy_y_up, 20.0, 4.0)},
+    {"cornell_smoke",
+        make_realtime_view_preset(Eigen::Vector3d {278.0, 278.0, -120.0}, Eigen::Vector3d {278.0, 278.0, 120.0},
+            viewer::ViewerFrameConvention::legacy_y_up, 40.0, 120.0)},
+    {"cornell_box",
+        make_realtime_view_preset(Eigen::Vector3d {278.0, 278.0, -120.0}, Eigen::Vector3d {278.0, 278.0, 120.0},
+            viewer::ViewerFrameConvention::legacy_y_up, 40.0, 120.0)},
+    {"cornell_box_and_sphere",
+        make_realtime_view_preset(Eigen::Vector3d {278.0, 278.0, -120.0}, Eigen::Vector3d {278.0, 278.0, 120.0},
+            viewer::ViewerFrameConvention::legacy_y_up, 40.0, 120.0)},
+    {"rttnw_final_scene",
+        make_realtime_view_preset(Eigen::Vector3d {278.0, 278.0, -180.0}, Eigen::Vector3d {278.0, 278.0, 50.0},
+            viewer::ViewerFrameConvention::legacy_y_up, 40.0, 180.0)},
+    {"smoke",
+        RealtimeViewPreset {
+            .initial_body_pose = viewer::BodyPose {
+                .position = Eigen::Vector3d(0.0, -2.5, 0.25),
+                .yaw_deg = 0.0,
+                .pitch_deg = 0.0,
+            },
+            .frame_convention = viewer::ViewerFrameConvention::world_z_up,
+            .vfov_deg = 67.38013505195957,
+            .use_default_viewer_intrinsics = false,
+            .base_move_speed = 2.0,
+        }},
+    {"final_room",
+        RealtimeViewPreset {
+            .initial_body_pose = viewer::default_spawn_pose(),
+            .frame_convention = viewer::ViewerFrameConvention::world_z_up,
+            .vfov_deg = 67.38013505195957,
+            .use_default_viewer_intrinsics = true,
+            .base_move_speed = 1.8,
+        }},
 };
 
 const SceneRegistryEntry* find_scene_registry_entry(std::string_view scene_id) {
     for (const SceneRegistryEntry& entry : kSceneRegistry) {
         if (entry.metadata.id == scene_id) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+const CpuPresetRegistryEntry* find_cpu_preset_registry_entry(std::string_view scene_id, std::string_view preset_id) {
+    for (const CpuPresetRegistryEntry& entry : kCpuPresetRegistry) {
+        if (entry.preset.scene_id == scene_id && entry.preset.preset_id == preset_id) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+const CpuPresetRegistryEntry* find_default_cpu_preset_registry_entry(std::string_view scene_id) {
+    for (const CpuPresetRegistryEntry& entry : kCpuPresetRegistry) {
+        if (entry.preset.scene_id == scene_id && entry.is_default) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+const RealtimePresetRegistryEntry* find_realtime_preset_registry_entry(std::string_view scene_id) {
+    for (const RealtimePresetRegistryEntry& entry : kRealtimePresetRegistry) {
+        if (entry.scene_id == scene_id) {
             return &entry;
         }
     }
@@ -480,20 +687,34 @@ const SceneMetadata* find_scene_metadata(std::string_view scene_id) {
     return entry != nullptr ? &entry->metadata : nullptr;
 }
 
+const CpuRenderPreset* find_cpu_render_preset(std::string_view scene_id, std::string_view preset_id) {
+    const CpuPresetRegistryEntry* entry = find_cpu_preset_registry_entry(scene_id, preset_id);
+    return entry != nullptr ? &entry->preset : nullptr;
+}
+
+const CpuRenderPreset* default_cpu_render_preset(std::string_view scene_id) {
+    const SceneRegistryEntry* scene_entry = find_scene_registry_entry(scene_id);
+    if (scene_entry == nullptr) {
+        throw std::invalid_argument("unknown shared scene id");
+    }
+    const CpuPresetRegistryEntry* preset_entry = find_default_cpu_preset_registry_entry(scene_id);
+    if (preset_entry == nullptr) {
+        throw std::runtime_error("shared scene is missing its default CPU preset");
+    }
+    return &preset_entry->preset;
+}
+
+const RealtimeViewPreset* find_realtime_view_preset(std::string_view scene_id) {
+    const RealtimePresetRegistryEntry* entry = find_realtime_preset_registry_entry(scene_id);
+    return entry != nullptr ? &entry->preset : nullptr;
+}
+
 SceneIR build_scene(std::string_view scene_id) {
     const SceneRegistryEntry* entry = find_scene_registry_entry(scene_id);
     if (entry == nullptr || entry->builder == nullptr) {
         throw std::invalid_argument("unknown shared scene id");
     }
     return entry->builder();
-}
-
-int scene_default_samples_per_pixel(std::string_view scene_id) {
-    const SceneRegistryEntry* entry = find_scene_registry_entry(scene_id);
-    if (entry == nullptr) {
-        throw std::invalid_argument("unknown shared scene id");
-    }
-    return entry->metadata.default_samples_per_pixel;
 }
 
 }  // namespace rt::scene

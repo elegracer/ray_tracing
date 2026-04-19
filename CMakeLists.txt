@@ -144,6 +144,7 @@ if(ENABLE_GUI_VIEWER)
         PRIVATE
             utils/render_realtime_viewer.cpp
             src/realtime/viewer/four_camera_rig.cpp
+            src/realtime/viewer/move_speed.cpp
             src/realtime/viewer/scene_switch_controller.cpp
             src/realtime/viewer/viewer_quality_controller.cpp
     )
@@ -213,6 +214,15 @@ target_sources(test_viewer_scene_switch_controller
 )
 target_link_libraries(test_viewer_scene_switch_controller PRIVATE core)
 add_test(NAME test_viewer_scene_switch_controller COMMAND test_viewer_scene_switch_controller)
+
+add_executable(test_viewer_move_speed)
+target_sources(test_viewer_move_speed
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_viewer_move_speed.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/viewer/move_speed.cpp
+)
+target_link_libraries(test_viewer_move_speed PRIVATE core)
+add_test(NAME test_viewer_move_speed COMMAND test_viewer_move_speed)
 
 add_executable(test_viewer_quality_controller)
 target_sources(test_viewer_quality_controller

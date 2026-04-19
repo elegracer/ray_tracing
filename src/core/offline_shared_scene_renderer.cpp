@@ -18,59 +18,18 @@ bool nearly_equal(const double lhs, const double rhs, const double tolerance = 1
     return std::abs(lhs - rhs) <= tolerance;
 }
 
-void configure_offline_camera(std::string_view scene_id, const int samples_per_pixel, Camera& cam) {
-    cam.aspect_ratio = 16.0 / 9.0;
-    cam.image_width = 1280;
+void configure_offline_camera(const scene::CpuRenderPreset& preset, const int samples_per_pixel, Camera& cam) {
+    cam.aspect_ratio = preset.camera.aspect_ratio;
+    cam.image_width = preset.camera.image_width;
     cam.samples_per_pixel = samples_per_pixel;
-    cam.max_depth = 50;
-    cam.vup = {0.0, 1.0, 0.0};
-    cam.defocus_angle = 0.0;
-    cam.focus_dist = 10.0;
-
-    if (scene_id == "bouncing_spheres") {
-        cam.background = {0.70, 0.80, 1.00};
-        cam.vfov = 20.0;
-        cam.lookfrom = {13.0, 2.0, 3.0};
-        cam.lookat = {0.0, 0.0, 0.0};
-        cam.defocus_angle = 0.6;
-    } else if (scene_id == "checkered_spheres" || scene_id == "perlin_spheres") {
-        cam.background = {0.70, 0.80, 1.00};
-        cam.vfov = 20.0;
-        cam.lookfrom = {13.0, 2.0, 3.0};
-        cam.lookat = {0.0, 0.0, 0.0};
-    } else if (scene_id == "earth_sphere") {
-        cam.background = {0.70, 0.80, 1.00};
-        cam.vfov = 20.0;
-        cam.lookfrom = {-3.0, 6.0, -10.0};
-        cam.lookat = {0.0, 0.0, 0.0};
-    } else if (scene_id == "quads") {
-        cam.background = {0.70, 0.80, 1.00};
-        cam.vfov = 80.0;
-        cam.lookfrom = {0.0, 0.0, 9.0};
-        cam.lookat = {0.0, 0.0, 0.0};
-    } else if (scene_id == "simple_light") {
-        cam.background = {0.0, 0.0, 0.0};
-        cam.vfov = 20.0;
-        cam.lookfrom = {26.0, 3.0, 6.0};
-        cam.lookat = {0.0, 2.0, 0.0};
-    } else if (scene_id == "cornell_smoke" || scene_id == "cornell_smoke_extreme" || scene_id == "cornell_box"
-               || scene_id == "cornell_box_extreme" || scene_id == "cornell_box_and_sphere"
-               || scene_id == "cornell_box_and_sphere_extreme") {
-        cam.background = {0.0, 0.0, 0.0};
-        cam.vfov = 40.0;
-        cam.lookfrom = {278.0, 278.0, -800.0};
-        cam.lookat = {278.0, 278.0, 0.0};
-    } else if (scene_id == "rttnw_final_scene" || scene_id == "rttnw_final_scene_extreme") {
-        cam.background = {0.0, 0.0, 0.0};
-        cam.vfov = 40.0;
-        cam.lookfrom = {478.0, 278.0, -600.0};
-        cam.lookat = {278.0, 278.0, 0.0};
-    } else {
-        cam.background = {0.70, 0.80, 1.00};
-        cam.vfov = 20.0;
-        cam.lookfrom = {13.0, 2.0, 3.0};
-        cam.lookat = {0.0, 0.0, 0.0};
-    }
+    cam.max_depth = preset.camera.max_depth;
+    cam.vfov = preset.camera.vfov;
+    cam.lookfrom = preset.camera.lookfrom;
+    cam.lookat = preset.camera.lookat;
+    cam.vup = preset.camera.vup;
+    cam.background = preset.camera.background;
+    cam.defocus_angle = preset.camera.defocus_angle;
+    cam.focus_dist = preset.camera.focus_dist;
 }
 
 void configure_camera_from_packed(const PackedCamera& packed, const int samples_per_pixel, Camera& cam) {
@@ -122,8 +81,8 @@ cv::Mat render_shared_scene(std::string_view scene_id, const int samples_per_pix
         throw std::invalid_argument("scene id is not available for offline CPU rendering");
     }
 
-    const int resolved_spp =
-        samples_per_pixel > 0 ? samples_per_pixel : scene::scene_default_samples_per_pixel(scene_id);
+    const scene::CpuRenderPreset* preset = scene::default_cpu_render_preset(scene_id);
+    const int resolved_spp = samples_per_pixel > 0 ? samples_per_pixel : preset->samples_per_pixel;
     const scene::SceneIR scene_ir = scene::build_scene(scene_id);
     const scene::CpuSceneAdapterResult adapted = scene::adapt_to_cpu(scene_ir);
     if (!adapted.world.has_value()) {
@@ -131,7 +90,7 @@ cv::Mat render_shared_scene(std::string_view scene_id, const int samples_per_pix
     }
 
     Camera cam;
-    configure_offline_camera(scene_id, resolved_spp, cam);
+    configure_offline_camera(*preset, resolved_spp, cam);
     cam.render(adapted.world, adapted.lights);
     return cam.img.clone();
 }
@@ -143,8 +102,8 @@ cv::Mat render_shared_scene_from_camera(std::string_view scene_id, const PackedC
         throw std::invalid_argument("scene id is not available for offline CPU rendering");
     }
 
-    const int resolved_spp =
-        samples_per_pixel > 0 ? samples_per_pixel : scene::scene_default_samples_per_pixel(scene_id);
+    const scene::CpuRenderPreset* preset = scene::default_cpu_render_preset(scene_id);
+    const int resolved_spp = samples_per_pixel > 0 ? samples_per_pixel : preset->samples_per_pixel;
     const scene::SceneIR scene_ir = scene::build_scene(scene_id);
     const scene::CpuSceneAdapterResult adapted = scene::adapt_to_cpu(scene_ir);
     if (!adapted.world.has_value()) {
@@ -152,7 +111,7 @@ cv::Mat render_shared_scene_from_camera(std::string_view scene_id, const PackedC
     }
 
     Camera cam;
-    configure_offline_camera(scene_id, resolved_spp, cam);
+    configure_offline_camera(*preset, resolved_spp, cam);
     configure_camera_from_packed(camera, resolved_spp, cam);
     cam.render(adapted.world, adapted.lights);
     return cam.img.clone();
