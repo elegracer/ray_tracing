@@ -13,11 +13,26 @@ SceneDescription make_default_viewer_scene() {
 }
 
 RenderProfile default_viewer_profile() {
+    return default_viewer_preview_profile();
+}
+
+RenderProfile default_viewer_preview_profile() {
     return RenderProfile {
         .samples_per_pixel = 1,
-        .max_bounces = 2,
+        .max_bounces = 3,
         .enable_denoise = false,
         .rr_start_bounce = 2,
+        .accumulation_reset_rotation_deg = 2.0,
+        .accumulation_reset_translation = 0.05,
+    };
+}
+
+RenderProfile default_viewer_converge_profile() {
+    return RenderProfile {
+        .samples_per_pixel = 2,
+        .max_bounces = 4,
+        .enable_denoise = false,
+        .rr_start_bounce = 3,
         .accumulation_reset_rotation_deg = 2.0,
         .accumulation_reset_translation = 0.05,
     };
