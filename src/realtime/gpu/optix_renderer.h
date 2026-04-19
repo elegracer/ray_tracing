@@ -1,6 +1,7 @@
 #pragma once
 
 #include "realtime/camera_rig.h"
+#include "realtime/gpu/frame_types.h"
 #include "realtime/gpu/launch_params.h"
 #include "realtime/render_profile.h"
 #include "realtime/scene_description.h"

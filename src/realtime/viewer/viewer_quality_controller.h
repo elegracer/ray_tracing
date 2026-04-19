@@ -1,6 +1,6 @@
 #pragma once
 
-#include "realtime/gpu/launch_params.h"
+#include "realtime/gpu/frame_types.h"
 #include "realtime/render_profile.h"
 #include "realtime/viewer/body_pose.h"
 

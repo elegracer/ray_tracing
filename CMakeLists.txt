@@ -219,7 +219,7 @@ target_sources(test_viewer_quality_controller
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_viewer_quality_controller.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/viewer/viewer_quality_controller.cpp
 )
-target_link_libraries(test_viewer_quality_controller PRIVATE realtime_gpu core)
+target_link_libraries(test_viewer_quality_controller PRIVATE core)
 add_test(NAME test_viewer_quality_controller COMMAND test_viewer_quality_controller)
 
 add_executable(test_scene_description)
