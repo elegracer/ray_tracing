@@ -11,27 +11,20 @@ namespace rt::viewer {
 
 namespace {
 
-double to_radians(double degrees) {
-    return degrees * std::numbers::pi / 180.0;
+Eigen::Vector3d world_up(rt::viewer::ViewerFrameConvention convention) {
+    if (convention == rt::viewer::ViewerFrameConvention::legacy_y_up) {
+        return Eigen::Vector3d::UnitY();
+    }
+    return Eigen::Vector3d::UnitZ();
 }
 
-Eigen::Matrix3d body_yaw_matrix(double yaw_deg) {
-    const Eigen::AngleAxisd yaw(to_radians(yaw_deg), Eigen::Vector3d::UnitX());
-    return yaw.toRotationMatrix();
-}
-
-Eigen::Matrix3d camera_pitch_matrix(double pitch_deg) {
-    const Eigen::AngleAxisd pitch(to_radians(-pitch_deg), Eigen::Vector3d::UnitY());
-    return pitch.toRotationMatrix();
-}
-
-Eigen::Matrix3d body_yaw_offset_matrix(double yaw_deg) {
-    return Eigen::AngleAxisd(to_radians(yaw_deg), Eigen::Vector3d::UnitX()).toRotationMatrix();
+Eigen::Vector3d neutral_right() {
+    return Eigen::Vector3d::UnitX();
 }
 
 }  // namespace
 
-CameraRig make_default_viewer_rig(const BodyPose& pose, int width, int height) {
+CameraRig make_default_viewer_rig(const BodyPose& pose, int width, int height, ViewerFrameConvention convention) {
     CameraRig rig;
 
     const Pinhole32Params pinhole {
@@ -49,15 +42,27 @@ CameraRig make_default_viewer_rig(const BodyPose& pose, int width, int height) {
     for (const double yaw_offset : rt::kDefaultSurroundYawOffsetsDeg) {
         Eigen::Isometry3d T_bc = Eigen::Isometry3d::Identity();
         T_bc.translation() = body_to_world_matrix().transpose() * pose.position;
-        T_bc.linear() = front_camera_to_body_matrix().transpose()
-            * body_yaw_matrix(pose.yaw_deg)
-            * body_yaw_offset_matrix(yaw_offset)
-            * camera_pitch_matrix(pose.pitch_deg)
-            * front_camera_to_body_matrix();
+        BodyPose camera_pose = pose;
+        camera_pose.yaw_deg += yaw_offset;
+        const Eigen::Vector3d forward = forward_direction(camera_pose, convention);
+        Eigen::Vector3d right = right_direction(camera_pose, convention);
+        if (right.squaredNorm() < 1e-12) {
+            right = neutral_right();
+        }
+        const Eigen::Vector3d up = right.cross(forward).normalized();
+        Eigen::Matrix3d R_rc = Eigen::Matrix3d::Identity();
+        R_rc.col(0) = right;
+        R_rc.col(1) = -up;
+        R_rc.col(2) = forward;
+        T_bc.linear() = camera_to_renderer_matrix().transpose() * R_rc;
         rig.add_pinhole(pinhole, T_bc, width, height);
     }
 
     return rig;
+}
+
+CameraRig make_default_viewer_rig(const BodyPose& pose, int width, int height) {
+    return make_default_viewer_rig(pose, width, height, default_viewer_frame_convention());
 }
 
 }  // namespace rt::viewer

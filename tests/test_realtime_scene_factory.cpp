@@ -1,4 +1,6 @@
 #include "realtime/realtime_scene_factory.h"
+#include "realtime/camera_models.h"
+#include "realtime/viewer/four_camera_rig.h"
 #include "realtime/viewer/default_viewer_scene.h"
 #include "test_support.h"
 
@@ -29,5 +31,41 @@ int main() {
     expect_true(default_view.material_count == final_room.material_count, "default viewer materials match final_room");
     expect_true(default_view.sphere_count == final_room.sphere_count, "default viewer spheres match final_room");
     expect_true(default_view.quad_count == final_room.quad_count, "default viewer scene is final_room");
+
+    {
+        constexpr const char* kLegacyScenes[] {"earth_sphere", "quads", "simple_light", "rttnw_final_scene"};
+        for (const char* scene_id : kLegacyScenes) {
+            const rt::viewer::BodyPose spawn = rt::default_spawn_pose_for_scene(scene_id);
+            const rt::viewer::ViewerFrameConvention convention = rt::viewer_frame_convention_for_scene(scene_id);
+            const rt::PackedCameraRig viewer_rig =
+                rt::viewer::make_default_viewer_rig(spawn, 640, 480, convention).pack();
+            const rt::PackedCameraRig preset_rig = rt::default_camera_rig_for_scene(scene_id, 1, 640, 480).pack();
+
+            const Eigen::Vector3d viewer_forward =
+                viewer_rig.cameras[0].T_rc.block<3, 3>(0, 0) * Eigen::Vector3d(0.0, 0.0, 1.0);
+            const Eigen::Vector3d preset_forward =
+                preset_rig.cameras[0].T_rc.block<3, 3>(0, 0) * Eigen::Vector3d(0.0, 0.0, 1.0);
+            expect_vec3_near(viewer_forward, preset_forward, 1e-9, "viewer spawn forward matches scene preset");
+
+            const Eigen::Vector3d viewer_up =
+                viewer_rig.cameras[0].T_rc.block<3, 3>(0, 0) * Eigen::Vector3d(0.0, -1.0, 0.0);
+            const Eigen::Vector3d preset_up =
+                preset_rig.cameras[0].T_rc.block<3, 3>(0, 0) * Eigen::Vector3d(0.0, -1.0, 0.0);
+            expect_vec3_near(viewer_up, preset_up, 1e-9, "viewer spawn up matches scene preset");
+        }
+    }
+
+    {
+        const rt::PackedCameraRig quads_rig = rt::default_camera_rig_for_scene("quads", 1, 640, 480).pack();
+        const rt::PackedCamera& camera = quads_rig.cameras[0];
+        const Eigen::Matrix3d R = camera.T_rc.block<3, 3>(0, 0);
+        const Eigen::Vector3d top_ray =
+            (R * rt::unproject_pinhole32(camera.pinhole, Eigen::Vector2d {320.0, 0.0})).normalized();
+        const Eigen::Vector3d right_ray =
+            (R * rt::unproject_pinhole32(camera.pinhole, Eigen::Vector2d {639.0, 240.0})).normalized();
+
+        expect_true(top_ray.y() > 0.0, "legacy scene top pixel points upward");
+        expect_true(right_ray.x() > 0.0, "legacy scene right pixel points rightward");
+    }
     return 0;
 }

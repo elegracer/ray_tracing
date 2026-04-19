@@ -301,6 +301,7 @@ add_executable(test_realtime_scene_factory)
 target_sources(test_realtime_scene_factory
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_realtime_scene_factory.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/viewer/four_camera_rig.cpp
 )
 target_link_libraries(test_realtime_scene_factory PRIVATE core)
 add_test(NAME test_realtime_scene_factory COMMAND test_realtime_scene_factory)

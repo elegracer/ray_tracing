@@ -390,6 +390,8 @@ int main(int argc, char* argv[]) {
         const double delta_y = cursor_y - last_cursor_y;
         last_cursor_x = cursor_x;
         last_cursor_y = cursor_y;
+        const rt::viewer::ViewerFrameConvention frame_convention =
+            rt::viewer_frame_convention_for_scene(scene_controller.current_scene_id());
 
         if (!ui_interaction_enabled) {
             rt::viewer::integrate_mouse_look(pose, delta_x, delta_y, kLookDegreesPerPixel);
@@ -399,7 +401,8 @@ int main(int argc, char* argv[]) {
                 glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS,
                 glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS,
                 glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS,
-                kMoveSpeedUnitsPerSecond * dt);
+                kMoveSpeedUnitsPerSecond * dt,
+                frame_convention);
         }
 
         const std::string previous_scene_id = scene_controller.current_scene_id();
@@ -425,7 +428,8 @@ int main(int argc, char* argv[]) {
         }
 
         quality_controller.begin_frame(scene_controller.current_scene_id(), pose);
-        const rt::PackedCameraRig rig = rt::viewer::make_default_viewer_rig(pose, kViewWidth, kViewHeight).pack();
+        const rt::PackedCameraRig rig =
+            rt::viewer::make_default_viewer_rig(pose, kViewWidth, kViewHeight, frame_convention).pack();
         const std::vector<rt::CameraRenderResult> results =
             pool.render_frame(rig, quality_controller.active_profile(), static_cast<int>(textures.size()));
         for (const auto& result : results) {

@@ -99,24 +99,48 @@ Pinhole32Params make_pinhole_from_vfov(double vfov_deg, int width, int height) {
 
 Eigen::Matrix3d camera_rotation_from_look_at(const Eigen::Vector3d& lookfrom, const Eigen::Vector3d& lookat) {
     const Eigen::Vector3d forward = (lookat - lookfrom).normalized();
-    Eigen::Vector3d right = Eigen::Vector3d::UnitY().cross(forward);
+    Eigen::Vector3d right = forward.cross(Eigen::Vector3d::UnitY());
     if (right.squaredNorm() < 1e-12) {
         right = Eigen::Vector3d::UnitX();
     }
     right.normalize();
-    const Eigen::Vector3d up = forward.cross(right).normalized();
+    const Eigen::Vector3d up = right.cross(forward).normalized();
 
     Eigen::Matrix3d rotation = Eigen::Matrix3d::Identity();
     rotation.col(0) = right;
-    rotation.col(1) = up;
+    rotation.col(1) = -up;
     rotation.col(2) = forward;
     return rotation;
 }
 
-viewer::BodyPose pose_from_look_at(const Eigen::Vector3d& lookfrom, const Eigen::Vector3d& lookat) {
+Eigen::Vector3d scene_world_up(viewer::ViewerFrameConvention convention) {
+    if (convention == viewer::ViewerFrameConvention::legacy_y_up) {
+        return Eigen::Vector3d::UnitY();
+    }
+    return Eigen::Vector3d::UnitZ();
+}
+
+Eigen::Vector3d scene_neutral_forward(viewer::ViewerFrameConvention convention) {
+    if (convention == viewer::ViewerFrameConvention::legacy_y_up) {
+        return Eigen::Vector3d(0.0, 0.0, -1.0);
+    }
+    return Eigen::Vector3d(0.0, 1.0, 0.0);
+}
+
+Eigen::Vector3d scene_neutral_right() {
+    return Eigen::Vector3d::UnitX();
+}
+
+viewer::BodyPose pose_from_look_at(const Eigen::Vector3d& lookfrom, const Eigen::Vector3d& lookat,
+    viewer::ViewerFrameConvention convention) {
     const Eigen::Vector3d direction = (lookat - lookfrom).normalized();
-    const double pitch_rad = std::asin(std::clamp(direction.z(), -1.0, 1.0));
-    const double yaw_rad = std::atan2(-direction.x(), direction.y());
+    const double pitch_rad = std::asin(std::clamp(direction.dot(scene_world_up(convention)), -1.0, 1.0));
+    const Eigen::Vector3d horizontal = direction - direction.dot(scene_world_up(convention)) * scene_world_up(convention);
+    const Eigen::Vector3d projected =
+        horizontal.squaredNorm() > 1e-12 ? horizontal.normalized() : scene_neutral_forward(convention);
+    const double yaw_rad = std::atan2(
+        projected.dot(-scene_neutral_right()),
+        projected.dot(scene_neutral_forward(convention)));
     return viewer::BodyPose {
         .position = lookfrom,
         .yaw_deg = yaw_rad * kRadToDeg,
@@ -178,6 +202,16 @@ SceneDescription make_realtime_scene(std::string_view scene_id) {
     return scene::adapt_to_realtime(scene::build_scene(scene_id));
 }
 
+viewer::ViewerFrameConvention viewer_frame_convention_for_scene(std::string_view scene_id) {
+    if (scene_id == "final_room" || scene_id == "smoke") {
+        return viewer::ViewerFrameConvention::world_z_up;
+    }
+    if (find_scene_view_preset(scene_id) != nullptr) {
+        return viewer::ViewerFrameConvention::legacy_y_up;
+    }
+    throw std::invalid_argument("unsupported realtime scene");
+}
+
 CameraRig default_camera_rig_for_scene(std::string_view scene_id, int camera_count, int width, int height) {
     if (!realtime_scene_supported(scene_id)) {
         throw std::invalid_argument("unsupported realtime scene");
@@ -222,7 +256,7 @@ viewer::BodyPose default_spawn_pose_for_scene(std::string_view scene_id) {
 
     const SceneViewPreset* preset = find_scene_view_preset(scene_id);
     if (preset != nullptr) {
-        return pose_from_look_at(preset->lookfrom, preset->lookat);
+        return pose_from_look_at(preset->lookfrom, preset->lookat, viewer_frame_convention_for_scene(scene_id));
     }
     throw std::invalid_argument("unsupported realtime scene");
 }

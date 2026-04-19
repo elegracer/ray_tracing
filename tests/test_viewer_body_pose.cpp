@@ -90,5 +90,50 @@ int main() {
         expect_vec3_near(pose.position, Eigen::Vector3d::Zero(), 1e-12, "E moves up");
     }
 
+    {
+        const auto legacy = rt::viewer::ViewerFrameConvention::legacy_y_up;
+        const rt::viewer::BodyPose neutral {.position = Eigen::Vector3d::Zero(), .yaw_deg = 0.0, .pitch_deg = 0.0};
+        expect_vec3_near(rt::viewer::forward_direction(neutral, legacy), Eigen::Vector3d(0.0, 0.0, -1.0), 1e-12,
+            "legacy neutral forward");
+        expect_vec3_near(rt::viewer::right_direction(neutral, legacy), Eigen::Vector3d(1.0, 0.0, 0.0), 1e-12,
+            "legacy neutral right");
+    }
+
+    {
+        const auto legacy = rt::viewer::ViewerFrameConvention::legacy_y_up;
+        const rt::viewer::BodyPose yawed {.position = Eigen::Vector3d::Zero(), .yaw_deg = 90.0, .pitch_deg = 0.0};
+        expect_vec3_near(rt::viewer::forward_direction(yawed, legacy), Eigen::Vector3d(-1.0, 0.0, 0.0), 1e-12,
+            "legacy yaw 90 forward");
+        expect_vec3_near(rt::viewer::right_direction(yawed, legacy), Eigen::Vector3d(0.0, 0.0, -1.0), 1e-12,
+            "legacy yaw 90 right");
+    }
+
+    {
+        const auto legacy = rt::viewer::ViewerFrameConvention::legacy_y_up;
+        const rt::viewer::BodyPose pose {.position = Eigen::Vector3d::Zero(), .yaw_deg = 15.0, .pitch_deg = 20.0};
+        expect_true(rt::viewer::forward_direction(pose, legacy).y() > 0.3, "legacy forward keeps pitch on y");
+    }
+
+    {
+        const auto legacy = rt::viewer::ViewerFrameConvention::legacy_y_up;
+        rt::viewer::BodyPose pose {.position = Eigen::Vector3d::Zero(), .yaw_deg = 0.0, .pitch_deg = 0.0};
+        rt::viewer::integrate_wasd(pose, true, false, false, false, false, false, 2.0, legacy);
+        expect_vec3_near(pose.position, Eigen::Vector3d(0.0, 0.0, -2.0), 1e-12, "legacy W moves forward");
+
+        rt::viewer::integrate_wasd(pose, false, false, false, false, false, true, 2.0, legacy);
+        expect_vec3_near(pose.position, Eigen::Vector3d(0.0, 2.0, -2.0), 1e-12, "legacy E moves up");
+    }
+
+    {
+        const auto legacy = rt::viewer::ViewerFrameConvention::legacy_y_up;
+        rt::viewer::BodyPose pose {.position = Eigen::Vector3d::Zero(), .yaw_deg = 0.0, .pitch_deg = 0.0};
+        rt::viewer::integrate_mouse_look(pose, 10.0, 0.0, 1.0);
+        expect_true(rt::viewer::forward_direction(pose, legacy).x() > 0.0, "legacy mouse right turns view right");
+
+        pose = {.position = Eigen::Vector3d::Zero(), .yaw_deg = 0.0, .pitch_deg = 0.0};
+        rt::viewer::integrate_mouse_look(pose, 0.0, -10.0, 1.0);
+        expect_true(rt::viewer::forward_direction(pose, legacy).y() > 0.0, "legacy mouse up lifts view");
+    }
+
     return 0;
 }
