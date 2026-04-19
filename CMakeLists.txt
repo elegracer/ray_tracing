@@ -53,6 +53,10 @@ find_package(OpenCV CONFIG REQUIRED)
 find_path(ICECREAM_CPP_INCLUDE_DIRS "icecream.hpp")
 find_package(TBB CONFIG REQUIRED)
 find_package(indicators CONFIG REQUIRED)
+find_package(yaml-cpp CONFIG REQUIRED
+    PATHS /usr/lib/x86_64-linux-gnu/cmake/yaml-cpp
+    NO_DEFAULT_PATH
+)
 find_path(OPTIX_INCLUDE_DIR optix.h
     PATHS ${CMAKE_CURRENT_SOURCE_DIR}/NVIDIA-OptiX-SDK-9.1.0-linux64-x86_64
     PATH_SUFFIXES include
@@ -93,6 +97,7 @@ target_sources(core
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/realtime_scene_adapter.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/realtime_scene_adapter.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/scene_definition.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/yaml_scene_loader.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/shared_scene_ir.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/shared_scene_builders.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/camera_models.cpp
@@ -120,6 +125,8 @@ target_link_libraries(core
         ${OpenCV_LIBS}
         TBB::tbb TBB::tbbmalloc
         indicators::indicators
+    PRIVATE
+        yaml-cpp::yaml-cpp
 )
 
 # utils
@@ -267,6 +274,14 @@ target_sources(test_scene_definition
 )
 target_link_libraries(test_scene_definition PRIVATE core)
 add_test(NAME test_scene_definition COMMAND test_scene_definition)
+
+add_executable(test_yaml_scene_loader)
+target_sources(test_yaml_scene_loader
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_yaml_scene_loader.cpp
+)
+target_link_libraries(test_yaml_scene_loader PRIVATE core)
+add_test(NAME test_yaml_scene_loader COMMAND test_yaml_scene_loader)
 
 add_executable(test_realtime_texture_materials)
 target_sources(test_realtime_texture_materials
