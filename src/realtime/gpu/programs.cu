@@ -424,6 +424,9 @@ __device__ void populate_material(const DeviceSceneView& scene, int material_ind
         hit.base_color = make_float3(0.92f, 0.95f, 1.0f);
         hit.emission = make_float3(0.0f, 0.0f, 0.0f);
     }
+    if (hit.material_type == 3 && !hit.front_face) {
+        hit.emission = make_float3(0.0f, 0.0f, 0.0f);
+    }
     if (hit.material_type != 3) {
         hit.emission = make_float3(0.0f, 0.0f, 0.0f);
     }
@@ -907,6 +910,10 @@ __device__ void accumulate_direct_light(const LaunchParams& params, const HitInf
         const float dist_sq = fmaxf(length_sq3(to_light), 1e-6f);
         const float dist = sqrtf(dist_sq);
         const float3 light_dir = div3(to_light, dist);
+        const float3 light_normal = normalize3(cross3(edge_u, edge_v));
+        if (dot3(light_normal, light_dir) >= 0.0f) {
+            continue;
+        }
         const bool isotropic = hit.material_type == 4;
         const float n_dot_l = isotropic ? (1.0f / (4.0f * kPi)) : fmaxf(dot3(hit.shading_normal, light_dir), 0.0f);
         if (!isotropic && n_dot_l <= 0.0f) {
@@ -934,6 +941,8 @@ __device__ void accumulate_direct_light(const LaunchParams& params, const HitInf
         const float3 p0 = vector3f_to_float3(triangle.p0);
         const float3 p1 = vector3f_to_float3(triangle.p1);
         const float3 p2 = vector3f_to_float3(triangle.p2);
+        const float3 edge1 = sub3(p1, p0);
+        const float3 edge2 = sub3(p2, p0);
         const float3 light_pos = div3(add3(add3(p0, p1), p2), 3.0f);
         const float3 emission =
             evaluate_texture(params.scene, material.emission_texture, 1.0f / 3.0f, 1.0f / 3.0f, light_pos);
@@ -941,6 +950,10 @@ __device__ void accumulate_direct_light(const LaunchParams& params, const HitInf
         const float dist_sq = fmaxf(length_sq3(to_light), 1e-6f);
         const float dist = sqrtf(dist_sq);
         const float3 light_dir = div3(to_light, dist);
+        const float3 light_normal = normalize3(cross3(edge1, edge2));
+        if (dot3(light_normal, light_dir) >= 0.0f) {
+            continue;
+        }
         const bool isotropic = hit.material_type == 4;
         const float n_dot_l = isotropic ? (1.0f / (4.0f * kPi)) : fmaxf(dot3(hit.shading_normal, light_dir), 0.0f);
         if (!isotropic && n_dot_l <= 0.0f) {
