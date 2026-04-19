@@ -9,10 +9,25 @@
 
 namespace rt::scene {
 
+struct SceneDefinitionMetadata {
+    std::string id;
+    std::string label;
+    Eigen::Vector3d background = Eigen::Vector3d::Zero();
+    bool supports_cpu_render = false;
+    bool supports_realtime = false;
+};
+
+struct SceneDefinitionCpuRenderPreset {
+    std::string scene_id;
+    std::string preset_id;
+    int samples_per_pixel = 500;
+    CpuCameraPreset camera {};
+};
+
 struct SceneDefinition {
-    SceneMetadata metadata {};
+    SceneDefinitionMetadata metadata {};
     SceneIR scene_ir {};
-    std::vector<CpuRenderPreset> cpu_presets;
+    std::vector<SceneDefinitionCpuRenderPreset> cpu_presets;
     std::optional<RealtimeViewPreset> realtime_preset;
     std::vector<std::string> dependencies;
 };
