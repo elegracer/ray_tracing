@@ -449,7 +449,7 @@ const std::vector<SceneRegistryEntry> kSceneRegistry {
     {SceneMetadata {"rttnw_final_scene", "RTTNW Final Scene", 500, true, true}, &make_rttnw_final_scene},
     {SceneMetadata {"rttnw_final_scene_extreme", "RTTNW Final Scene Extreme", 10000, true, true}, &make_rttnw_final_scene},
     {SceneMetadata {"smoke", "Realtime Smoke", 500, false, true}, &make_realtime_smoke_scene},
-    {SceneMetadata {"final_room", "Final Room", 500, false, true}, &make_final_room_scene},
+    {SceneMetadata {"final_room", "Final Room", 500, true, true}, &make_final_room_scene},
 };
 
 const SceneRegistryEntry* find_scene_registry_entry(std::string_view scene_id) {

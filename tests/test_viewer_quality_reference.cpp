@@ -14,12 +14,6 @@
 
 namespace {
 
-// This lower-center crop covers the lit furniture cluster where the viewer quality split is most visible.
-constexpr int kReferenceRoiX = 20;
-constexpr int kReferenceRoiY = 32;
-constexpr int kReferenceRoiWidth = 16;
-constexpr int kReferenceRoiHeight = 12;
-
 double beauty_channel_to_display(float value) {
     return std::clamp(std::sqrt(std::max(0.0, static_cast<double>(value))), 0.0, 0.999);
 }
@@ -29,24 +23,39 @@ double compute_mae_to_reference(const rt::RadianceFrame& frame, const cv::Mat& r
     expect_true(frame.height == reference.rows, "frame height matches reference");
     expect_true(reference.type() == CV_8UC3, "reference image uses CV_8UC3");
 
-    double error_sum = 0.0;
-    for (int y = kReferenceRoiY; y < kReferenceRoiY + kReferenceRoiHeight; ++y) {
-        for (int x = kReferenceRoiX; x < kReferenceRoiX + kReferenceRoiWidth; ++x) {
+    double reference_sum = 0.0;
+    double frame_sum = 0.0;
+    for (int y = 0; y < frame.height; ++y) {
+        for (int x = 0; x < frame.width; ++x) {
             const std::size_t pixel_index = static_cast<std::size_t>(y * frame.width + x) * 4;
             const cv::Vec3b reference_bgr = reference.at<cv::Vec3b>(y, x);
-            const double reference_luminance =
-                (static_cast<double>(reference_bgr[0]) + static_cast<double>(reference_bgr[1])
-                    + static_cast<double>(reference_bgr[2]))
-                / (3.0 * 255.0);
-            const double frame_luminance =
-                (beauty_channel_to_display(frame.beauty_rgba[pixel_index + 0])
-                    + beauty_channel_to_display(frame.beauty_rgba[pixel_index + 1])
-                    + beauty_channel_to_display(frame.beauty_rgba[pixel_index + 2]))
-                / 3.0;
-            error_sum += std::abs(frame_luminance - reference_luminance);
+            reference_sum += static_cast<double>(reference_bgr[2]) / 255.0;
+            reference_sum += static_cast<double>(reference_bgr[1]) / 255.0;
+            reference_sum += static_cast<double>(reference_bgr[0]) / 255.0;
+            frame_sum += beauty_channel_to_display(frame.beauty_rgba[pixel_index + 0]);
+            frame_sum += beauty_channel_to_display(frame.beauty_rgba[pixel_index + 1]);
+            frame_sum += beauty_channel_to_display(frame.beauty_rgba[pixel_index + 2]);
         }
     }
-    return error_sum / static_cast<double>(kReferenceRoiWidth * kReferenceRoiHeight);
+    const double scale = frame_sum > 0.0 ? reference_sum / frame_sum : 1.0;
+
+    double error_sum = 0.0;
+    for (int y = 0; y < frame.height; ++y) {
+        for (int x = 0; x < frame.width; ++x) {
+            const std::size_t pixel_index = static_cast<std::size_t>(y * frame.width + x) * 4;
+            const cv::Vec3b reference_bgr = reference.at<cv::Vec3b>(y, x);
+            const double reference_r = static_cast<double>(reference_bgr[2]) / 255.0;
+            const double reference_g = static_cast<double>(reference_bgr[1]) / 255.0;
+            const double reference_b = static_cast<double>(reference_bgr[0]) / 255.0;
+            const double frame_r = std::clamp(scale * beauty_channel_to_display(frame.beauty_rgba[pixel_index + 0]), 0.0, 1.0);
+            const double frame_g = std::clamp(scale * beauty_channel_to_display(frame.beauty_rgba[pixel_index + 1]), 0.0, 1.0);
+            const double frame_b = std::clamp(scale * beauty_channel_to_display(frame.beauty_rgba[pixel_index + 2]), 0.0, 1.0);
+            error_sum += std::abs(frame_r - reference_r);
+            error_sum += std::abs(frame_g - reference_g);
+            error_sum += std::abs(frame_b - reference_b);
+        }
+    }
+    return error_sum / static_cast<double>(frame.width * frame.height * 3);
 }
 
 }  // namespace
@@ -68,11 +77,8 @@ int main() {
     rt::OptixRenderer renderer;
     renderer.prepare_scene(packed_scene);
 
-    rt::RenderProfile preview_profile = rt::viewer::default_viewer_preview_profile();
-    preview_profile.max_bounces = 1;
-    rt::RenderProfile converge_profile = rt::viewer::default_viewer_converge_profile();
-    converge_profile.samples_per_pixel = 64;
-    converge_profile.max_bounces = 8;
+    const rt::RenderProfile preview_profile = rt::viewer::default_viewer_preview_profile();
+    const rt::RenderProfile converge_profile = rt::viewer::default_viewer_converge_profile();
     rt::viewer::ViewerQualityController controller(preview_profile, converge_profile);
 
     controller.begin_frame("final_room", pose);
@@ -91,7 +97,6 @@ int main() {
 
     const double single_error = compute_mae_to_reference(single_frame, cpu_reference);
     const double accumulated_error = compute_mae_to_reference(accumulated_frame, cpu_reference);
-
     expect_true(accumulated_error < single_error,
         "stationary converge accumulation should improve agreement with CPU reference");
     return 0;

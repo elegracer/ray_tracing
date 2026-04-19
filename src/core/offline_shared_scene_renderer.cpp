@@ -124,7 +124,7 @@ cv::Mat render_shared_scene(std::string_view scene_id, const int samples_per_pix
 cv::Mat render_shared_scene_from_camera(std::string_view scene_id, const PackedCamera& camera,
     const int samples_per_pixel) {
     const SceneCatalogEntry* entry = find_scene_catalog_entry(scene_id);
-    if (entry == nullptr) {
+    if (entry == nullptr || !entry->supports_cpu_render) {
         throw std::invalid_argument("scene id is not available for offline CPU rendering");
     }
 
