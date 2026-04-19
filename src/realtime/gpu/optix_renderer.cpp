@@ -552,6 +552,7 @@ void OptixRenderer::launch_radiance_pipeline(const PackedScene& scene, const Pac
     LaunchParams params {};
     params.width = rig.cameras[camera_index].width;
     params.height = rig.cameras[camera_index].height;
+    params.sample_stream = launch_sample_stream_++;
     params.active_camera = make_active_camera(rig.cameras[camera_index]);
     allocate_frame_buffers(params.width, params.height);
     params.frame = device_frame_;
@@ -783,6 +784,7 @@ void OptixRenderer::prepare_scene(const PackedScene& scene) {
     upload_scene(scene);
     build_or_refit_accels(scene);
     scene_prepared_ = true;
+    launch_sample_stream_ = 0;
 }
 
 RadianceFrame OptixRenderer::render_radiance(const PackedScene& scene, const PackedCameraRig& rig,

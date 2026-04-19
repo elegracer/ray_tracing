@@ -38,7 +38,7 @@ int main() {
 
     const rt::RenderProfile profile = rt::viewer::default_viewer_profile();
     expect_true(profile.samples_per_pixel == 1, "viewer spp");
-    expect_true(profile.max_bounces == 2, "viewer bounces");
+    expect_true(profile.max_bounces == 3, "viewer bounces");
     expect_true(!profile.enable_denoise, "viewer denoise disabled");
 
     const rt::viewer::BodyPose pose {

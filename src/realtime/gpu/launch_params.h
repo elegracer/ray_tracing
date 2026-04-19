@@ -1,11 +1,11 @@
 #pragma once
 
 #include "realtime/camera_rig.h"
+#include "realtime/gpu/frame_types.h"
 
 #include <Eigen/Core>
 
 #include <cstdint>
-#include <vector>
 #include <vector_types.h>
 
 namespace rt {
@@ -15,12 +15,6 @@ struct PackedQuad;
 struct PackedMedium;
 struct PackedTexture;
 struct MaterialSample;
-
-struct DirectionDebugFrame {
-    int width = 0;
-    int height = 0;
-    std::vector<std::uint8_t> rgba;
-};
 
 struct DeviceFrameBuffers {
     float4* beauty = nullptr;
@@ -87,20 +81,11 @@ struct LaunchParams {
     DeviceActiveCamera active_camera {};
     int width = 0;
     int height = 0;
+    std::uint32_t sample_stream = 0;
     int samples_per_pixel = 1;
     int max_bounces = 4;
     int rr_start_bounce = 3;
     int mode = 0;
-};
-
-struct RadianceFrame {
-    int width = 0;
-    int height = 0;
-    double average_luminance = 0.0;
-    std::vector<float> beauty_rgba;
-    std::vector<float> normal_rgba;
-    std::vector<float> albedo_rgba;
-    std::vector<float> depth;
 };
 
 struct PackedSphere {

@@ -1,4 +1,5 @@
 #include "realtime/render_profile.h"
+#include "realtime/viewer/default_viewer_scene.h"
 #include "test_support.h"
 
 int main() {
@@ -33,5 +34,29 @@ int main() {
     expect_true(realtime_default.rr_start_bounce == balanced.rr_start_bounce, "default rr start matches balanced");
     expect_true(realtime_default.accumulation_reset_rotation_deg == balanced.accumulation_reset_rotation_deg, "default rotation matches balanced");
     expect_true(realtime_default.accumulation_reset_translation == balanced.accumulation_reset_translation, "default translation matches balanced");
+
+    const rt::RenderProfile viewer_preview = rt::viewer::default_viewer_preview_profile();
+    expect_true(viewer_preview.samples_per_pixel == 1, "viewer preview spp");
+    expect_true(viewer_preview.max_bounces == 3, "viewer preview bounce budget");
+    expect_true(!viewer_preview.enable_denoise, "viewer preview denoise disabled");
+    expect_true(viewer_preview.rr_start_bounce == 2, "viewer preview rr start");
+    expect_true(viewer_preview.accumulation_reset_rotation_deg == 2.0, "viewer preview accumulation rotation");
+    expect_true(viewer_preview.accumulation_reset_translation == 0.05, "viewer preview accumulation translation");
+
+    const rt::RenderProfile viewer_converge = rt::viewer::default_viewer_converge_profile();
+    expect_true(viewer_converge.samples_per_pixel == 2, "viewer converge spp");
+    expect_true(viewer_converge.max_bounces == 4, "viewer converge bounce budget");
+    expect_true(!viewer_converge.enable_denoise, "viewer converge denoise disabled");
+    expect_true(viewer_converge.rr_start_bounce == 3, "viewer converge rr start");
+    expect_true(viewer_converge.accumulation_reset_rotation_deg == 2.0, "viewer converge accumulation rotation");
+    expect_true(viewer_converge.accumulation_reset_translation == 0.05, "viewer converge accumulation translation");
+
+    const rt::RenderProfile viewer_default = rt::viewer::default_viewer_profile();
+    expect_true(viewer_default.samples_per_pixel == viewer_preview.samples_per_pixel, "viewer default spp matches preview");
+    expect_true(viewer_default.max_bounces == viewer_preview.max_bounces, "viewer default bounces match preview");
+    expect_true(viewer_default.enable_denoise == viewer_preview.enable_denoise, "viewer default denoise matches preview");
+    expect_true(viewer_default.rr_start_bounce == viewer_preview.rr_start_bounce, "viewer default rr start matches preview");
+    expect_true(viewer_default.accumulation_reset_rotation_deg == viewer_preview.accumulation_reset_rotation_deg, "viewer default rotation matches preview");
+    expect_true(viewer_default.accumulation_reset_translation == viewer_preview.accumulation_reset_translation, "viewer default translation matches preview");
     return 0;
 }

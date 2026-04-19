@@ -2,11 +2,11 @@
 
 #include "proxy/proxy.h"
 
+#include "aabb.h"
 #include "common.h"
 
 struct Ray;
 struct Interval;
-struct AABB;
 struct HitRecord;
 struct ScatterRecord;
 

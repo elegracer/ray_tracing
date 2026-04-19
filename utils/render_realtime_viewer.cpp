@@ -5,6 +5,7 @@
 #include "realtime/viewer/body_pose.h"
 #include "realtime/viewer/default_viewer_scene.h"
 #include "realtime/viewer/four_camera_rig.h"
+#include "realtime/viewer/viewer_quality_controller.h"
 #include "realtime/viewer/scene_switch_controller.h"
 
 #include <GLFW/glfw3.h>
@@ -191,7 +192,7 @@ enum class UploadStatus {
     incomplete_frame,
 };
 
-UploadStatus to_rgba8(const rt::RadianceFrame& frame, std::vector<std::uint8_t>& rgba8) {
+UploadStatus to_rgba8(const rt::viewer::ResolvedBeautyFrameView& frame, std::vector<std::uint8_t>& rgba8) {
     if (frame.width != kViewWidth || frame.height != kViewHeight) {
         return UploadStatus::resolution_mismatch;
     }
@@ -218,7 +219,9 @@ UploadStatus to_rgba8(const rt::RadianceFrame& frame, std::vector<std::uint8_t>&
     return UploadStatus::ok;
 }
 
-UploadStatus upload_texture(GLuint texture, const rt::RadianceFrame& frame, std::vector<std::uint8_t>& scratch) {
+UploadStatus upload_texture(GLuint texture,
+    const rt::viewer::ResolvedBeautyFrameView& frame,
+    std::vector<std::uint8_t>& scratch) {
     const UploadStatus status = to_rgba8(frame, scratch);
     if (status != UploadStatus::ok) {
         return status;
@@ -258,6 +261,16 @@ std::string scene_label(std::string_view scene_id) {
 void set_ui_interaction(GLFWwindow* window, bool enabled, double& cursor_x, double& cursor_y) {
     glfwSetInputMode(window, GLFW_CURSOR, enabled ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
     glfwGetCursorPos(window, &cursor_x, &cursor_y);
+}
+
+const char* quality_mode_label(rt::viewer::ViewerQualityMode mode) {
+    switch (mode) {
+    case rt::viewer::ViewerQualityMode::preview:
+        return "preview";
+    case rt::viewer::ViewerQualityMode::converge:
+        return "converge";
+    }
+    return "unknown";
 }
 
 }  // namespace
@@ -327,7 +340,9 @@ int main(int argc, char* argv[]) {
     rt::viewer::SceneSwitchController scene_controller(scene_name);
     rt::viewer::BodyPose pose = rt::default_spawn_pose_for_scene(scene_name);
     rt::PackedScene scene = rt::make_realtime_scene(scene_name).pack();
-    const rt::RenderProfile profile = rt::viewer::default_viewer_profile();
+    rt::viewer::ViewerQualityController quality_controller(
+        rt::viewer::default_viewer_preview_profile(),
+        rt::viewer::default_viewer_converge_profile());
     std::string viewer_error_message;
     bool ui_interaction_enabled = false;
     bool previous_tab_down = false;
@@ -395,6 +410,7 @@ int main(int argc, char* argv[]) {
                 pool.prepare_scene(next_scene);
                 scene = std::move(next_scene);
                 pose = rt::default_spawn_pose_for_scene(scene_controller.current_scene_id());
+                quality_controller.reset_all();
                 viewer_error_message.clear();
                 set_ui_interaction(window, ui_interaction_enabled, last_cursor_x, last_cursor_y);
             } catch (const std::exception& err) {
@@ -408,17 +424,20 @@ int main(int argc, char* argv[]) {
             fmt::print(stderr, "scene switch failed: {}\n", viewer_error_message);
         }
 
+        quality_controller.begin_frame(scene_controller.current_scene_id(), pose);
         const rt::PackedCameraRig rig = rt::viewer::make_default_viewer_rig(pose, kViewWidth, kViewHeight).pack();
         const std::vector<rt::CameraRenderResult> results =
-            pool.render_frame(rig, profile, static_cast<int>(textures.size()));
+            pool.render_frame(rig, quality_controller.active_profile(), static_cast<int>(textures.size()));
         for (const auto& result : results) {
             const int idx = result.camera_index;
             if (idx < 0 || idx >= static_cast<int>(textures.size())) {
                 continue;
             }
+            const rt::viewer::ResolvedBeautyFrameView display_frame =
+                quality_controller.resolve_beauty_view(idx, result.profiled.frame);
             const UploadStatus upload_status = upload_texture(
                 textures[static_cast<std::size_t>(idx)],
-                result.profiled.frame,
+                display_frame,
                 texture_scratch[static_cast<std::size_t>(idx)]);
             if (upload_status == UploadStatus::ok) {
                 warned_texture_mismatch[static_cast<std::size_t>(idx)] = false;
@@ -429,11 +448,11 @@ int main(int argc, char* argv[]) {
                 if (upload_status == UploadStatus::resolution_mismatch) {
                     fmt::print(stderr,
                         "viewer frame size mismatch for camera {}: got {}x{}, expected {}x{}\n",
-                        idx, result.profiled.frame.width, result.profiled.frame.height, kViewWidth, kViewHeight);
+                        idx, display_frame.width, display_frame.height, kViewWidth, kViewHeight);
                 } else {
                     fmt::print(stderr,
                         "viewer frame buffer too small for camera {}: got {}, need at least {}\n",
-                        idx, result.profiled.frame.beauty_rgba.size(),
+                        idx, display_frame.beauty_rgba.size(),
                         static_cast<std::size_t>(kViewWidth * kViewHeight * 4));
                 }
                 warned_texture_mismatch[static_cast<std::size_t>(idx)] = true;
@@ -482,6 +501,8 @@ int main(int argc, char* argv[]) {
 
         ImGui::Begin("Viewer");
         ImGui::Text("Scene: %s", scene_label(scene_controller.current_scene_id()).c_str());
+        ImGui::Text("Quality: %s", quality_mode_label(quality_controller.active_mode()));
+        ImGui::Text("cam0 history: %d", quality_controller.history_length(0));
         ImGui::Text("Tab toggles UI cursor");
         ImGui::Text("Controls: WASD + QE move, mouse look");
         const std::string preview_label = scene_label(scene_controller.current_scene_id());
