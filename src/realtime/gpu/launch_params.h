@@ -5,6 +5,7 @@
 
 #include <Eigen/Core>
 
+#include <cstdint>
 #include <vector_types.h>
 
 namespace rt {
@@ -80,6 +81,7 @@ struct LaunchParams {
     DeviceActiveCamera active_camera {};
     int width = 0;
     int height = 0;
+    std::uint32_t sample_stream = 0;
     int samples_per_pixel = 1;
     int max_bounces = 4;
     int rr_start_bounce = 3;

@@ -14,6 +14,10 @@
 namespace rt {
 namespace {
 
+bool nearly_equal(const double lhs, const double rhs, const double tolerance = 1e-6) {
+    return std::abs(lhs - rhs) <= tolerance;
+}
+
 void configure_offline_camera(std::string_view scene_id, const int samples_per_pixel, Camera& cam) {
     cam.aspect_ratio = 16.0 / 9.0;
     cam.image_width = 1280;
@@ -76,8 +80,19 @@ void configure_camera_from_packed(const PackedCamera& packed, const int samples_
     if (packed.width <= 0 || packed.height <= 0) {
         throw std::invalid_argument("packed camera dimensions must be positive");
     }
-    if (packed.pinhole.fy <= 0.0) {
-        throw std::invalid_argument("packed pinhole fy must be positive");
+    if (packed.pinhole.fx <= 0.0 || packed.pinhole.fy <= 0.0) {
+        throw std::invalid_argument("packed pinhole focal lengths must be positive");
+    }
+    const double expected_cx = 0.5 * static_cast<double>(packed.width);
+    const double expected_cy = 0.5 * static_cast<double>(packed.height);
+    const double expected_fx =
+        packed.pinhole.fy * static_cast<double>(packed.width) / static_cast<double>(packed.height);
+    if (!nearly_equal(packed.pinhole.fx, expected_fx) || !nearly_equal(packed.pinhole.cx, expected_cx)
+        || !nearly_equal(packed.pinhole.cy, expected_cy) || !nearly_equal(packed.pinhole.k1, 0.0)
+        || !nearly_equal(packed.pinhole.k2, 0.0) || !nearly_equal(packed.pinhole.k3, 0.0)
+        || !nearly_equal(packed.pinhole.p1, 0.0) || !nearly_equal(packed.pinhole.p2, 0.0)) {
+        throw std::invalid_argument(
+            "offline shared-scene packed-camera render only supports centered pinhole cameras without distortion");
     }
 
     const Eigen::Vector3d origin = packed.T_rc.block<3, 1>(0, 3);

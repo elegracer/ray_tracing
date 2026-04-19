@@ -67,7 +67,7 @@ __device__ std::uint32_t hash_u32(std::uint32_t x) {
     return x;
 }
 
-__device__ std::uint32_t rng_for(int pixel_index, int sample, int stream) {
+__device__ std::uint32_t rng_for(int pixel_index, int sample, std::uint32_t stream) {
     const std::uint32_t seed = static_cast<std::uint32_t>(pixel_index) * 1973u
         ^ static_cast<std::uint32_t>(sample + 1) * 9277u
         ^ static_cast<std::uint32_t>(stream + 1) * 26699u
@@ -706,7 +706,7 @@ __global__ void radiance_kernel(const LaunchParams* params_ptr) {
     int aux_count = 0;
 
     for (int sample = 0; sample < spp; ++sample) {
-        std::uint32_t rng = rng_for(pixel_index, sample, 0);
+        std::uint32_t rng = rng_for(pixel_index, sample, params.sample_stream);
         PathState state = trace_primary_ray(params, x, y);
         float3 sample_normal = make_float3(0.0f, 0.0f, 1.0f);
         float3 sample_albedo = make_float3(0.0f, 0.0f, 0.0f);
