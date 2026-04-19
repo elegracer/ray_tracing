@@ -11,8 +11,8 @@ See: .planning/PROJECT.md (updated 2026-04-19)
 
 Phase: 2 of 5 (Offline CPU Camera Models)
 Plan: 0 of TBD in current phase
-Status: Ready to discuss
-Last activity: 2026-04-20 - Phase 1 verification completed with all UAT checkpoints passing
+Status: Ready to plan
+Last activity: 2026-04-20 - Phase 2 discussion completed and context captured
 
 Progress: [██░░░░░░░░] 20%
 
@@ -65,5 +65,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-20 00:00
-Stopped at: Phase 1 verified complete; next step is discuss Phase 2
-Resume file: .planning/ROADMAP.md
+Stopped at: Phase 2 context captured; next step is plan Phase 2
+Resume file: .planning/phases/02-offline-cpu-camera-models/02-CONTEXT.md
