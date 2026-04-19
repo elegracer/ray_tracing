@@ -1,0 +1,72 @@
+format_version: 1
+
+scene:
+  id: simple_light
+  label: Simple Light
+  background: [0.0, 0.0, 0.0]
+  textures:
+    perlin_noise:
+      type: noise
+      scale: 4.0
+    light_tex:
+      type: constant
+      color: [4.0, 4.0, 4.0]
+  materials:
+    perlin:
+      type: diffuse
+      albedo: perlin_noise
+    light:
+      type: emissive
+      emission: light_tex
+  shapes:
+    ground:
+      type: sphere
+      center: [0.0, -1000.0, 0.0]
+      radius: 1000.0
+    center_sphere:
+      type: sphere
+      center: [0.0, 2.0, 0.0]
+      radius: 2.0
+    light_sphere:
+      type: sphere
+      center: [0.0, 7.0, 0.0]
+      radius: 2.0
+    light_quad:
+      type: quad
+      origin: [3.0, 1.0, -2.0]
+      edge_u: [2.0, 0.0, 0.0]
+      edge_v: [0.0, 2.0, 0.0]
+  instances:
+    - shape: ground
+      material: perlin
+    - shape: center_sphere
+      material: perlin
+    - shape: light_sphere
+      material: light
+    - shape: light_quad
+      material: light
+
+cpu_presets:
+  default:
+    samples_per_pixel: 500
+    camera:
+      lookfrom: [26.0, 3.0, 6.0]
+      lookat: [0.0, 2.0, 0.0]
+      vfov: 20.0
+      aspect_ratio: 1.7777777777777777
+      image_width: 1280
+      max_depth: 50
+      vup: [0.0, 1.0, 0.0]
+      defocus_angle: 0.0
+      focus_dist: 10.0
+
+realtime:
+  default_view:
+    initial_body_pose:
+      position: [10.0, 3.0, 6.0]
+      yaw_deg: 59.0362
+      pitch_deg: -4.90108
+    frame_convention: legacy_y_up
+    vfov_deg: 20.0
+    use_default_viewer_intrinsics: false
+    base_move_speed: 4.0
