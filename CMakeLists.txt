@@ -53,10 +53,7 @@ find_package(OpenCV CONFIG REQUIRED)
 find_path(ICECREAM_CPP_INCLUDE_DIRS "icecream.hpp")
 find_package(TBB CONFIG REQUIRED)
 find_package(indicators CONFIG REQUIRED)
-find_package(yaml-cpp CONFIG REQUIRED
-    PATHS /usr/lib/x86_64-linux-gnu/cmake/yaml-cpp
-    NO_DEFAULT_PATH
-)
+find_package(yaml-cpp CONFIG REQUIRED)
 find_path(OPTIX_INCLUDE_DIR optix.h
     PATHS ${CMAKE_CURRENT_SOURCE_DIR}/NVIDIA-OptiX-SDK-9.1.0-linux64-x86_64
     PATH_SUFFIXES include

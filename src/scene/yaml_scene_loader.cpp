@@ -12,8 +12,24 @@ namespace {
 
 using IdTable = std::unordered_map<std::string, int>;
 
+std::string scene_error_prefix(const std::filesystem::path& scene_file) {
+    return scene_file.string() + ": ";
+}
+
 std::runtime_error scene_error(const std::filesystem::path& scene_file, std::string_view message) {
-    return std::runtime_error(scene_file.string() + ": " + std::string(message));
+    return std::runtime_error(scene_error_prefix(scene_file) + std::string(message));
+}
+
+void ensure_map(const YAML::Node& node, std::string_view field_name) {
+    if (node.IsDefined() && !node.IsMap()) {
+        throw std::runtime_error(std::string(field_name) + " must be a map");
+    }
+}
+
+void ensure_unique_id(const IdTable& ids, const std::string& id, std::string_view kind) {
+    if (ids.find(id) != ids.end()) {
+        throw std::runtime_error("duplicate " + std::string(kind) + " id: " + id);
+    }
 }
 
 Eigen::Vector3d parse_vec3(const YAML::Node& node) {
@@ -54,6 +70,7 @@ Transform parse_transform(const YAML::Node& node) {
     if (!node) {
         return transform;
     }
+    ensure_map(node, "transform");
     if (const YAML::Node translation = node["translation"]) {
         transform.translation = parse_vec3(translation);
     }
@@ -63,22 +80,24 @@ Transform parse_transform(const YAML::Node& node) {
     return transform;
 }
 
-void parse_textures(const YAML::Node& textures_node, SceneIR& scene_ir, IdTable& texture_ids) {
+void parse_textures(const YAML::Node& textures_node, const std::filesystem::path& scene_directory, SceneDefinition& out,
+    IdTable& texture_ids) {
     if (!textures_node) {
         return;
     }
 
     for (const auto& texture_entry : textures_node) {
         const std::string id = texture_entry.first.as<std::string>();
+        ensure_unique_id(texture_ids, id, "texture");
         const YAML::Node texture_node = texture_entry.second;
         const std::string type = texture_node["type"].as<std::string>();
 
         if (type == "constant") {
-            texture_ids.emplace(id, scene_ir.add_texture(ConstantColorTextureDesc {.color = parse_vec3(texture_node["color"])}));
+            texture_ids.emplace(id, out.scene_ir.add_texture(ConstantColorTextureDesc {.color = parse_vec3(texture_node["color"])}));
             continue;
         }
         if (type == "checker") {
-            texture_ids.emplace(id, scene_ir.add_texture(CheckerTextureDesc {
+            texture_ids.emplace(id, out.scene_ir.add_texture(CheckerTextureDesc {
                 .scale = texture_node["scale"] ? texture_node["scale"].as<double>() : 1.0,
                 .even_texture = require_id(texture_ids, texture_node["even"].as<std::string>(), "texture"),
                 .odd_texture = require_id(texture_ids, texture_node["odd"].as<std::string>(), "texture"),
@@ -86,11 +105,17 @@ void parse_textures(const YAML::Node& textures_node, SceneIR& scene_ir, IdTable&
             continue;
         }
         if (type == "image") {
-            texture_ids.emplace(id, scene_ir.add_texture(ImageTextureDesc {.path = texture_node["path"].as<std::string>()}));
+            std::filesystem::path texture_path = texture_node["path"].as<std::string>();
+            if (texture_path.is_relative()) {
+                texture_path = scene_directory / texture_path;
+            }
+            texture_path = texture_path.lexically_normal();
+            out.dependencies.push_back(texture_path.string());
+            texture_ids.emplace(id, out.scene_ir.add_texture(ImageTextureDesc {.path = texture_path.string()}));
             continue;
         }
         if (type == "noise") {
-            texture_ids.emplace(id, scene_ir.add_texture(NoiseTextureDesc {
+            texture_ids.emplace(id, out.scene_ir.add_texture(NoiseTextureDesc {
                 .scale = texture_node["scale"] ? texture_node["scale"].as<double>() : 1.0,
             }));
             continue;
@@ -107,6 +132,7 @@ void parse_materials(const YAML::Node& materials_node, SceneIR& scene_ir, const 
 
     for (const auto& material_entry : materials_node) {
         const std::string id = material_entry.first.as<std::string>();
+        ensure_unique_id(material_ids, id, "material");
         const YAML::Node material_node = material_entry.second;
         const std::string type = material_node["type"].as<std::string>();
 
@@ -153,6 +179,7 @@ void parse_shapes(const YAML::Node& shapes_node, SceneIR& scene_ir, IdTable& sha
 
     for (const auto& shape_entry : shapes_node) {
         const std::string id = shape_entry.first.as<std::string>();
+        ensure_unique_id(shape_ids, id, "shape");
         const YAML::Node shape_node = shape_entry.second;
         const std::string type = shape_node["type"].as<std::string>();
 
@@ -219,6 +246,7 @@ CpuCameraPreset parse_camera_preset(const YAML::Node& node) {
     if (!node) {
         return camera;
     }
+    ensure_map(node, "camera");
     if (const YAML::Node aspect_ratio = node["aspect_ratio"]) {
         camera.aspect_ratio = aspect_ratio.as<double>();
     }
@@ -288,8 +316,10 @@ RealtimeViewPreset parse_realtime_preset(const YAML::Node& node) {
     if (!node) {
         return preset;
     }
+    ensure_map(node, "default_view");
 
     if (const YAML::Node initial_body_pose = node["initial_body_pose"]) {
+        ensure_map(initial_body_pose, "initial_body_pose");
         if (const YAML::Node position = initial_body_pose["position"]) {
             preset.initial_body_pose.position = parse_vec3(position);
         }
@@ -319,10 +349,11 @@ SceneDefinition load_scene_definition(const std::filesystem::path& scene_file) {
     try {
         const YAML::Node root = YAML::LoadFile(scene_file.string());
         if (const YAML::Node format_version = root["format_version"]; !format_version || format_version.as<int>() != 1) {
-            throw scene_error(scene_file, "unsupported format_version");
+            throw std::runtime_error("unsupported format_version");
         }
 
         const YAML::Node scene_node = root["scene"];
+        const YAML::Node realtime_node = root["realtime"];
 
         SceneDefinition out;
         out.metadata.id = scene_node["id"].as<std::string>();
@@ -331,25 +362,35 @@ SceneDefinition load_scene_definition(const std::filesystem::path& scene_file) {
             out.metadata.background = parse_vec3(background);
         }
         out.metadata.supports_cpu_render = root["cpu_presets"] && root["cpu_presets"].size() > 0;
-        out.metadata.supports_realtime = root["realtime"] && root["realtime"]["default_view"];
+        out.metadata.supports_realtime =
+            realtime_node.IsDefined() && realtime_node.IsMap() && realtime_node["default_view"].IsDefined();
         out.dependencies.push_back(scene_file.lexically_normal().string());
 
         IdTable texture_ids;
         IdTable material_ids;
         IdTable shape_ids;
-        parse_textures(scene_node["textures"], out.scene_ir, texture_ids);
+        parse_textures(scene_node["textures"], scene_file.parent_path(), out, texture_ids);
         parse_materials(scene_node["materials"], out.scene_ir, texture_ids, material_ids);
         parse_shapes(scene_node["shapes"], out.scene_ir, shape_ids);
         parse_instances(scene_node["instances"], out.scene_ir, shape_ids, material_ids);
         parse_media(scene_node["media"], out.scene_ir, shape_ids, material_ids);
         parse_cpu_presets(root["cpu_presets"], out.metadata.id, out.cpu_presets);
-        if (const YAML::Node default_view = root["realtime"]["default_view"]) {
+        if (realtime_node.IsDefined() && !realtime_node.IsMap()) {
+            throw std::runtime_error("realtime must be a map");
+        }
+        if (realtime_node.IsDefined()) {
+            const YAML::Node default_view = realtime_node["default_view"];
+            if (default_view.IsDefined()) {
             out.realtime_preset = parse_realtime_preset(default_view);
+            }
         }
         return out;
     } catch (const YAML::Exception& ex) {
         throw scene_error(scene_file, ex.what());
     } catch (const std::exception& ex) {
+        if (std::string_view(ex.what()).rfind(scene_error_prefix(scene_file), 0) == 0) {
+            throw;
+        }
         throw scene_error(scene_file, ex.what());
     }
 }
