@@ -1,14 +1,105 @@
 #include "common/camera.h"
 #include "core/offline_shared_scene_renderer.h"
 #include "realtime/camera_models.h"
+#include "scene/scene_file_catalog.h"
 #include "scene/shared_scene_builders.h"
 #include "test_support.h"
 
 #include <Eigen/Geometry>
+#include <filesystem>
+#include <fstream>
 #include <opencv2/core.hpp>
+#include <string_view>
 #include <tbb/global_control.h>
 
 namespace {
+
+namespace fs = std::filesystem;
+
+void write_text_file(const fs::path& path, std::string_view contents) {
+    fs::create_directories(path.parent_path());
+    std::ofstream(path) << contents;
+}
+
+void write_shared_scene_model_switch_scene(
+    const fs::path& scene_file, std::string_view scene_id, std::string_view model) {
+    fs::create_directories(scene_file.parent_path());
+    const bool pinhole = model == "pinhole32";
+    const double focal = pinhole ? 55.0 : 24.0;
+    const std::string model_specific = pinhole
+        ? R"(      pinhole32:
+        k1: 0.0
+        k2: 0.0
+        k3: 0.0
+        p1: 0.0
+        p2: 0.0
+)"
+        : R"(      equi62_lut1d:
+        radial: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        tangential: [0.0, 0.0]
+)";
+
+    std::ofstream out(scene_file);
+    out << "format_version: 1\n"
+           "scene:\n"
+           "  id: " << scene_id << "\n"
+           "  label: Model Switch Scene\n"
+           "  background: [0.2, 0.3, 0.5]\n"
+           "  textures:\n"
+           "    white:\n"
+           "      type: constant\n"
+           "      color: [0.8, 0.8, 0.8]\n"
+           "    red:\n"
+           "      type: constant\n"
+           "      color: [0.9, 0.2, 0.2]\n"
+           "  materials:\n"
+           "    matte_white:\n"
+           "      type: diffuse\n"
+           "      albedo: white\n"
+           "    matte_red:\n"
+           "      type: diffuse\n"
+           "      albedo: red\n"
+           "  shapes:\n"
+           "    center_ball:\n"
+           "      type: sphere\n"
+           "      center: [0.0, 0.0, 0.0]\n"
+           "      radius: 0.6\n"
+           "    side_ball:\n"
+           "      type: sphere\n"
+           "      center: [1.1, 0.2, 1.0]\n"
+           "      radius: 0.4\n"
+           "  instances:\n"
+           "    - shape: center_ball\n"
+           "      material: matte_white\n"
+           "    - shape: side_ball\n"
+           "      material: matte_red\n"
+           "cpu_presets:\n"
+           "  default:\n"
+           "    samples_per_pixel: 1\n"
+           "    camera:\n"
+           "      model: " << model << "\n"
+           "      width: 64\n"
+           "      height: 48\n"
+           "      fx: " << focal << "\n"
+           "      fy: " << focal << "\n"
+           "      cx: 32.0\n"
+           "      cy: 24.0\n"
+           "      T_bc:\n"
+           "        translation: [0.0, 0.0, 0.0]\n"
+           "        rotation:\n"
+           "          - [1.0, 0.0, 0.0]\n"
+           "          - [0.0, 1.0, 0.0]\n"
+           "          - [0.0, 0.0, 1.0]\n"
+        << model_specific
+        << "      lookfrom: [0.0, 0.0, -3.0]\n"
+           "      lookat: [0.0, 0.0, 0.0]\n"
+           "      aspect_ratio: 1.3333333333333333\n"
+           "      image_width: 64\n"
+           "      max_depth: 8\n"
+           "      vup: [0.0, 1.0, 0.0]\n"
+           "      defocus_angle: 0.0\n"
+           "      focus_dist: 3.0\n";
+}
 
 rt::PackedCamera make_test_pinhole_camera() {
     rt::PackedCamera camera;
@@ -169,5 +260,23 @@ int main() {
         "equi packed-camera render keeps full rectangular dimensions");
     expect_true(cv::norm(pinhole_reference, equi_reference, cv::NORM_L1) > 0.0,
         "switching the offline shared-scene camera model changes the rendered result");
+
+    const fs::path root = fs::temp_directory_path() / "offline_shared_scene_model_switch";
+    fs::remove_all(root);
+    write_shared_scene_model_switch_scene(root / "pinhole" / "scene.yaml", "phase2_shared_pinhole", "pinhole32");
+    write_shared_scene_model_switch_scene(root / "equi" / "scene.yaml", "phase2_shared_equi", "equi62_lut1d");
+
+    rt::scene::global_scene_file_catalog().scan_directory(root);
+    const cv::Mat shared_pinhole = rt::render_shared_scene("phase2_shared_pinhole", 1);
+    const cv::Mat shared_equi = rt::render_shared_scene("phase2_shared_equi", 1);
+    expect_true(!shared_pinhole.empty(), "shared-scene pinhole render should succeed");
+    expect_true(!shared_equi.empty(), "shared-scene equi render should succeed");
+    expect_true(shared_pinhole.cols == 64 && shared_pinhole.rows == 48,
+        "shared-scene pinhole render keeps authored dimensions");
+    expect_true(shared_equi.cols == 64 && shared_equi.rows == 48,
+        "shared-scene equi render keeps authored dimensions");
+    expect_true(cv::norm(shared_pinhole, shared_equi, cv::NORM_L1) > 0.0,
+        "shared-scene preset path honors camera model changes");
+    rt::scene::global_scene_file_catalog().scan_directory("assets/scenes");
     return 0;
 }

@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <filesystem>
+#include <fstream>
 #include <string_view>
 
 namespace {
@@ -18,6 +19,11 @@ std::filesystem::path source_tree_root() {
 
 std::filesystem::path scene_file_path(std::string_view scene_id) {
     return source_tree_root() / "assets" / "scenes" / scene_id / "scene.yaml";
+}
+
+void write_text_file(const std::filesystem::path& path, std::string_view contents) {
+    std::filesystem::create_directories(path.parent_path());
+    std::ofstream(path) << contents;
 }
 
 const rt::scene::SceneDefinitionCpuRenderPreset* find_definition_cpu_preset(
@@ -187,5 +193,69 @@ int main() {
 
     const cv::Mat smoke_image = rt::render_shared_scene("cornell_smoke", 1);
     expect_true(!smoke_image.empty(), "cornell smoke renders through shared offline path");
+
+    const std::filesystem::path temp_root = std::filesystem::temp_directory_path() / "shared_scene_regression_equi";
+    std::filesystem::remove_all(temp_root);
+    write_text_file(temp_root / "equi" / "scene.yaml", R"(format_version: 1
+scene:
+  id: regression_equi_scene
+  label: Regression Equi Scene
+  background: [0.0, 0.0, 0.0]
+  textures:
+    white:
+      type: constant
+      color: [1.0, 1.0, 1.0]
+  materials:
+    matte:
+      type: diffuse
+      albedo: white
+  shapes:
+    ball:
+      type: sphere
+      center: [0.0, 0.0, 0.0]
+      radius: 0.75
+  instances:
+    - shape: ball
+      material: matte
+cpu_presets:
+  default:
+    samples_per_pixel: 4
+    camera:
+      model: equi62_lut1d
+      width: 80
+      height: 60
+      fx: 47.0
+      fy: 47.0
+      cx: 40.0
+      cy: 30.0
+      T_bc:
+        translation: [0.0, 0.0, 0.0]
+        rotation:
+          - [1.0, 0.0, 0.0]
+          - [0.0, 1.0, 0.0]
+          - [0.0, 0.0, 1.0]
+      equi62_lut1d:
+        radial: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        tangential: [0.0, 0.0]
+      lookfrom: [0.0, 0.0, -3.0]
+      lookat: [0.0, 0.0, 0.0]
+      aspect_ratio: 1.3333333333333333
+      image_width: 80
+      max_depth: 8
+      vup: [0.0, 1.0, 0.0]
+      defocus_angle: 0.0
+      focus_dist: 3.0
+)");
+    rt::scene::SceneFileCatalog temp_catalog;
+    temp_catalog.scan_directory(temp_root);
+    const rt::scene::CpuRenderPreset* equi_temp_preset = temp_catalog.default_cpu_render_preset("regression_equi_scene");
+    expect_true(equi_temp_preset != nullptr, "temp equi preset present");
+    expect_true(equi_temp_preset->camera.camera.model == rt::CameraModelType::equi62_lut1d,
+        "temp equi preset model preserved");
+    expect_true(equi_temp_preset->camera.camera.width == 80 && equi_temp_preset->camera.camera.height == 60,
+        "temp equi preset dimensions preserved");
+    expect_near(equi_temp_preset->camera.camera.fx, 47.0, 1e-12, "temp equi preset fx preserved");
+    expect_near(equi_temp_preset->camera.camera.equi62_lut1d.radial[0], 0.0, 1e-12,
+        "temp equi preset radial slot preserved");
     return 0;
 }
