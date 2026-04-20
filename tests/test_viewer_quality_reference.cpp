@@ -1,4 +1,5 @@
 #include "core/offline_shared_scene_renderer.h"
+#include "realtime/camera_models.h"
 #include "realtime/gpu/optix_renderer.h"
 #include "realtime/realtime_scene_factory.h"
 #include "realtime/viewer/default_viewer_scene.h"
@@ -96,24 +97,56 @@ int main() {
     const rt::PackedScene packed_scene = scene.pack();
     const rt::viewer::BodyPose pose = rt::default_spawn_pose_for_scene("final_room");
     const rt::PackedCameraRig rig = rt::viewer::make_default_viewer_rig(pose, kWidth, kHeight).pack();
+    const cv::Mat cpu_reference = rt::render_shared_scene_from_camera("final_room", rig.cameras[0], 16);
+
+    rt::PackedCamera equi_camera = rig.cameras[0];
+    equi_camera.model = rt::CameraModelType::equi62_lut1d;
+    equi_camera.equi = rt::make_equi62_lut1d_params(kWidth, kHeight, 18.0, 18.0, 31.5, 23.5,
+        std::array<double, 6> {0.0, 0.0, 0.0, 0.0, 0.0, 0.0}, Eigen::Vector2d::Zero());
+    const cv::Mat equi_reference = rt::render_shared_scene_from_camera("final_room", equi_camera, 1);
+    expect_true(!equi_reference.empty(), "offline reference accepts equi packed cameras");
+    expect_true(equi_reference.cols == kWidth && equi_reference.rows == kHeight,
+        "equi packed-camera reference keeps rig dimensions");
+    expect_true(cv::norm(equi_reference, cpu_reference, cv::NORM_L1) > 0.0,
+        "equi packed-camera reference changes the CPU image");
 
     rt::PackedCamera off_center_camera = rig.cameras[0];
     off_center_camera.pinhole.cx += 1.0;
-    expect_throws_with_message(
-        [&]() { return rt::render_shared_scene_from_camera("final_room", off_center_camera, 1); },
-        "centered pinhole cameras", "offline reference rejects unsupported principal point");
+    const cv::Mat off_center_reference = rt::render_shared_scene_from_camera("final_room", off_center_camera, 1);
+    expect_true(!off_center_reference.empty(), "offline reference accepts off-center pinhole camera");
+    expect_true(off_center_reference.cols == kWidth && off_center_reference.rows == kHeight,
+        "off-center pinhole reference keeps rig dimensions");
+    expect_true(cv::norm(off_center_reference, cpu_reference, cv::NORM_L1) > 0.0,
+        "off-center pinhole reference changes the CPU image");
+
     rt::PackedCamera distorted_camera = rig.cameras[0];
     distorted_camera.pinhole.k1 = 0.01;
-    expect_throws_with_message(
-        [&]() { return rt::render_shared_scene_from_camera("final_room", distorted_camera, 1); },
-        "centered pinhole cameras", "offline reference rejects distorted pinhole parameters");
+    distorted_camera.pinhole.k2 = -0.002;
+    const cv::Mat distorted_reference = rt::render_shared_scene_from_camera("final_room", distorted_camera, 1);
+    expect_true(!distorted_reference.empty(), "offline reference accepts distorted pinhole camera");
+    expect_true(cv::norm(distorted_reference, cpu_reference, cv::NORM_L1) > 0.0,
+        "distorted pinhole reference changes the CPU image");
+
     rt::PackedCamera mismatched_fx_camera = rig.cameras[0];
     mismatched_fx_camera.pinhole.fx += 1.0;
-    expect_throws_with_message(
-        [&]() { return rt::render_shared_scene_from_camera("final_room", mismatched_fx_camera, 1); },
-        "centered pinhole cameras", "offline reference rejects mismatched horizontal focal length");
+    const cv::Mat mismatched_fx_reference = rt::render_shared_scene_from_camera("final_room", mismatched_fx_camera, 1);
+    expect_true(!mismatched_fx_reference.empty(), "offline reference accepts non-square pinhole focal lengths");
+    expect_true(cv::norm(mismatched_fx_reference, cpu_reference, cv::NORM_L1) > 0.0,
+        "non-square pinhole focal lengths change the CPU image");
 
-    const cv::Mat cpu_reference = rt::render_shared_scene_from_camera("final_room", rig.cameras[0], 16);
+    rt::PackedCamera invalid_pinhole_camera = rig.cameras[0];
+    invalid_pinhole_camera.pinhole.fx = 0.0;
+    expect_throws_with_message(
+        [&]() { return rt::render_shared_scene_from_camera("final_room", invalid_pinhole_camera, 1); },
+        "packed pinhole focal lengths must be positive",
+        "offline reference rejects non-positive pinhole focal lengths");
+
+    rt::PackedCamera invalid_equi_camera = equi_camera;
+    invalid_equi_camera.width = 0;
+    expect_throws_with_message(
+        [&]() { return rt::render_shared_scene_from_camera("final_room", invalid_equi_camera, 1); },
+        "packed camera dimensions must be positive",
+        "offline reference rejects non-positive packed-camera dimensions");
 
     rt::OptixRenderer renderer;
     renderer.prepare_scene(packed_scene);
