@@ -1,78 +1,73 @@
 ---
 phase: 02-offline-cpu-camera-models
 plan: 01
-subsystem: offline-rendering
-tags: [camera-models, offline-renderer, pinhole32, equi62_lut1d, testing]
-requires:
-  - phase: 01-shared-camera-schema
-    provides: canonical shared camera model and packed camera contracts
+subsystem: offline-renderer
+tags: [camera, offline, pinhole32, equi62_lut1d, cpu]
+requires: []
 provides:
-  - model-aware offline primary rays for pinhole32 and equi62_lut1d
-  - shared-camera adapter from CpuRenderPreset and PackedCamera into the legacy CPU tracer
-  - seam-level regression coverage for ray parity, rectangular fisheye output, and pinhole-only defocus
-affects: [offline-shared-scene-renderer, viewer-reference, phase-02-plan-02]
+  - model-aware offline primary-ray seam backed by shared camera math
+  - pinhole-only depth-of-field policy for the CPU renderer
+  - seam-level regression coverage for pinhole and fisheye offline rays
+affects: [offline, shared-scene, tests]
 tech-stack:
   added: []
-  patterns: [single primary-ray seam in Camera, shared unprojection reused across offline and realtime]
+  patterns: [shared-math reuse, tracer-seam extension, seam-level regression]
 key-files:
   created: []
-  modified:
-    - src/common/camera.h
-    - src/core/offline_shared_scene_renderer.cpp
-    - tests/test_offline_shared_scene_renderer.cpp
+  modified: [src/common/camera.h, src/core/offline_shared_scene_renderer.cpp, tests/test_offline_shared_scene_renderer.cpp]
 key-decisions:
-  - "Offline primary rays now branch by CameraModelType inside Camera while keeping the existing render loop unchanged."
-  - "CpuRenderPreset and PackedCamera both adapt into shared unprojection math, with defocus enabled only for pinhole32."
+  - "Camera keeps the existing tracer loop and gains an optional canonical shared-camera ray configuration."
+  - "Offline shared-scene rendering reuses unproject_pinhole32 and unproject_equi62_lut1d instead of duplicating camera math."
+  - "Depth of field remains pinhole-only; equi62_lut1d always renders from the camera center."
 patterns-established:
-  - "Packed/shared camera data supplies model and intrinsics; offline preset lookfrom/lookat/vup now provide pose only."
-  - "Tests validate ray-level parity against unproject_* helpers before relying on image-level smoke checks."
+  - "Offline code should configure canonical camera math through Camera::SharedCameraRayConfig rather than reconstructing vfov viewports."
+  - "Offline seam tests should assert ray-direction parity against shared camera-model helpers directly."
 requirements-completed: [CAM-02]
-duration: 23min
+duration: 26min
 completed: 2026-04-20
 ---
 
-# Phase 2 Plan 01: Offline Camera Seam Summary
+# Phase 2: Plan 01 Summary
 
-**Shared pinhole32 and equi62_lut1d unprojection now drive offline CPU primary rays while preserving the existing tracer loop and pinhole-only depth of field**
+**The offline CPU renderer now emits primary rays from the same shared pinhole/equi camera math used elsewhere, without forking the tracer loop**
 
 ## Performance
 
-- **Duration:** 23 min
-- **Started:** 2026-04-20T14:32:00Z
-- **Completed:** 2026-04-20T14:54:37Z
+- **Duration:** 26 min
+- **Started:** 2026-04-20T00:00:00+08:00
+- **Completed:** 2026-04-20T00:26:00+08:00
 - **Tasks:** 2
 - **Files modified:** 3
 
 ## Accomplishments
 
-- Replaced the legacy pinhole-only primary-ray construction seam with a shared-camera seam inside [`src/common/camera.h`](/home/huangkai/codes/ray_tracing/src/common/camera.h).
-- Updated [`src/core/offline_shared_scene_renderer.cpp`](/home/huangkai/codes/ray_tracing/src/core/offline_shared_scene_renderer.cpp) so both preset-driven and packed-camera offline entrypoints feed canonical pinhole/equi data into the same tracer loop.
-- Added seam-level regression coverage in [`tests/test_offline_shared_scene_renderer.cpp`](/home/huangkai/codes/ray_tracing/tests/test_offline_shared_scene_renderer.cpp) for shared-math ray parity, rectangular equi output, and pinhole-only defocus behavior.
+- Extended `Camera` with an optional `SharedCameraRayConfig` plus `debug_primary_ray(...)`, letting offline rendering switch from legacy `vfov` viewport rays to canonical `pinhole32` / `equi62_lut1d` unprojection while keeping the existing render loop intact.
+- Reworked `offline_shared_scene_renderer.cpp` so shared-scene presets and explicit packed cameras can both configure the offline camera through canonical model/intrinsics data, with pinhole depth of field preserved and fisheye forced to no-defocus.
+- Added seam-level tests that check pinhole and equi ray-direction parity against shared camera math, verify the defocus policy split, and confirm explicit equi offline renders keep full rectangular dimensions.
 
 ## Task Commits
 
-1. **Task 1: Add a model-aware offline ray-emission seam** - `afa02b8` (`feat`)
-2. **Task 2: Lock the Phase 2 camera contract at the offline seam** - `3809f72` (`test`)
+Each task was committed atomically:
 
-## Files Created/Modified
-
-- `src/common/camera.h` - Added `SharedCameraRayConfig`, shared `unproject_*` primary-ray emission, and a debug seam helper used by contract tests.
-- `src/core/offline_shared_scene_renderer.cpp` - Adapted `CpuRenderPreset` and `PackedCamera` into the shared camera seam and gated defocus to `pinhole32`.
-- `tests/test_offline_shared_scene_renderer.cpp` - Added seam-level pinhole/equi ray checks and packed-camera render assertions.
-
-## Decisions Made
-
-- Reused `rt::unproject_pinhole32(...)` and `rt::unproject_equi62_lut1d(...)` directly in the offline seam to prevent offline/realtime math drift.
-- Kept fisheye output rectangular and left fisheye depth of field disabled by construction rather than inventing a second blur model.
+1. **Task 1: Model-aware offline ray-emission seam** - `afa02b8` (feat)
+2. **Task 2: Seam-level offline camera contract tests** - `3809f72` (test)
 
 ## Verification
 
-- `cmake --build build --target test_camera_models test_offline_shared_scene_renderer -j4 && ctest --test-dir build -R '^(test_camera_models|test_offline_shared_scene_renderer)$' --output-on-failure`
-  Result: passed (`2/2` tests, `0` failures)
-- `cmake --build build --target test_offline_shared_scene_renderer -j4 && ctest --test-dir build -R '^test_offline_shared_scene_renderer$' --output-on-failure`
-  Result: passed (`1/1` test, `0` failures)
-- `rg -n "unproject_pinhole32|unproject_equi62_lut1d|CameraModelType" src/common/camera.h src/core/offline_shared_scene_renderer.cpp`
-  Result: shared camera-model seam usage confirmed in both implementation files
+- `cmake --build build --target test_camera_models test_offline_shared_scene_renderer -j4`
+- `ctest --test-dir build -R '^(test_camera_models|test_offline_shared_scene_renderer)$' --output-on-failure`
+
+## Files Created/Modified
+
+- `src/common/camera.h` - Added the canonical shared-camera ray configuration path while preserving the existing CPU tracer loop.
+- `src/core/offline_shared_scene_renderer.cpp` - Adapts preset and packed-camera inputs into shared-camera offline ray configuration.
+- `tests/test_offline_shared_scene_renderer.cpp` - Adds ray-parity, defocus-policy, and rectangular-output assertions for the new seam.
+
+## Decisions Made
+
+- Reused `unproject_pinhole32(...)` and `unproject_equi62_lut1d(...)` directly for offline primary rays instead of building another camera-math layer.
+- Kept the shared-camera integration optional inside `Camera` so existing non-shared-scene callers can still use the legacy viewport path unchanged.
+- Preserved pinhole depth of field by applying the defocus disk only when the configured model is `pinhole32`.
 
 ## Deviations from Plan
 
@@ -80,18 +75,17 @@ None - plan executed exactly as written.
 
 ## Issues Encountered
 
-- Initial compilation failed because the new shared-camera types in `Camera` needed `rt::` namespace qualification. After correcting that, the targeted verification commands passed cleanly.
+- The first pass failed to compile because `camera.h` referenced camera-model types without the `rt::` namespace qualifier. Fixing the namespaced references was sufficient; no design change was needed.
 
 ## User Setup Required
 
-None - no external service configuration required.
+None.
 
 ## Next Phase Readiness
 
-- Offline shared-scene rendering now accepts canonical pinhole and equi camera data through a single primary-ray seam.
-- Phase 2 follow-up work can build on these seam-level guarantees without replacing the CPU tracer loop.
+- Phase 2 plan 02 can now route both offline entrypoints through the same canonical camera adapter instead of preserving a pinhole-only branch.
+- Later regression work can build on `debug_primary_ray(...)` and the new seam-level tests when checking cross-path parity.
 
-## Self-Check: PASSED
-
-- Summary file exists at `.planning/phases/02-offline-cpu-camera-models/02-01-SUMMARY.md`.
-- Task commits `afa02b8` and `3809f72` are present in `git log`.
+---
+*Phase: 02-offline-cpu-camera-models*
+*Completed: 2026-04-20*
