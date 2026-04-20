@@ -4,19 +4,30 @@
 #include "interval.h"
 #include "pdf.h"
 #include "material.h"
+#include "realtime/camera_models.h"
 
+#include <Eigen/Core>
 #include <fmt/core.h>
 #include <fmt/format.h>
 #include <icecream.hpp>
 #include <opencv2/opencv.hpp>
-#include <tbb/parallel_for.h>
-#include <tbb/blocked_range2d.h>
 #include <indicators/block_progress_bar.hpp>
 #include <indicators/cursor_control.hpp>
+#include <optional>
+#include <tbb/blocked_range2d.h>
+#include <tbb/parallel_for.h>
 
 class Camera {
 public:
     Camera() { initialize(); }
+
+    struct SharedCameraRayConfig {
+        rt::CameraModelType model = rt::CameraModelType::pinhole32;
+        Eigen::Vector3d origin = Eigen::Vector3d::Zero();
+        Eigen::Matrix3d camera_to_world = Eigen::Matrix3d::Identity();
+        rt::Pinhole32Params pinhole {};
+        rt::Equi62Lut1DParams equi {};
+    };
 
     double aspect_ratio = 1.0;  // Ratio of image width over height
     int image_width = 100;      // Rendered image width in pixel count
@@ -38,6 +49,17 @@ public:
     int total_pixel_count;
 
 public:
+    void set_shared_camera_ray_config(const SharedCameraRayConfig& config) {
+        shared_camera_ray_config_ = config;
+    }
+
+    void clear_shared_camera_ray_config() { shared_camera_ray_config_.reset(); }
+
+    Ray debug_primary_ray(const Eigen::Vector2d& pixel, const bool apply_defocus = true) {
+        initialize();
+        return make_primary_ray(pixel, apply_defocus, 0.0);
+    }
+
     void render(const pro::proxy<Hittable>& world, const pro::proxy<Hittable>& lights = {}) {
         initialize();
 
@@ -58,10 +80,6 @@ public:
             [&, this](const tbb::blocked_range2d<int>& range) {
                 for (int y = range.rows().begin(), y_end = range.rows().end(); y < y_end; ++y) {
                     for (int x = range.cols().begin(), x_end = range.cols().end(); x < x_end; ++x) {
-                        const Vec3d pixel_center =
-                            pixel00_loc + (x * pixel_delta_u) + (y * pixel_delta_v);
-                        const Vec3d ray_direction = pixel_center - center;
-
                         Vec3d pixel_color = {0.0, 0.0, 0.0};
                         for (int s_y = 0; s_y < sqrt_spp; ++s_y) {
                             for (int s_x = 0; s_x < sqrt_spp; ++s_x) {
@@ -108,6 +126,7 @@ private:
     Vec3d pixel00_loc;              // Location of pixel 0, 0
     Vec3d defocus_disk_u;           // Defocus disk horizontal radius
     Vec3d defocus_disk_v;           // Defocus disk vertical radius
+    std::optional<SharedCameraRayConfig> shared_camera_ray_config_;
 
     void initialize() {
         image_height = std::max(int(image_width / aspect_ratio), 1);
@@ -116,31 +135,41 @@ private:
         recip_sqrt_spp = 1.0 / sqrt_spp;
         pixel_samples_scale = recip_sqrt_spp * recip_sqrt_spp;
 
-        center = lookfrom;
+        if (shared_camera_ray_config_.has_value()) {
+            center = shared_camera_ray_config_->origin;
+            u = shared_camera_ray_config_->camera_to_world.col(0);
+            v = -shared_camera_ray_config_->camera_to_world.col(1);
+            w = -shared_camera_ray_config_->camera_to_world.col(2);
+            pixel_delta_u = Vec3d::Zero();
+            pixel_delta_v = Vec3d::Zero();
+            pixel00_loc = center;
+        } else {
+            center = lookfrom;
 
-        // Determine viewport dimensions.
-        const double theta = deg2rad(vfov);
-        const double h = std::tan(0.5 * theta);
-        const double viewport_height = 2.0 * h * focus_dist;
-        const double viewport_width = viewport_height * (double(image_width) / image_height);
+            // Determine viewport dimensions.
+            const double theta = deg2rad(vfov);
+            const double h = std::tan(0.5 * theta);
+            const double viewport_height = 2.0 * h * focus_dist;
+            const double viewport_width = viewport_height * (double(image_width) / image_height);
 
-        // Calculate the u,v,w unit basis vectors from the camera coordinate frame.
-        w = (lookfrom - lookat).normalized();
-        u = vup.cross(w).normalized();
-        v = w.cross(u).normalized();
+            // Calculate the u,v,w unit basis vectors from the camera coordinate frame.
+            w = (lookfrom - lookat).normalized();
+            u = vup.cross(w).normalized();
+            v = w.cross(u).normalized();
 
-        // Calculate the vectors across the horizontal and down the vertical viewport edges.
-        const Vec3d viewport_u = viewport_width * u;
-        const Vec3d viewport_v = viewport_height * -v;
+            // Calculate the vectors across the horizontal and down the vertical viewport edges.
+            const Vec3d viewport_u = viewport_width * u;
+            const Vec3d viewport_v = viewport_height * -v;
 
-        // Calculate the horizontal and vertical delta vectors from pixel to pixel
-        pixel_delta_u = viewport_u / image_width;
-        pixel_delta_v = viewport_v / image_height;
+            // Calculate the horizontal and vertical delta vectors from pixel to pixel
+            pixel_delta_u = viewport_u / image_width;
+            pixel_delta_v = viewport_v / image_height;
 
-        // Calculate the location of the upper left pixel
-        const Vec3d viewport_upper_left =
-            center - (focus_dist * w) - viewport_u / 2 - viewport_v / 2;
-        pixel00_loc = viewport_upper_left + 0.5 * (pixel_delta_u + pixel_delta_v);
+            // Calculate the location of the upper left pixel
+            const Vec3d viewport_upper_left =
+                center - (focus_dist * w) - viewport_u / 2 - viewport_v / 2;
+            pixel00_loc = viewport_upper_left + 0.5 * (pixel_delta_u + pixel_delta_v);
+        }
 
         // Calculate the camera focus disk basis vectors.
         const double defocus_radius = focus_dist * std::tan(deg2rad(0.5 * defocus_angle));
@@ -157,14 +186,8 @@ private:
         // sampled point around the pixel location x, y for stratified sample square s_x, s_y
 
         const Vec3d offset = sample_square_stratified(s_x, s_y);
-        const Vec3d pixel_sample =
-            pixel00_loc + ((x + offset.x()) * pixel_delta_u) + ((y + offset.y()) * pixel_delta_v);
-
-        const Vec3d ray_origin = (defocus_angle < 0.0) ? center : defocus_disk_sample();
-        const Vec3d ray_direction = pixel_sample - ray_origin;
-        const double ray_time = random_double();
-
-        return Ray(ray_origin, ray_direction, ray_time);
+        return make_primary_ray(
+            Eigen::Vector2d {x + 0.5 + offset.x(), y + 0.5 + offset.y()}, true, random_double());
     }
 
     Vec3d sample_square_stratified(const int s_x, const int s_y) const {
@@ -186,6 +209,30 @@ private:
         // Returns a random point in the camera focus disk.
         const Vec3d p = random_in_unit_disk();
         return center + (p.x() * defocus_disk_u) + (p.y() * defocus_disk_v);
+    }
+
+    Ray make_primary_ray(const Eigen::Vector2d& pixel, const bool apply_defocus, const double ray_time) const {
+        if (shared_camera_ray_config_.has_value()) {
+            const SharedCameraRayConfig& config = *shared_camera_ray_config_;
+            const Eigen::Vector3d dir_cam = config.model == rt::CameraModelType::pinhole32
+                ? rt::unproject_pinhole32(config.pinhole, pixel)
+                : rt::unproject_equi62_lut1d(config.equi, pixel);
+
+            const bool use_defocus =
+                apply_defocus && config.model == rt::CameraModelType::pinhole32 && defocus_angle > 0.0;
+            const Vec3d ray_origin = use_defocus ? defocus_disk_sample() : center;
+            if (use_defocus) {
+                const double focus_t = focus_dist / std::max(dir_cam.z(), 1e-12);
+                const Vec3d focus_target = center + config.camera_to_world * (dir_cam * focus_t);
+                return Ray(ray_origin, focus_target - ray_origin, ray_time);
+            }
+            return Ray(ray_origin, config.camera_to_world * dir_cam, ray_time);
+        }
+
+        const Vec3d pixel_sample =
+            pixel00_loc + ((pixel.x() - 0.5) * pixel_delta_u) + ((pixel.y() - 0.5) * pixel_delta_v);
+        const Vec3d ray_origin = apply_defocus && defocus_angle > 0.0 ? defocus_disk_sample() : center;
+        return Ray(ray_origin, pixel_sample - ray_origin, ray_time);
     }
 
     Vec3d ray_color(const Ray& ray, const int depth, const pro::proxy<Hittable>& world,

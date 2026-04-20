@@ -14,63 +14,105 @@
 namespace rt {
 namespace {
 
-bool nearly_equal(const double lhs, const double rhs, const double tolerance = 1e-6) {
-    return std::abs(lhs - rhs) <= tolerance;
+Pinhole32Params to_pinhole32_params(const scene::CameraSpec& spec) {
+    return Pinhole32Params {
+        spec.fx,
+        spec.fy,
+        spec.cx,
+        spec.cy,
+        spec.pinhole32.k1,
+        spec.pinhole32.k2,
+        spec.pinhole32.k3,
+        spec.pinhole32.p1,
+        spec.pinhole32.p2,
+    };
 }
 
-void configure_offline_camera(const scene::CpuRenderPreset& preset, const int samples_per_pixel, Camera& cam) {
-    cam.aspect_ratio = preset.camera.aspect_ratio;
-    cam.image_width = preset.camera.image_width;
-    cam.samples_per_pixel = samples_per_pixel;
-    cam.max_depth = preset.camera.max_depth;
-    cam.vfov = 2.0 * std::atan(0.5 * static_cast<double>(preset.camera.camera.height) / preset.camera.camera.fy)
-        * 180.0 / std::numbers::pi;
-    cam.lookfrom = preset.camera.lookfrom;
-    cam.lookat = preset.camera.lookat;
-    cam.vup = preset.camera.vup;
-    cam.defocus_angle = preset.camera.defocus_angle;
-    cam.focus_dist = preset.camera.focus_dist;
-}
-
-void configure_camera_from_packed(const PackedCamera& packed, const int samples_per_pixel, Camera& cam) {
-    if (packed.model != CameraModelType::pinhole32) {
-        throw std::invalid_argument("offline shared-scene packed-camera render only supports pinhole cameras");
+Camera::SharedCameraRayConfig make_shared_camera_ray_config(
+    const scene::CameraSpec& spec, const Eigen::Vector3d& origin, const Eigen::Matrix3d& camera_to_world) {
+    if (spec.width <= 0 || spec.height <= 0) {
+        throw std::invalid_argument("offline shared-scene camera dimensions must be positive");
     }
+    if (spec.fx <= 0.0 || spec.fy <= 0.0) {
+        throw std::invalid_argument("offline shared-scene camera focal lengths must be positive");
+    }
+
+    Camera::SharedCameraRayConfig config {};
+    config.model = spec.model;
+    config.origin = origin;
+    config.camera_to_world = camera_to_world;
+    if (spec.model == CameraModelType::pinhole32) {
+        config.pinhole = to_pinhole32_params(spec);
+    } else {
+        config.equi = make_equi62_lut1d_params(spec.width, spec.height, spec.fx, spec.fy, spec.cx, spec.cy,
+            spec.equi62_lut1d.radial, spec.equi62_lut1d.tangential);
+    }
+    return config;
+}
+
+Camera::SharedCameraRayConfig make_shared_camera_ray_config(const PackedCamera& packed) {
     if (packed.width <= 0 || packed.height <= 0) {
         throw std::invalid_argument("packed camera dimensions must be positive");
     }
-    if (packed.pinhole.fx <= 0.0 || packed.pinhole.fy <= 0.0) {
-        throw std::invalid_argument("packed pinhole focal lengths must be positive");
-    }
-    const double expected_cx = 0.5 * static_cast<double>(packed.width);
-    const double expected_cy = 0.5 * static_cast<double>(packed.height);
-    const double expected_fx =
-        packed.pinhole.fy * static_cast<double>(packed.width) / static_cast<double>(packed.height);
-    if (!nearly_equal(packed.pinhole.fx, expected_fx) || !nearly_equal(packed.pinhole.cx, expected_cx)
-        || !nearly_equal(packed.pinhole.cy, expected_cy) || !nearly_equal(packed.pinhole.k1, 0.0)
-        || !nearly_equal(packed.pinhole.k2, 0.0) || !nearly_equal(packed.pinhole.k3, 0.0)
-        || !nearly_equal(packed.pinhole.p1, 0.0) || !nearly_equal(packed.pinhole.p2, 0.0)) {
-        throw std::invalid_argument(
-            "offline shared-scene packed-camera render only supports centered pinhole cameras without distortion");
+    if (packed.model == CameraModelType::pinhole32) {
+        if (packed.pinhole.fx <= 0.0 || packed.pinhole.fy <= 0.0) {
+            throw std::invalid_argument("packed pinhole focal lengths must be positive");
+        }
+    } else if (packed.equi.fx <= 0.0 || packed.equi.fy <= 0.0) {
+        throw std::invalid_argument("packed equi focal lengths must be positive");
     }
 
-    const Eigen::Vector3d origin = packed.T_rc.translation();
-    const Eigen::Matrix3d rotation = packed.T_rc.rotationMatrix();
-    const Eigen::Vector3d forward = rotation * Eigen::Vector3d::UnitZ();
-    const Eigen::Vector3d up = rotation * -Eigen::Vector3d::UnitY();
-    const double vfov_rad =
-        2.0 * std::atan(0.5 * static_cast<double>(packed.height) / packed.pinhole.fy);
+    Camera::SharedCameraRayConfig config {};
+    config.model = packed.model;
+    config.origin = packed.T_rc.translation();
+    config.camera_to_world = packed.T_rc.rotationMatrix();
+    if (packed.model == CameraModelType::pinhole32) {
+        config.pinhole = packed.pinhole;
+    } else {
+        config.equi = packed.equi;
+    }
+    return config;
+}
 
+Eigen::Matrix3d make_camera_to_world(
+    const Eigen::Vector3d& lookfrom, const Eigen::Vector3d& lookat, const Eigen::Vector3d& vup) {
+    const Eigen::Vector3d w = (lookfrom - lookat).normalized();
+    const Eigen::Vector3d u = vup.cross(w).normalized();
+    const Eigen::Vector3d v = w.cross(u).normalized();
+
+    Eigen::Matrix3d camera_to_world;
+    camera_to_world.col(0) = u;
+    camera_to_world.col(1) = -v;
+    camera_to_world.col(2) = -w;
+    return camera_to_world;
+}
+
+void configure_offline_camera(const scene::CpuRenderPreset& preset, const int samples_per_pixel, Camera& cam) {
+    const scene::CameraSpec& spec = preset.camera.camera;
+    cam.aspect_ratio = static_cast<double>(spec.width) / static_cast<double>(spec.height);
+    cam.image_width = spec.width;
+    cam.samples_per_pixel = samples_per_pixel;
+    cam.max_depth = preset.camera.max_depth;
+    cam.lookfrom = preset.camera.lookfrom;
+    cam.lookat = preset.camera.lookat;
+    cam.vup = preset.camera.vup;
+    cam.defocus_angle = spec.model == CameraModelType::pinhole32 ? preset.camera.defocus_angle : 0.0;
+    cam.focus_dist = preset.camera.focus_dist;
+    cam.set_shared_camera_ray_config(make_shared_camera_ray_config(
+        spec, preset.camera.lookfrom, make_camera_to_world(preset.camera.lookfrom, preset.camera.lookat, preset.camera.vup)));
+}
+
+void configure_camera_from_packed(const PackedCamera& packed, const int samples_per_pixel, Camera& cam) {
     cam.aspect_ratio = static_cast<double>(packed.width) / static_cast<double>(packed.height);
     cam.image_width = packed.width;
     cam.samples_per_pixel = samples_per_pixel;
     cam.max_depth = 50;
-    cam.vfov = vfov_rad * 180.0 / std::numbers::pi;
-    cam.lookfrom = origin;
-    cam.lookat = origin + forward;
-    cam.vup = up;
+    cam.lookfrom = packed.T_rc.translation();
+    cam.lookat = cam.lookfrom + packed.T_rc.rotationMatrix() * Eigen::Vector3d::UnitZ();
+    cam.vup = packed.T_rc.rotationMatrix() * -Eigen::Vector3d::UnitY();
     cam.defocus_angle = 0.0;
     cam.focus_dist = 1.0;
+    cam.set_shared_camera_ray_config(make_shared_camera_ray_config(packed));
 }
 
 }  // namespace
