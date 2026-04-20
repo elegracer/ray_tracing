@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-04-19)
 ## Current Position
 
 Phase: 4 of 5 (Default Intrinsics And Fisheye Defaults)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-04-21 - Phase 4 discuss completed and default-switch decisions were captured for planning
+Plan: 0 of 3 in current phase
+Status: Ready to execute
+Last activity: 2026-04-21 - Phase 4 planning completed on the skip-research path with three executable plans
 
 Progress: [██████░░░░] 60%
 
@@ -67,5 +67,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-21 00:00
-Stopped at: Phase 4 discuss completed; next step is plan Phase 4
-Resume file: .planning/phases/04-default-intrinsics-and-fisheye-defaults/04-CONTEXT.md
+Stopped at: Phase 4 planning completed; next step is execute Phase 4
+Resume file: .planning/phases/04-default-intrinsics-and-fisheye-defaults/04-01-PLAN.md

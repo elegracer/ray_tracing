@@ -72,7 +72,11 @@ Plans:
   2. A project utility script can compute default `fx`, `fy`, `cx`, and `cy` from image resolution and horizontal FOV for the supported camera models.
   3. Default pinhole intrinsics are derived from a `90` degree horizontal FOV, and default fisheye intrinsics are derived from a `120` degree horizontal FOV.
   4. Project-wide pinhole defaults remain usable anywhere a camera is explicitly configured to stay pinhole.
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 04-01-PLAN.md - Add the shared default-intrinsics derivation helper and thin utility wrapper.
+- [ ] 04-02-PLAN.md - Move builtin default CPU/realtime camera helpers onto the fisheye-first shared derivation path.
+- [ ] 04-03-PLAN.md - Switch the viewer no-arg default rig to fisheye and lock remaining default-entry regressions.
 
 ### Phase 5: Camera Model Regression Coverage
 **Goal**: Automated coverage proves both camera models match the reference math and remain consistent across offline and realtime rendering after fisheye becomes the default.
@@ -95,5 +99,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. Shared Camera Schema | 3/3 | Complete | 2026-04-20 |
 | 2. Offline CPU Camera Models | 3/3 | Complete | 2026-04-20 |
 | 3. Realtime GPU And Viewer Camera Models | 3/3 | Complete | 2026-04-21 |
-| 4. Default Intrinsics And Fisheye Defaults | 0/TBD | Not started | - |
+| 4. Default Intrinsics And Fisheye Defaults | 0/3 | Planned | - |
 | 5. Camera Model Regression Coverage | 0/TBD | Not started | - |
