@@ -2,6 +2,7 @@
 #include "realtime/camera_models.h"
 #include "realtime/viewer/four_camera_rig.h"
 #include "realtime/viewer/default_viewer_scene.h"
+#include "scene/camera_spec.h"
 #include "test_support.h"
 
 #include <numbers>
@@ -85,9 +86,25 @@ int main() {
         for (const char* scene_id : kLegacyScenes) {
             const rt::viewer::BodyPose spawn = rt::default_spawn_pose_for_scene(scene_id);
             const rt::viewer::ViewerFrameConvention convention = rt::viewer_frame_convention_for_scene(scene_id);
-            const rt::PackedCameraRig viewer_rig =
-                rt::viewer::make_default_viewer_rig(spawn, 640, 480, convention).pack();
             const rt::PackedCameraRig preset_rig = rt::default_camera_rig_for_scene(scene_id, 1, 640, 480).pack();
+            rt::scene::CameraSpec authored = {};
+            authored.model = preset_rig.cameras[0].model;
+            authored.width = 640;
+            authored.height = 480;
+            authored.fx = preset_rig.cameras[0].model == rt::CameraModelType::pinhole32
+                ? preset_rig.cameras[0].pinhole.fx
+                : preset_rig.cameras[0].equi.fx;
+            authored.fy = preset_rig.cameras[0].model == rt::CameraModelType::pinhole32
+                ? preset_rig.cameras[0].pinhole.fy
+                : preset_rig.cameras[0].equi.fy;
+            authored.cx = preset_rig.cameras[0].model == rt::CameraModelType::pinhole32
+                ? preset_rig.cameras[0].pinhole.cx
+                : preset_rig.cameras[0].equi.cx;
+            authored.cy = preset_rig.cameras[0].model == rt::CameraModelType::pinhole32
+                ? preset_rig.cameras[0].pinhole.cy
+                : preset_rig.cameras[0].equi.cy;
+            const rt::PackedCameraRig viewer_rig =
+                rt::viewer::make_default_viewer_rig(spawn, authored, 1, 640, 480, convention).pack();
 
             const Eigen::Vector3d viewer_forward =
                 viewer_rig.cameras[0].T_rc.rotationMatrix() * Eigen::Vector3d(0.0, 0.0, 1.0);
@@ -101,6 +118,37 @@ int main() {
                 preset_rig.cameras[0].T_rc.rotationMatrix() * Eigen::Vector3d(0.0, -1.0, 0.0);
             expect_vec3_near(viewer_up, preset_up, 1e-9, "viewer spawn up matches scene preset");
         }
+    }
+
+    {
+        rt::scene::CameraSpec equi_authored {};
+        equi_authored.model = rt::CameraModelType::equi62_lut1d;
+        equi_authored.width = 320;
+        equi_authored.height = 240;
+        equi_authored.fx = 140.0;
+        equi_authored.fy = 142.0;
+        equi_authored.cx = 160.0;
+        equi_authored.cy = 120.0;
+        equi_authored.equi62_lut1d.radial = std::array<double, 6> {};
+        equi_authored.equi62_lut1d.tangential = Eigen::Vector2d::Zero();
+
+        const rt::viewer::BodyPose pose {
+            .position = Eigen::Vector3d(1.0, 2.0, 3.0),
+            .yaw_deg = 5.0,
+            .pitch_deg = 10.0,
+        };
+        const rt::PackedCameraRig equi_rig =
+            rt::viewer::make_default_viewer_rig(pose, equi_authored, 1, 640, 480,
+                rt::viewer::ViewerFrameConvention::world_z_up)
+                .pack();
+        expect_true(equi_rig.active_count == 1, "equi authored rig active count");
+        expect_true(equi_rig.cameras[0].model == rt::CameraModelType::equi62_lut1d, "equi authored rig model");
+        expect_near(equi_rig.cameras[0].equi.fx, 280.0, 1e-9, "equi authored fx scales with width");
+        expect_near(equi_rig.cameras[0].equi.fy, 284.0, 1e-9, "equi authored fy scales with height");
+        expect_near(equi_rig.cameras[0].equi.cx, 320.0, 1e-9, "equi authored cx scales with width");
+        expect_near(equi_rig.cameras[0].equi.cy, 240.0, 1e-9, "equi authored cy scales with height");
+        expect_vec3_near(equi_rig.cameras[0].T_rc.translation(), pose.position, 1e-12,
+            "equi authored pose translation preserved");
     }
 
     {

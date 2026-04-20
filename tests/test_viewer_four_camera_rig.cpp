@@ -3,6 +3,7 @@
 #include "realtime/viewer/body_pose.h"
 #include "realtime/viewer/default_viewer_scene.h"
 #include "realtime/viewer/four_camera_rig.h"
+#include "scene/camera_spec.h"
 #include "test_support.h"
 
 #include <Eigen/Geometry>
@@ -128,6 +129,46 @@ int main() {
         expect_near(floor.origin.z(), -1.0, 1e-12, "floor z origin");
         expect_near(floor.edge_u.z(), 0.0, 1e-12, "floor edge_u horizontal");
         expect_near(floor.edge_v.z(), 0.0, 1e-12, "floor edge_v horizontal");
+    }
+
+    {
+        std::array<rt::scene::CameraSpec, 4> specs {};
+        for (rt::scene::CameraSpec& spec : specs) {
+            spec.width = 320;
+            spec.height = 240;
+            spec.fx = 160.0;
+            spec.fy = 160.0;
+            spec.cx = 160.0;
+            spec.cy = 120.0;
+        }
+        specs[0].model = rt::CameraModelType::pinhole32;
+        specs[1].model = rt::CameraModelType::equi62_lut1d;
+        specs[2].model = rt::CameraModelType::pinhole32;
+        specs[3].model = rt::CameraModelType::equi62_lut1d;
+        specs[1].fx = 140.0;
+        specs[1].fy = 142.0;
+        specs[3].fx = 150.0;
+        specs[3].fy = 152.0;
+
+        const rt::PackedCameraRig mixed_rig =
+            rt::viewer::make_default_viewer_rig(pose, std::span<const rt::scene::CameraSpec>(specs), 640, 480).pack();
+        expect_true(mixed_rig.active_count == 4, "mixed rig active cameras");
+        expect_true(mixed_rig.cameras[0].model == rt::CameraModelType::pinhole32, "mixed rig front pinhole");
+        expect_true(mixed_rig.cameras[1].model == rt::CameraModelType::equi62_lut1d, "mixed rig left equi");
+        expect_true(mixed_rig.cameras[2].model == rt::CameraModelType::pinhole32, "mixed rig right pinhole");
+        expect_true(mixed_rig.cameras[3].model == rt::CameraModelType::equi62_lut1d, "mixed rig rear equi");
+        expect_true(mixed_rig.cameras[1].width == 640, "mixed rig resized width");
+        expect_true(mixed_rig.cameras[1].height == 480, "mixed rig resized height");
+        expect_near(mixed_rig.cameras[1].equi.fx, 280.0, 1e-9, "mixed rig left equi fx scales");
+        expect_near(mixed_rig.cameras[3].equi.fy, 304.0, 1e-9, "mixed rig rear equi fy scales");
+
+        const Eigen::Vector3d left_forward = mixed_rig.cameras[1].T_rc.rotationMatrix() * Eigen::Vector3d(0.0, 0.0, 1.0);
+        const Eigen::Vector3d expected_left_forward = rt::body_to_world(
+            body_yaw_rotation(pose.yaw_deg)
+            * yaw_offset_rotation(90.0)
+            * camera_pitch_rotation(pose.pitch_deg)
+            * Eigen::Vector3d(0.0, 0.0, -1.0));
+        expect_vec3_near(left_forward, expected_left_forward, 1e-9, "mixed rig left forward");
     }
     return 0;
 }
