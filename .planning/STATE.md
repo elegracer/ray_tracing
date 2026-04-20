@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-04-19)
 
 **Core value:** Camera behavior must stay consistent across offline and realtime rendering so the same scene and rig produce the intended image no matter which path is used.
-**Current focus:** Phase 3 - Realtime GPU And Viewer Camera Models
+**Current focus:** Phase 4 - Default Intrinsics And Fisheye Defaults
 
 ## Current Position
 
-Phase: 3 of 5 (Realtime GPU And Viewer Camera Models)
-Plan: 3 of 3 in current phase
-Status: Ready to verify
-Last activity: 2026-04-21 - Phase 3 execution completed; factory, viewer, OptiX, and reload regression slices are passing
+Phase: 4 of 5 (Default Intrinsics And Fisheye Defaults)
+Plan: 0 of TBD in current phase
+Status: Ready to discuss
+Last activity: 2026-04-21 - Phase 3 verification completed with all UAT checkpoints passing
 
 Progress: [██████░░░░] 60%
 
@@ -29,6 +29,7 @@ Progress: [██████░░░░] 60%
 |-------|-------|-------|----------|
 | 1. Shared Camera Schema | 3 | 80 min | 27 min |
 | 2. Offline CPU Camera Models | 3 | 46 min | 15 min |
+| 3. Realtime GPU And Viewer Camera Models | 3 | 0 min | 0 min |
 
 **Recent Trend:**
 - Last 5 plans: 02-02, 02-03, 03-01, 03-02, 03-03
@@ -66,5 +67,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-21 00:00
-Stopped at: Phase 3 execution completed; next step is verify Phase 3
-Resume file: .planning/phases/03-realtime-gpu-and-viewer-camera-models/03-03-SUMMARY.md
+Stopped at: Phase 3 verification completed; next step is discuss Phase 4
+Resume file: .planning/phases/03-realtime-gpu-and-viewer-camera-models/03-UAT.md
