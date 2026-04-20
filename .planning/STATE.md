@@ -11,8 +11,8 @@ See: .planning/PROJECT.md (updated 2026-04-19)
 
 Phase: 3 of 5 (Realtime GPU And Viewer Camera Models)
 Plan: 0 of TBD in current phase
-Status: Ready to discuss
-Last activity: 2026-04-20 - Phase 2 verification completed with all UAT checks passing
+Status: Ready to plan
+Last activity: 2026-04-20 - Phase 3 discussion completed and context captured
 
 Progress: [████░░░░░░] 40%
 
@@ -66,5 +66,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-20 00:00
-Stopped at: Phase 2 verified complete; next step is discuss Phase 3
-Resume file: .planning/ROADMAP.md
+Stopped at: Phase 3 context captured; next step is plan Phase 3
+Resume file: .planning/phases/03-realtime-gpu-and-viewer-camera-models/03-CONTEXT.md
