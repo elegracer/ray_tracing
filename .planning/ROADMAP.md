@@ -56,7 +56,11 @@ Plans:
   1. Realtime GPU rendering uses each camera's selected `pinhole32` or `equi62_lut1d` model for ray generation instead of assuming pinhole.
   2. Viewer camera rigs and default viewer scene setup keep the selected model for each active camera.
   3. A realtime four-camera run can preserve mixed per-camera model selections across the packed rig and active viewer screen.
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 03-01-PLAN.md - Replace the viewer's hardcoded pinhole rig with a spec-driven builder aligned to authored camera specs.
+- [ ] 03-02-PLAN.md - Preserve packed camera model data through OptiX upload and recover equi realtime rendering regressions.
+- [ ] 03-03-PLAN.md - Add file-backed and mixed-model end-to-end regressions for realtime factory, viewer reload, and four-camera rigs.
 **UI hint**: yes
 
 ### Phase 4: Default Intrinsics And Fisheye Defaults
@@ -90,6 +94,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 |-------|----------------|--------|-----------|
 | 1. Shared Camera Schema | 3/3 | Complete | 2026-04-20 |
 | 2. Offline CPU Camera Models | 3/3 | Complete | 2026-04-20 |
-| 3. Realtime GPU And Viewer Camera Models | 0/TBD | Not started | - |
+| 3. Realtime GPU And Viewer Camera Models | 0/3 | Planned | - |
 | 4. Default Intrinsics And Fisheye Defaults | 0/TBD | Not started | - |
 | 5. Camera Model Regression Coverage | 0/TBD | Not started | - |
