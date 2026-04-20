@@ -3,9 +3,74 @@
 #include "realtime/viewer/four_camera_rig.h"
 #include "realtime/viewer/default_viewer_scene.h"
 #include "scene/camera_spec.h"
+#include "scene/scene_file_catalog.h"
 #include "test_support.h"
 
+#include <filesystem>
+#include <fstream>
 #include <numbers>
+#include <string_view>
+
+namespace fs = std::filesystem;
+
+namespace {
+
+void write_text_file(const fs::path& path, std::string_view contents) {
+    fs::create_directories(path.parent_path());
+    std::ofstream(path) << contents;
+}
+
+void write_equi_scene_file(const fs::path& scene_file, std::string_view scene_id) {
+    write_text_file(scene_file, std::string(R"(format_version: 1
+scene:
+  id: )") + std::string(scene_id) + R"(
+  label: File-backed Equi
+  background: [0.0, 0.0, 0.0]
+  textures:
+    white:
+      type: constant
+      color: [1.0, 1.0, 1.0]
+  materials:
+    matte:
+      type: diffuse
+      albedo: white
+  shapes:
+    ball:
+      type: sphere
+      center: [0.0, 0.0, 0.0]
+      radius: 1.0
+  instances:
+    - shape: ball
+      material: matte
+realtime:
+  default_view:
+    initial_body_pose:
+      position: [1.0, 2.0, 3.0]
+      yaw_deg: 0.0
+      pitch_deg: 0.0
+    frame_convention: world_z_up
+    camera:
+      model: equi62_lut1d
+      width: 320
+      height: 240
+      fx: 140.0
+      fy: 142.0
+      cx: 160.0
+      cy: 120.0
+      T_bc:
+        translation: [0.0, 0.0, 0.0]
+        rotation:
+          - [1.0, 0.0, 0.0]
+          - [0.0, 1.0, 0.0]
+          - [0.0, 0.0, 1.0]
+      equi62_lut1d:
+        radial: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        tangential: [0.0, 0.0]
+    base_move_speed: 2.5
+)");
+}
+
+}  // namespace
 
 int main() {
     const rt::PackedScene smoke = rt::make_realtime_scene("smoke").pack();
@@ -43,6 +108,26 @@ int main() {
     const rt::viewer::BodyPose imported_spawn = rt::default_spawn_pose_for_scene("imported_obj_smoke");
     expect_vec3_near(imported_spawn.position, Eigen::Vector3d {0.0, 0.0, 2.0}, 1e-12,
         "file-backed imported spawn uses yaml preset pose");
+
+    {
+        const fs::path root = fs::temp_directory_path() / "realtime_scene_factory_file_backed_equi";
+        fs::remove_all(root);
+        write_equi_scene_file(root / "file_backed_equi" / "scene.yaml", "file_backed_equi");
+        rt::scene::global_scene_file_catalog().scan_directory(root);
+
+        const rt::PackedCameraRig file_backed_rig = rt::default_camera_rig_for_scene("file_backed_equi", 1, 640, 480).pack();
+        expect_true(file_backed_rig.active_count == 1, "file-backed equi rig active camera count");
+        expect_true(file_backed_rig.cameras[0].model == rt::CameraModelType::equi62_lut1d,
+            "file-backed equi rig model");
+        expect_true(file_backed_rig.cameras[0].width == 640, "file-backed equi width");
+        expect_true(file_backed_rig.cameras[0].height == 480, "file-backed equi height");
+        expect_near(file_backed_rig.cameras[0].equi.fx, 280.0, 1e-9, "file-backed equi fx scales");
+        expect_near(file_backed_rig.cameras[0].equi.fy, 284.0, 1e-9, "file-backed equi fy scales");
+        expect_near(file_backed_rig.cameras[0].equi.cx, 320.0, 1e-9, "file-backed equi cx scales");
+        expect_near(file_backed_rig.cameras[0].equi.cy, 240.0, 1e-9, "file-backed equi cy scales");
+        expect_vec3_near(file_backed_rig.cameras[0].T_rc.translation(), Eigen::Vector3d {1.0, 2.0, 3.0}, 1e-12,
+            "file-backed equi pose translation preserved");
+    }
 
     const rt::PackedCameraRig earth_rig = rt::default_camera_rig_for_scene("earth_sphere", 1, 640, 480).pack();
     expect_true(earth_rig.active_count == 1, "earth rig active camera count");
