@@ -11,8 +11,8 @@ See: .planning/PROJECT.md (updated 2026-04-19)
 
 Phase: 4 of 5 (Default Intrinsics And Fisheye Defaults)
 Plan: 0 of TBD in current phase
-Status: Ready to discuss
-Last activity: 2026-04-21 - Phase 3 verification completed with all UAT checkpoints passing
+Status: Ready to plan
+Last activity: 2026-04-21 - Phase 4 discuss completed and default-switch decisions were captured for planning
 
 Progress: [██████░░░░] 60%
 
@@ -67,5 +67,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-21 00:00
-Stopped at: Phase 3 verification completed; next step is discuss Phase 4
-Resume file: .planning/phases/03-realtime-gpu-and-viewer-camera-models/03-UAT.md
+Stopped at: Phase 4 discuss completed; next step is plan Phase 4
+Resume file: .planning/phases/04-default-intrinsics-and-fisheye-defaults/04-CONTEXT.md
