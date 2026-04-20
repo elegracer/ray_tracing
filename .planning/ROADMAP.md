@@ -44,9 +44,9 @@ Plans:
   3. Switching a scene or rig camera between the two supported models changes offline ray generation without requiring a separate code path or scene format.
 **Plans**: 3 plans
 Plans:
-- [ ] 02-01-PLAN.md - Introduce the model-aware offline primary-ray seam without forking the CPU tracer.
-- [ ] 02-02-PLAN.md - Route shared-scene offline entrypoints through canonical camera data and prove preset-path model switching.
-- [ ] 02-03-PLAN.md - Align viewer CPU-reference regressions with the new offline camera-model contract.
+- [x] 02-01-PLAN.md - Introduce the model-aware offline primary-ray seam without forking the CPU tracer.
+- [x] 02-02-PLAN.md - Route shared-scene offline entrypoints through canonical camera data and prove preset-path model switching.
+- [x] 02-03-PLAN.md - Align viewer CPU-reference regressions with the new offline camera-model contract.
 
 ### Phase 3: Realtime GPU And Viewer Camera Models
 **Goal**: Realtime rendering and the viewer screen preserve each camera's selected model from shared scene data through rig packing, OptiX launches, and active viewer cameras.
@@ -89,7 +89,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Shared Camera Schema | 3/3 | Complete | 2026-04-20 |
-| 2. Offline CPU Camera Models | 0/3 | Planned | - |
+| 2. Offline CPU Camera Models | 3/3 | Ready to verify | - |
 | 3. Realtime GPU And Viewer Camera Models | 0/TBD | Not started | - |
 | 4. Default Intrinsics And Fisheye Defaults | 0/TBD | Not started | - |
 | 5. Camera Model Regression Coverage | 0/TBD | Not started | - |
