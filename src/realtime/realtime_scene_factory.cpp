@@ -3,6 +3,7 @@
 #include "realtime/default_viewer_conventions.h"
 #include "realtime/frame_convention.h"
 #include "realtime/scene_catalog.h"
+#include "realtime/viewer/four_camera_rig.h"
 #include "scene/realtime_scene_adapter.h"
 #include "scene/shared_scene_builders.h"
 
@@ -35,30 +36,8 @@ scene::CameraSpec runtime_camera_spec(
 }
 
 CameraRig make_camera_rig_from_preset(const scene::RealtimeViewPreset& preset, int camera_count, int width, int height) {
-    CameraRig rig;
-
-    for (int i = 0; i < camera_count; ++i) {
-        Sophus::SE3d T_bc {};
-        T_bc.translation() = body_to_renderer_matrix().transpose() * preset.initial_body_pose.position;
-        viewer::BodyPose camera_pose = preset.initial_body_pose;
-        camera_pose.yaw_deg += kDefaultSurroundYawOffsetsDeg[static_cast<std::size_t>(i)];
-
-        const Eigen::Vector3d forward = viewer::forward_direction(camera_pose, preset.frame_convention);
-        Eigen::Vector3d right = viewer::right_direction(camera_pose, preset.frame_convention);
-        if (right.squaredNorm() < 1e-12) {
-            right = Eigen::Vector3d::UnitX();
-        }
-        const Eigen::Vector3d up = right.cross(forward).normalized();
-
-        Eigen::Matrix3d R_rc = Eigen::Matrix3d::Identity();
-        R_rc.col(0) = right;
-        R_rc.col(1) = -up;
-        R_rc.col(2) = forward;
-        T_bc.so3() = Sophus::SO3d(camera_to_renderer_matrix().transpose() * R_rc);
-        rig.add_camera(runtime_camera_spec(preset.camera, width, height, T_bc));
-    }
-
-    return rig;
+    return viewer::make_default_viewer_rig(
+        preset.initial_body_pose, preset.camera, camera_count, width, height, preset.frame_convention);
 }
 
 const scene::RealtimeViewPreset& require_realtime_view_preset(std::string_view scene_id) {
