@@ -14,6 +14,18 @@
 namespace rt {
 namespace {
 
+struct OfflineCameraConfig {
+    int width = 0;
+    int height = 0;
+    int max_depth = 50;
+    Eigen::Vector3d lookfrom = Eigen::Vector3d::Zero();
+    Eigen::Vector3d lookat = Eigen::Vector3d::Zero();
+    Eigen::Vector3d vup = Eigen::Vector3d::UnitY();
+    double defocus_angle = 0.0;
+    double focus_dist = 1.0;
+    Camera::SharedCameraRayConfig shared_camera {};
+};
+
 Pinhole32Params to_pinhole32_params(const scene::CameraSpec& spec) {
     return Pinhole32Params {
         spec.fx,
@@ -87,78 +99,84 @@ Eigen::Matrix3d make_camera_to_world(
     return camera_to_world;
 }
 
-void configure_offline_camera(const scene::CpuRenderPreset& preset, const int samples_per_pixel, Camera& cam) {
-    const scene::CameraSpec& spec = preset.camera.camera;
-    cam.aspect_ratio = static_cast<double>(spec.width) / static_cast<double>(spec.height);
-    cam.image_width = spec.width;
-    cam.samples_per_pixel = samples_per_pixel;
-    cam.max_depth = preset.camera.max_depth;
-    cam.lookfrom = preset.camera.lookfrom;
-    cam.lookat = preset.camera.lookat;
-    cam.vup = preset.camera.vup;
-    cam.defocus_angle = spec.model == CameraModelType::pinhole32 ? preset.camera.defocus_angle : 0.0;
-    cam.focus_dist = preset.camera.focus_dist;
-    cam.set_shared_camera_ray_config(make_shared_camera_ray_config(
-        spec, preset.camera.lookfrom, make_camera_to_world(preset.camera.lookfrom, preset.camera.lookat, preset.camera.vup)));
+OfflineCameraConfig make_offline_camera_config(const scene::CpuCameraPreset& preset, const int max_depth) {
+    const scene::CameraSpec& spec = preset.camera;
+    OfflineCameraConfig config;
+    config.width = spec.width;
+    config.height = spec.height;
+    config.max_depth = max_depth;
+    config.lookfrom = preset.lookfrom;
+    config.lookat = preset.lookat;
+    config.vup = preset.vup;
+    config.defocus_angle = spec.model == CameraModelType::pinhole32 ? preset.defocus_angle : 0.0;
+    config.focus_dist = preset.focus_dist;
+    config.shared_camera =
+        make_shared_camera_ray_config(spec, preset.lookfrom, make_camera_to_world(preset.lookfrom, preset.lookat, preset.vup));
+    return config;
 }
 
-void configure_camera_from_packed(const PackedCamera& packed, const int samples_per_pixel, Camera& cam) {
-    cam.aspect_ratio = static_cast<double>(packed.width) / static_cast<double>(packed.height);
-    cam.image_width = packed.width;
+OfflineCameraConfig make_offline_camera_config(const PackedCamera& packed) {
+    OfflineCameraConfig config;
+    config.width = packed.width;
+    config.height = packed.height;
+    config.lookfrom = packed.T_rc.translation();
+    config.lookat = config.lookfrom + packed.T_rc.rotationMatrix() * Eigen::Vector3d::UnitZ();
+    config.vup = packed.T_rc.rotationMatrix() * -Eigen::Vector3d::UnitY();
+    config.shared_camera = make_shared_camera_ray_config(packed);
+    return config;
+}
+
+void configure_offline_camera(const OfflineCameraConfig& config, const int samples_per_pixel, Camera& cam) {
+    cam.aspect_ratio = static_cast<double>(config.width) / static_cast<double>(config.height);
+    cam.image_width = config.width;
     cam.samples_per_pixel = samples_per_pixel;
-    cam.max_depth = 50;
-    cam.lookfrom = packed.T_rc.translation();
-    cam.lookat = cam.lookfrom + packed.T_rc.rotationMatrix() * Eigen::Vector3d::UnitZ();
-    cam.vup = packed.T_rc.rotationMatrix() * -Eigen::Vector3d::UnitY();
-    cam.defocus_angle = 0.0;
-    cam.focus_dist = 1.0;
-    cam.set_shared_camera_ray_config(make_shared_camera_ray_config(packed));
+    cam.max_depth = config.max_depth;
+    cam.lookfrom = config.lookfrom;
+    cam.lookat = config.lookat;
+    cam.vup = config.vup;
+    cam.defocus_angle = config.defocus_angle;
+    cam.focus_dist = config.focus_dist;
+    cam.set_shared_camera_ray_config(config.shared_camera);
+}
+
+template <typename ConfigureFn>
+cv::Mat render_shared_scene_with_camera(
+    std::string_view scene_id, const int samples_per_pixel, ConfigureFn&& configure_camera) {
+    const SceneCatalogEntry* entry = find_scene_catalog_entry(scene_id);
+    if (entry == nullptr || !entry->supports_cpu_render) {
+        throw std::invalid_argument("scene id is not available for offline CPU rendering");
+    }
+
+    const scene::CpuRenderPreset* preset = scene::default_cpu_render_preset(scene_id);
+    const int resolved_spp = samples_per_pixel > 0 ? samples_per_pixel : preset->samples_per_pixel;
+    const scene::SceneIR scene_ir = scene::build_scene(scene_id);
+    const scene::CpuSceneAdapterResult adapted = scene::adapt_to_cpu(scene_ir);
+    if (!adapted.world.has_value()) {
+        throw std::runtime_error("adapted CPU world is empty");
+    }
+
+    Camera cam;
+    configure_camera(*preset, resolved_spp, cam);
+    cam.background = scene::scene_background(scene_id);
+    cam.render(adapted.world, adapted.lights);
+    return cam.img.clone();
 }
 
 }  // namespace
 
 cv::Mat render_shared_scene(std::string_view scene_id, const int samples_per_pixel) {
-    const SceneCatalogEntry* entry = find_scene_catalog_entry(scene_id);
-    if (entry == nullptr || !entry->supports_cpu_render) {
-        throw std::invalid_argument("scene id is not available for offline CPU rendering");
-    }
-
-    const scene::CpuRenderPreset* preset = scene::default_cpu_render_preset(scene_id);
-    const int resolved_spp = samples_per_pixel > 0 ? samples_per_pixel : preset->samples_per_pixel;
-    const scene::SceneIR scene_ir = scene::build_scene(scene_id);
-    const scene::CpuSceneAdapterResult adapted = scene::adapt_to_cpu(scene_ir);
-    if (!adapted.world.has_value()) {
-        throw std::runtime_error("adapted CPU world is empty");
-    }
-
-    Camera cam;
-    configure_offline_camera(*preset, resolved_spp, cam);
-    cam.background = scene::scene_background(scene_id);
-    cam.render(adapted.world, adapted.lights);
-    return cam.img.clone();
+    return render_shared_scene_with_camera(scene_id, samples_per_pixel,
+        [](const scene::CpuRenderPreset& preset, const int resolved_spp, Camera& cam) {
+            configure_offline_camera(make_offline_camera_config(preset.camera, preset.camera.max_depth), resolved_spp, cam);
+        });
 }
 
 cv::Mat render_shared_scene_from_camera(std::string_view scene_id, const PackedCamera& camera,
     const int samples_per_pixel) {
-    const SceneCatalogEntry* entry = find_scene_catalog_entry(scene_id);
-    if (entry == nullptr || !entry->supports_cpu_render) {
-        throw std::invalid_argument("scene id is not available for offline CPU rendering");
-    }
-
-    const scene::CpuRenderPreset* preset = scene::default_cpu_render_preset(scene_id);
-    const int resolved_spp = samples_per_pixel > 0 ? samples_per_pixel : preset->samples_per_pixel;
-    const scene::SceneIR scene_ir = scene::build_scene(scene_id);
-    const scene::CpuSceneAdapterResult adapted = scene::adapt_to_cpu(scene_ir);
-    if (!adapted.world.has_value()) {
-        throw std::runtime_error("adapted CPU world is empty");
-    }
-
-    Camera cam;
-    configure_offline_camera(*preset, resolved_spp, cam);
-    configure_camera_from_packed(camera, resolved_spp, cam);
-    cam.background = scene::scene_background(scene_id);
-    cam.render(adapted.world, adapted.lights);
-    return cam.img.clone();
+    return render_shared_scene_with_camera(scene_id, samples_per_pixel,
+        [&camera](const scene::CpuRenderPreset&, const int resolved_spp, Camera& cam) {
+            configure_offline_camera(make_offline_camera_config(camera), resolved_spp, cam);
+        });
 }
 
 }  // namespace rt
