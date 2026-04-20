@@ -30,7 +30,7 @@ class OptixRenderer {
     OptixRenderer();
     ~OptixRenderer();
 
-    DirectionDebugFrame render_direction_debug(const PackedCameraRig& rig);
+    DirectionDebugFrame render_direction_debug(const PackedCameraRig& rig, int camera_index = 0);
     void prepare_scene(const PackedScene& scene);
     RadianceFrame render_radiance(const PackedScene& scene, const PackedCameraRig& rig,
         const RenderProfile& profile, int camera_index);
@@ -51,7 +51,6 @@ class OptixRenderer {
 
     void initialize_optix();
     void create_direction_debug_pipeline();
-    void launch_direction_debug(const PackedCameraRig& rig, std::uint8_t* rgba, int width, int height);
     void allocate_frame_buffers(int width, int height);
     void upload_scene(const PackedScene& scene);
     void free_device_resources();

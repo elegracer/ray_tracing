@@ -14,7 +14,8 @@
 
 namespace rt {
 
-void launch_direction_debug_kernel(std::uint8_t* rgba, int width, int height, cudaStream_t stream);
+void launch_direction_debug_kernel(
+    const DeviceActiveCamera& camera, std::uint8_t* rgba, int width, int height, cudaStream_t stream);
 void launch_radiance_kernel(const LaunchParams& params, cudaStream_t stream);
 
 namespace {
@@ -377,10 +378,6 @@ void OptixRenderer::create_direction_debug_pipeline() {
     }
 }
 
-void OptixRenderer::launch_direction_debug(const PackedCameraRig&, std::uint8_t* rgba, int width, int height) {
-    launch_direction_debug_kernel(rgba, width, height, stream_);
-}
-
 void OptixRenderer::allocate_frame_buffers(int width, int height) {
     if (allocated_width_ == width && allocated_height_ == height) {
         return;
@@ -395,10 +392,12 @@ void OptixRenderer::allocate_frame_buffers(int width, int height) {
     allocated_height_ = height;
 }
 
-DirectionDebugFrame OptixRenderer::render_direction_debug(const PackedCameraRig& rig) {
+DirectionDebugFrame OptixRenderer::render_direction_debug(const PackedCameraRig& rig, int camera_index) {
+    validate_radiance_request(rig, camera_index);
+
     DirectionDebugFrame frame {};
-    frame.width = rig.cameras[0].width;
-    frame.height = rig.cameras[0].height;
+    frame.width = rig.cameras[static_cast<std::size_t>(camera_index)].width;
+    frame.height = rig.cameras[static_cast<std::size_t>(camera_index)].height;
     frame.rgba.resize(static_cast<std::size_t>(frame.width) * static_cast<std::size_t>(frame.height) * 4U, 0);
 
     std::uint8_t* device_rgba = nullptr;
@@ -406,7 +405,8 @@ DirectionDebugFrame OptixRenderer::render_direction_debug(const PackedCameraRig&
     RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&device_rgba), byte_count));
 
     try {
-        launch_direction_debug(rig, device_rgba, frame.width, frame.height);
+        const PackedCamera& camera = rig.cameras[static_cast<std::size_t>(camera_index)];
+        launch_direction_debug_kernel(make_active_camera(camera), device_rgba, frame.width, frame.height, stream_);
         RT_CUDA_CHECK(cudaMemcpyAsync(frame.rgba.data(), device_rgba, byte_count, cudaMemcpyDeviceToHost, stream_));
         RT_CUDA_CHECK(cudaStreamSynchronize(stream_));
         RT_CUDA_CHECK(cudaFree(device_rgba));

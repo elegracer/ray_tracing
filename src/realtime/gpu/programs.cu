@@ -121,6 +121,10 @@ __device__ float clamp01(float v) {
     return fminf(fmaxf(v, 0.0f), 1.0f);
 }
 
+__device__ std::uint8_t encode_direction_channel(float value) {
+    return static_cast<std::uint8_t>(255.0f * clamp01(0.5f * (value + 1.0f)));
+}
+
 __device__ float fractf(float v) {
     return v - floorf(v);
 }
@@ -733,17 +737,23 @@ __device__ void store_output(const LaunchParams& params, int pixel_index, const 
     }
 }
 
-__global__ void direction_debug_kernel(std::uint8_t* rgba, int width, int height) {
+__global__ void direction_debug_kernel(const DeviceActiveCamera* camera_ptr, std::uint8_t* rgba, int width, int height) {
     const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
     const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
-    if (x >= width || y >= height) {
+    if (camera_ptr == nullptr || x >= width || y >= height) {
         return;
     }
 
     const int pixel_index = y * width + x;
-    rgba[4 * pixel_index + 0] = static_cast<std::uint8_t>((255 * x) / max(width, 1));
-    rgba[4 * pixel_index + 1] = static_cast<std::uint8_t>((255 * y) / max(height, 1));
-    rgba[4 * pixel_index + 2] = 128;
+    const DeviceActiveCamera& camera = *camera_ptr;
+    const float pixel_x = static_cast<float>(x) + 0.5f;
+    const float pixel_y = static_cast<float>(y) + 0.5f;
+    const float3 dir_camera = unproject_camera_ray(camera, pixel_x, pixel_y);
+    const float3 dir_world = transform_direction(camera, dir_camera);
+
+    rgba[4 * pixel_index + 0] = encode_direction_channel(dir_world.x);
+    rgba[4 * pixel_index + 1] = encode_direction_channel(dir_world.y);
+    rgba[4 * pixel_index + 2] = encode_direction_channel(dir_world.z);
     rgba[4 * pixel_index + 3] = 255;
 }
 
@@ -1035,10 +1045,22 @@ __device__ void sample_bsdf(const LaunchParams&, const HitInfo& hit, std::uint32
     state.alive = false;
 }
 
-void launch_direction_debug_kernel(std::uint8_t* rgba, int width, int height, cudaStream_t stream) {
+void launch_direction_debug_kernel(
+    const DeviceActiveCamera& camera, std::uint8_t* rgba, int width, int height, cudaStream_t stream) {
+    DeviceActiveCamera* device_camera = nullptr;
+    throw_cuda_error(cudaMalloc(reinterpret_cast<void**>(&device_camera), sizeof(DeviceActiveCamera)), "cudaMalloc()");
     const dim3 block_size(16, 16, 1);
-    direction_debug_kernel<<<make_grid(width, height, block_size), block_size, 0, stream>>>(rgba, width, height);
-    throw_cuda_error(cudaGetLastError(), "cudaGetLastError()");
+    try {
+        throw_cuda_error(cudaMemcpyAsync(
+            device_camera, &camera, sizeof(DeviceActiveCamera), cudaMemcpyHostToDevice, stream), "cudaMemcpyAsync()");
+        direction_debug_kernel<<<make_grid(width, height, block_size), block_size, 0, stream>>>(
+            device_camera, rgba, width, height);
+        throw_cuda_error(cudaGetLastError(), "cudaGetLastError()");
+        throw_cuda_error(cudaFree(device_camera), "cudaFree()");
+    } catch (...) {
+        cudaFree(device_camera);
+        throw;
+    }
 }
 
 void launch_radiance_kernel(const LaunchParams& params, cudaStream_t stream) {

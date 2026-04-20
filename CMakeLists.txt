@@ -109,6 +109,7 @@ target_sources(core
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/scene_description.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/viewer/body_pose.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/viewer/default_viewer_scene.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/viewer/four_camera_rig.cpp
 )
 target_include_directories(core
     PUBLIC
