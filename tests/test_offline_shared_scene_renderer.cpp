@@ -1,3 +1,4 @@
+#include "camera_contract_fixtures.h"
 #include "common/camera.h"
 #include "core/offline_shared_scene_renderer.h"
 #include "realtime/camera_models.h"
@@ -101,33 +102,6 @@ void write_shared_scene_model_switch_scene(
            "      focus_dist: 3.0\n";
 }
 
-rt::PackedCamera make_test_pinhole_camera() {
-    rt::PackedCamera camera;
-    camera.width = 64;
-    camera.height = 48;
-    camera.model = rt::CameraModelType::pinhole32;
-    camera.T_rc = Sophus::SE3d(Eigen::AngleAxisd(0.35, Eigen::Vector3d::UnitY()).toRotationMatrix(),
-        Eigen::Vector3d(1.0, -2.0, 3.5));
-    camera.pinhole = rt::Pinhole32Params {
-        52.0, 50.0, 31.5, 23.5,
-        0.02, -0.01, 0.003, 0.001, -0.0015,
-    };
-    return camera;
-}
-
-rt::PackedCamera make_test_equi_camera() {
-    rt::PackedCamera camera;
-    camera.width = 64;
-    camera.height = 48;
-    camera.model = rt::CameraModelType::equi62_lut1d;
-    camera.T_rc = Sophus::SE3d(Eigen::AngleAxisd(-0.2, Eigen::Vector3d::UnitX()).toRotationMatrix(),
-        Eigen::Vector3d(-1.5, 0.75, 2.25));
-    camera.equi = rt::make_equi62_lut1d_params(camera.width, camera.height, 28.0, 29.0, 31.5, 23.5,
-        std::array<double, 6> {0.01, -0.003, 0.0008, -0.0002, 0.00005, -0.00001},
-        Eigen::Vector2d {0.0007, -0.0005});
-    return camera;
-}
-
 Camera::SharedCameraRayConfig make_camera_ray_config(const rt::PackedCamera& packed) {
     Camera::SharedCameraRayConfig config {};
     config.model = packed.model;
@@ -185,7 +159,7 @@ int main() {
     expect_true(!imported_image.empty(), "file-backed offline render should return a non-empty image");
     expect_true(imported_image.cols == 640, "file-backed offline render width follows yaml preset");
 
-    const rt::PackedCamera pinhole_camera = make_test_pinhole_camera();
+    const rt::PackedCamera pinhole_camera = rt::test::make_contract_test_pinhole_camera();
     Camera pinhole_seam;
     pinhole_seam.aspect_ratio =
         static_cast<double>(pinhole_camera.width) / static_cast<double>(pinhole_camera.height);
@@ -194,7 +168,7 @@ int main() {
     pinhole_seam.defocus_angle = 0.0;
     pinhole_seam.focus_dist = 3.0;
     pinhole_seam.set_shared_camera_ray_config(make_camera_ray_config(pinhole_camera));
-    const Eigen::Vector2d pinhole_pixel {17.5, 11.5};
+    const Eigen::Vector2d pinhole_pixel = rt::test::contract_pinhole_sample_pixel();
     const Ray pinhole_ray = pinhole_seam.debug_primary_ray(pinhole_pixel);
     expect_vec3_near(pinhole_ray.origin(), pinhole_camera.T_rc.translation(), 1e-12,
         "pinhole seam origin follows packed pose");
@@ -204,7 +178,7 @@ int main() {
             .normalized(),
         1e-12, "pinhole seam ray direction matches shared camera math");
 
-    const rt::PackedCamera equi_camera = make_test_equi_camera();
+    const rt::PackedCamera equi_camera = rt::test::make_contract_test_equi_camera();
     Camera equi_seam;
     equi_seam.aspect_ratio = static_cast<double>(equi_camera.width) / static_cast<double>(equi_camera.height);
     equi_seam.image_width = equi_camera.width;
@@ -212,7 +186,7 @@ int main() {
     equi_seam.defocus_angle = 2.0;
     equi_seam.focus_dist = 3.0;
     equi_seam.set_shared_camera_ray_config(make_camera_ray_config(equi_camera));
-    const Eigen::Vector2d equi_pixel {45.5, 14.5};
+    const Eigen::Vector2d equi_pixel = rt::test::contract_equi_sample_pixel();
     const Ray equi_ray = equi_seam.debug_primary_ray(equi_pixel);
     expect_vec3_near(equi_ray.origin(), equi_camera.T_rc.translation(), 1e-12,
         "equi seam origin stays at camera center");

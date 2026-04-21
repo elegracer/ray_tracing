@@ -1,3 +1,4 @@
+#include "camera_contract_fixtures.h"
 #include "realtime/camera_models.h"
 #include "realtime/camera_rig.h"
 #include "realtime/gpu/optix_renderer.h"
@@ -10,14 +11,6 @@
 #include <string>
 
 namespace {
-
-Eigen::Vector3d direction_for_pixel(const rt::PackedCamera& camera, int x, int y) {
-    const Eigen::Vector2d pixel {static_cast<double>(x) + 0.5, static_cast<double>(y) + 0.5};
-    const Eigen::Vector3d dir_camera = camera.model == rt::CameraModelType::equi62_lut1d
-        ? rt::unproject_equi62_lut1d(camera.equi, pixel)
-        : rt::unproject_pinhole32(camera.pinhole, pixel);
-    return (camera.T_rc.rotationMatrix() * dir_camera).normalized();
-}
 
 std::array<std::uint8_t, 3> encode_direction(const Eigen::Vector3d& direction) {
     std::array<std::uint8_t, 3> out {};
@@ -61,33 +54,38 @@ void expect_rgb_differs(const std::array<std::uint8_t, 3>& actual, const std::ar
 }  // namespace
 
 int main() {
-    rt::CameraRig rig;
-    rig.add_pinhole(rt::Pinhole32Params {320.0, 320.0, 160.0, 120.0, 0.0, 0.0, 0.0, 0.0, 0.0},
-        Sophus::SE3d(), 320, 240);
-    rig.add_equi62(rt::make_equi62_lut1d_params(320, 240, 180.0, 182.0, 160.0, 120.0,
-            std::array<double, 6> {}, Eigen::Vector2d::Zero()),
-        Sophus::SE3d(), 320, 240);
-
-    const rt::PackedCameraRig packed = rig.pack();
+    const rt::PackedCameraRig packed = rt::test::make_contract_test_rig();
     rt::OptixRenderer renderer;
 
     const rt::DirectionDebugFrame pinhole_frame = renderer.render_direction_debug(packed, 0);
-    expect_near(static_cast<double>(pinhole_frame.width), 320.0, 1e-12, "pinhole debug width");
-    expect_near(static_cast<double>(pinhole_frame.height), 240.0, 1e-12, "pinhole debug height");
+    expect_near(static_cast<double>(pinhole_frame.width), 64.0, 1e-12, "pinhole debug width");
+    expect_near(static_cast<double>(pinhole_frame.height), 48.0, 1e-12, "pinhole debug height");
     expect_true(!pinhole_frame.rgba.empty(), "pinhole debug image has pixels");
-    expect_rgb_near(pixel_rgb(pinhole_frame, 0, 0), encode_direction(direction_for_pixel(packed.cameras[0], 0, 0)), 2,
-        "pinhole top-left direction");
+    expect_rgb_near(pixel_rgb(pinhole_frame,
+                        static_cast<int>(rt::test::contract_pinhole_sample_pixel().x()),
+                        static_cast<int>(rt::test::contract_pinhole_sample_pixel().y())),
+        encode_direction(rt::test::world_direction_for_pixel(packed.cameras[0], rt::test::contract_pinhole_sample_pixel())),
+        2, "pinhole contract sample direction");
 
     const rt::DirectionDebugFrame equi_frame = renderer.render_direction_debug(packed, 1);
-    expect_near(static_cast<double>(equi_frame.width), 320.0, 1e-12, "equi debug width");
-    expect_near(static_cast<double>(equi_frame.height), 240.0, 1e-12, "equi debug height");
+    expect_near(static_cast<double>(equi_frame.width), 64.0, 1e-12, "equi debug width");
+    expect_near(static_cast<double>(equi_frame.height), 48.0, 1e-12, "equi debug height");
     expect_true(!equi_frame.rgba.empty(), "equi debug image has pixels");
     expect_rgb_near(
-        pixel_rgb(equi_frame, 0, 0), encode_direction(direction_for_pixel(packed.cameras[1], 0, 0)), 2,
-        "equi top-left direction");
+        pixel_rgb(equi_frame,
+            static_cast<int>(rt::test::contract_equi_sample_pixel().x()),
+            static_cast<int>(rt::test::contract_equi_sample_pixel().y())),
+        encode_direction(rt::test::world_direction_for_pixel(packed.cameras[1], rt::test::contract_equi_sample_pixel())),
+        2, "equi contract sample direction");
 
-    expect_rgb_differs(pixel_rgb(equi_frame, 0, 0), pixel_rgb(pinhole_frame, 0, 0), 12,
-        "equi debug should differ from pinhole at the same pixel");
+    expect_rgb_differs(
+        pixel_rgb(equi_frame,
+            static_cast<int>(rt::test::contract_equi_sample_pixel().x()),
+            static_cast<int>(rt::test::contract_equi_sample_pixel().y())),
+        pixel_rgb(pinhole_frame,
+            static_cast<int>(rt::test::contract_pinhole_sample_pixel().x()),
+            static_cast<int>(rt::test::contract_pinhole_sample_pixel().y())),
+        12, "equi contract sample should differ from pinhole contract sample");
 
     return 0;
 }
