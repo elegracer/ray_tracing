@@ -1,8 +1,14 @@
 # Ray Tracing
 
+## Current State
+
+- **Latest shipped version:** `v1.0` on `2026-04-22`
+- **Milestone result:** shipped dual-model camera support across shared scene, offline CPU, realtime GPU, viewer, defaults, and regression coverage
+- **Audit:** `.planning/v1.0-MILESTONE-AUDIT.md` passed with `15/15` requirements satisfied
+
 ## What This Is
 
-This is a brownfield C++/CUDA ray tracing project with a shared scene pipeline that drives both offline CPU rendering and realtime OptiX rendering. It already ships scene catalogs, file-backed scene loading, a multi-camera realtime viewer, and broad regression coverage. The current milestone extends that renderer so pinhole and fisheye camera models are both first-class across the full pipeline, with fisheye becoming the default.
+This is a brownfield C++/CUDA ray tracing project with a shared scene pipeline that drives both offline CPU rendering and realtime OptiX rendering. It ships scene catalogs, file-backed scene loading, a multi-camera realtime viewer, and regression coverage that now spans both `pinhole32` and `equi62_lut1d` camera models across the full pipeline, with fisheye as the default construction path.
 
 ## Core Value
 
@@ -16,24 +22,24 @@ Camera behavior must stay consistent across offline and realtime rendering so th
 - ✓ Realtime OptiX rendering and the four-camera viewer already work through `render_realtime`, `render_realtime_viewer`, and `src/realtime/gpu/` — existing
 - ✓ The codebase already contains `pinhole32` and `equi62_lut1d` projection helpers in `src/realtime/camera_models.h` and `src/realtime/camera_models.cpp` — existing
 - ✓ Builtin and YAML-backed scenes already flow through the shared scene catalog and adapters in `src/scene/` — existing
+- ✓ `pinhole32` and `equi62_lut1d` are first-class per-camera types across shared scene, offline rendering, realtime rendering, and viewer paths — `v1.0`
+- ✓ Project defaults now resolve to `equi62_lut1d` while explicit pinhole support remains available everywhere — `v1.0`
+- ✓ Default `fx/fy/cx/cy` derivation from `resolution + hfov` is implemented with `90` degree pinhole and `120` degree fisheye defaults — `v1.0`
+- ✓ Automated coverage now anchors camera math to the bundled reference headers and checks CPU/GPU cross-path camera contracts — `v1.0`
 
 ### Active
 
-- [ ] Promote `pinhole32` and `equi62_lut1d` to full-chain per-camera types across shared scene data, offline rendering, realtime rendering, viewer defaults, and scene definitions.
-- [ ] Switch project defaults to `equi62_lut1d` while keeping `pinhole32` available in every render mode and every rig path.
-- [ ] Add a utility/script that derives default `fx`, `fy`, `cx`, and `cy` from render resolution and horizontal FOV.
-- [ ] Use a `90` degree default horizontal FOV for pinhole and a `120` degree default horizontal FOV for fisheye when deriving default intrinsics.
-- [ ] Verify that CPU and realtime paths honor the same per-camera model choice and default intrinsics.
+No active milestone requirements are defined yet.
 
 ### Out of Scope
 
-- Dynamic render-preset-controlled resolution selection in this milestone — defer until the dual-model pipeline is stable first.
-- Runtime-configurable per-camera intrinsics, distortion coefficients, and SE3 extrinsics in this milestone — v1 will use derived `fx/fy/cx/cy` plus zero distortion defaults.
+- Dynamic render-preset-controlled resolution selection in `v1.0` — deferred to the next milestone.
+- Runtime-configurable per-camera intrinsics, distortion coefficients, and SE3 extrinsics in `v1.0` — deferred until after the default dual-model path stabilized.
 - Additional camera models beyond `pinhole32` and `equi62_lut1d` — keep the scope limited to the two reference-backed models.
 
 ## Context
 
-The existing project centers on a backend-agnostic shared scene representation that feeds both CPU and GPU renderers. Camera math already lives in `src/realtime/camera_models.h` and `src/realtime/camera_models.cpp`, where `CameraModelType`, `Pinhole32Params`, and `Equi62Lut1DParams` are defined, but current project defaults and most end-to-end usage still assume the pinhole path.
+The existing project centers on a backend-agnostic shared scene representation that feeds both CPU and GPU renderers. Camera math lives in `src/realtime/camera_models.h` and `src/realtime/camera_models.cpp`, and `v1.0` standardized the authored/runtime camera contract around explicit shared camera specs, model-aware offline and realtime ray generation, and fisheye-first default construction.
 
 Reference implementations already exist in `docs/reference/src-cam/cam_pinhole32.h` and `docs/reference/src-cam/cam_equi62_lut1d.h`. The new fisheye work should follow those references the same way the current pinhole work followed the pinhole reference.
 
@@ -51,11 +57,18 @@ The repo already has strong regression coverage across scene loading, camera rig
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Use `docs/reference/src-cam/cam_pinhole32.h` and `docs/reference/src-cam/cam_equi62_lut1d.h` as the math references | The project already uses those references as the intended camera-model source of truth | — Pending |
-| Treat `pinhole32` and `equi62_lut1d` as first-class per-camera types across every render mode | The requested feature is full-chain support, not a one-off alternate camera path | — Pending |
-| Make fisheye the project default while preserving pinhole everywhere | The desired behavior is dual support with a default switch, not a pinhole removal | — Pending |
-| Derive default `fx/fy/cx/cy` from resolution + horizontal FOV before exposing richer calibration | This provides deterministic defaults for both models and reduces the initial integration surface | — Pending |
-| Defer dynamic resolution, explicit intrinsics, distortion tuning, and SE3 extrinsics to follow-up phases | Those capabilities are important but materially larger than the initial dual-model rollout | — Pending |
+| Use `docs/reference/src-cam/cam_pinhole32.h` and `docs/reference/src-cam/cam_equi62_lut1d.h` as the math references | The project already uses those references as the intended camera-model source of truth | Shipped in `v1.0` |
+| Treat `pinhole32` and `equi62_lut1d` as first-class per-camera types across every render mode | The requested feature is full-chain support, not a one-off alternate camera path | Shipped in `v1.0` |
+| Make fisheye the project default while preserving pinhole everywhere | The desired behavior is dual support with a default switch, not a pinhole removal | Shipped in `v1.0` |
+| Derive default `fx/fy/cx/cy` from resolution + horizontal FOV before exposing richer calibration | This provides deterministic defaults for both models and reduces the initial integration surface | Shipped in `v1.0` |
+| Defer dynamic resolution, explicit intrinsics, distortion tuning, and SE3 extrinsics to follow-up phases | Those capabilities are important but materially larger than the initial dual-model rollout | Deferred past `v1.0` |
+
+## Next Milestone Goals
+
+- Add render-preset-controlled dynamic output resolution.
+- Support explicit per-camera `fx`, `fy`, `cx`, and `cy` instead of only derived defaults.
+- Support model-specific distortion coefficients for `pinhole32` and `equi62_lut1d`.
+- Support configurable body-relative camera extrinsics through scene or preset data.
 
 ## Evolution
 
@@ -75,4 +88,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-19 after initialization*
+*Last updated: 2026-04-22 after v1.0 milestone close*

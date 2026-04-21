@@ -2,17 +2,17 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-19)
+See: .planning/PROJECT.md (updated 2026-04-22)
 
 **Core value:** Camera behavior must stay consistent across offline and realtime rendering so the same scene and rig produce the intended image no matter which path is used.
-**Current focus:** Milestone Wrap-Up
+**Current focus:** Next Milestone Definition
 
 ## Current Position
 
-Phase: 5 of 5 (Camera Model Regression Coverage)
-Plan: 3 of 3 in current phase
-Status: Milestone ready to complete
-Last activity: 2026-04-22 - Phase 5 verification completed and the milestone is ready for closure
+Phase: Milestone archived
+Plan: None active
+Status: Ready for next milestone
+Last activity: 2026-04-22 - Archived v1.0 roadmap and requirements, updated project state, and created release tag
 
 Progress: [██████████] 100%
 
@@ -35,7 +35,7 @@ Progress: [██████████] 100%
 
 **Recent Trend:**
 - Last 5 plans: 05-01, 05-02, 05-03, 04-02, 04-03
-- Trend: Active
+- Trend: Milestone complete
 
 ## Accumulated Context
 
@@ -53,11 +53,11 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-None yet.
+No active todos captured for the next milestone yet.
 
 ### Blockers/Concerns
 
-- Brownfield camera changes will touch shared scene, offline, realtime, and viewer code paths, so regression coverage is part of the milestone rather than follow-up polish.
+No active blockers. The next milestone needs fresh requirement definition before execution work starts.
 
 ## Deferred Items
 
@@ -69,6 +69,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-21 00:00
-Stopped at: Final phase verified; next step is complete the milestone
+Last session: 2026-04-22 00:00
+Stopped at: v1.0 archived; next step is `$gsd-new-milestone`
 Resume file: .planning/ROADMAP.md
