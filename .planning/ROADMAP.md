@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Shared Camera Schema** - Carry per-camera model selection and common intrinsics through shared scene and rig data.
 - [x] **Phase 2: Offline CPU Camera Models** - Make the offline renderer honor pinhole and fisheye selection from shared scene inputs.
 - [x] **Phase 3: Realtime GPU And Viewer Camera Models** - Preserve per-camera model choice through realtime packing, rendering, and viewer rigs.
-- [ ] **Phase 4: Default Intrinsics And Fisheye Defaults** - Switch default camera construction to fisheye and derive v1 intrinsics from resolution plus horizontal FOV.
+- [x] **Phase 4: Default Intrinsics And Fisheye Defaults** - Switch default camera construction to fisheye and derive v1 intrinsics from resolution plus horizontal FOV.
 - [ ] **Phase 5: Camera Model Regression Coverage** - Prove reference math parity and cross-path consistency after the default switch.
 
 ## Phase Details
@@ -99,5 +99,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. Shared Camera Schema | 3/3 | Complete | 2026-04-20 |
 | 2. Offline CPU Camera Models | 3/3 | Complete | 2026-04-20 |
 | 3. Realtime GPU And Viewer Camera Models | 3/3 | Complete | 2026-04-21 |
-| 4. Default Intrinsics And Fisheye Defaults | 3/3 | Ready to verify | - |
+| 4. Default Intrinsics And Fisheye Defaults | 3/3 | Complete | 2026-04-21 |
 | 5. Camera Model Regression Coverage | 0/TBD | Not started | - |

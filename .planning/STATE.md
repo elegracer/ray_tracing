@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-04-19)
 
 **Core value:** Camera behavior must stay consistent across offline and realtime rendering so the same scene and rig produce the intended image no matter which path is used.
-**Current focus:** Phase 4 - Default Intrinsics And Fisheye Defaults
+**Current focus:** Phase 5 - Camera Model Regression Coverage
 
 ## Current Position
 
-Phase: 4 of 5 (Default Intrinsics And Fisheye Defaults)
-Plan: 3 of 3 in current phase
-Status: Ready to verify
-Last activity: 2026-04-21 - Phase 4 execution completed with shared default intrinsics, fisheye-first builtin defaults, and fisheye viewer defaults
+Phase: 5 of 5 (Camera Model Regression Coverage)
+Plan: 0 of TBD in current phase
+Status: Ready to discuss
+Last activity: 2026-04-21 - Phase 4 verification completed and the milestone advanced to Phase 5 discussion
 
 Progress: [████████░░] 80%
 
@@ -46,6 +46,7 @@ Recent decisions affecting current work:
 - Treat `pinhole32` and `equi62_lut1d` as first-class per-camera types across shared scene, offline, realtime, and viewer paths.
 - Make `equi62_lut1d` the default camera model while preserving explicit pinhole support everywhere.
 - Derive v1 default `fx`, `fy`, `cx`, and `cy` from resolution plus horizontal FOV, using `90` degrees for pinhole and `120` degrees for fisheye.
+- Keep implicit/default camera construction fisheye-first while preserving explicit authored pinhole scenes and viewer rigs.
 - Lock Phase 1 to a single canonical shared camera schema with explicit `model`, pre-allocated `T_bc`, and model-specific parameter slots.
 - Migrate repo-owned builtin and YAML scene data directly to the new schema rather than maintaining project-owned old-format compatibility.
 
@@ -68,5 +69,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-21 00:00
-Stopped at: Phase 4 execution completed; next step is verify Phase 4
-Resume file: .planning/phases/04-default-intrinsics-and-fisheye-defaults/04-VALIDATION.md
+Stopped at: Phase 4 verification completed; next step is discuss Phase 5
+Resume file: .planning/ROADMAP.md
