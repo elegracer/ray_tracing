@@ -195,6 +195,11 @@ target_sources(test_camera_models
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_camera_models.cpp
 )
 target_link_libraries(test_camera_models PRIVATE core)
+target_include_directories(test_camera_models
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/docs/reference/src-cam
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/reference_camera_shims
+)
 add_test(NAME test_camera_models COMMAND test_camera_models)
 
 add_executable(test_camera_rig)
