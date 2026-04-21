@@ -87,7 +87,11 @@ Plans:
   2. Automated tests verify `equi62_lut1d` math against `docs/reference/src-cam/cam_equi62_lut1d.h`.
   3. Automated tests show offline CPU and realtime GPU paths honor the same selected camera model and derived default intrinsics for equivalent scene inputs.
   4. Existing relevant render, scene, and viewer regression coverage continues to pass after fisheye becomes the default.
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 05-01-PLAN.md - Anchor representative `pinhole32` and `equi62_lut1d` math directly to the bundled reference headers.
+- [ ] 05-02-PLAN.md - Prove offline CPU and realtime GPU honor the same packed-camera ray contract and default-derived fisheye smoke path.
+- [ ] 05-03-PLAN.md - Tighten authored-versus-default regressions and lock the widened final camera-model slice green.
 
 ## Progress
 
@@ -100,4 +104,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Offline CPU Camera Models | 3/3 | Complete | 2026-04-20 |
 | 3. Realtime GPU And Viewer Camera Models | 3/3 | Complete | 2026-04-21 |
 | 4. Default Intrinsics And Fisheye Defaults | 3/3 | Complete | 2026-04-21 |
-| 5. Camera Model Regression Coverage | 0/TBD | Not started | - |
+| 5. Camera Model Regression Coverage | 0/3 | Planned | - |
