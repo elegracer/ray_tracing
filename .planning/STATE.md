@@ -11,8 +11,8 @@ See: .planning/PROJECT.md (updated 2026-04-19)
 
 Phase: 5 of 5 (Camera Model Regression Coverage)
 Plan: 0 of TBD in current phase
-Status: Ready to discuss
-Last activity: 2026-04-21 - Phase 4 verification completed and the milestone advanced to Phase 5 discussion
+Status: Ready to plan
+Last activity: 2026-04-21 - Phase 5 discussion completed and planning decisions were captured
 
 Progress: [████████░░] 80%
 
@@ -69,5 +69,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-21 00:00
-Stopped at: Phase 4 verification completed; next step is discuss Phase 5
+Stopped at: Phase 5 discussion completed; next step is plan Phase 5
 Resume file: .planning/ROADMAP.md
