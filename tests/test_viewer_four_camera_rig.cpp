@@ -1,4 +1,5 @@
 #include "realtime/frame_convention.h"
+#include "realtime/camera_models.h"
 #include "realtime/realtime_scene_factory.h"
 #include "realtime/viewer/body_pose.h"
 #include "realtime/viewer/default_viewer_scene.h"
@@ -55,8 +56,15 @@ int main() {
     for (int i = 0; i < 4; ++i) {
         const rt::PackedCamera& camera = packed_rig.cameras[static_cast<std::size_t>(i)];
         expect_true(camera.enabled == 1, "camera enabled");
+        expect_true(camera.model == rt::CameraModelType::equi62_lut1d, "default viewer rig model");
         expect_true(camera.width == 640, "camera width");
         expect_true(camera.height == 480, "camera height");
+        const double expected_default_focal =
+            0.5 * 640.0 / (rt::default_hfov_deg(rt::CameraModelType::equi62_lut1d) * 3.14159265358979323846 / 360.0);
+        expect_near(camera.equi.fx, expected_default_focal, 1e-9, "default viewer rig fx");
+        expect_near(camera.equi.fy, expected_default_focal, 1e-9, "default viewer rig fy");
+        expect_near(camera.equi.cx, 320.0, 1e-9, "default viewer rig cx");
+        expect_near(camera.equi.cy, 240.0, 1e-9, "default viewer rig cy");
 
         const Eigen::Vector3d camera_translation = camera.T_rc.translation();
         expect_vec3_near(camera_translation, expected_translation, 1e-12, "camera translation");

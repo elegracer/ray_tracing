@@ -1,5 +1,6 @@
 #include "realtime/viewer/four_camera_rig.h"
 
+#include "realtime/camera_models.h"
 #include "realtime/frame_convention.h"
 
 #include <Eigen/Geometry>
@@ -35,15 +36,17 @@ scene::CameraSpec resize_runtime_camera_spec(
     return runtime;
 }
 
-scene::CameraSpec default_pinhole_viewer_camera_spec(int width, int height) {
+scene::CameraSpec default_fisheye_viewer_camera_spec(int width, int height) {
+    const DefaultCameraIntrinsics intrinsics = derive_default_camera_intrinsics(
+        CameraModelType::equi62_lut1d, width, height, default_hfov_deg(CameraModelType::equi62_lut1d));
     scene::CameraSpec spec {};
-    spec.model = CameraModelType::pinhole32;
+    spec.model = CameraModelType::equi62_lut1d;
     spec.width = width;
     spec.height = height;
-    spec.fx = 0.75 * static_cast<double>(width);
-    spec.fy = 0.75 * static_cast<double>(height);
-    spec.cx = 0.5 * static_cast<double>(width);
-    spec.cy = 0.5 * static_cast<double>(height);
+    spec.fx = intrinsics.fx;
+    spec.fy = intrinsics.fy;
+    spec.cx = intrinsics.cx;
+    spec.cy = intrinsics.cy;
     return spec;
 }
 
@@ -99,7 +102,7 @@ CameraRig make_default_viewer_rig(const BodyPose& pose, const scene::CameraSpec&
 
 CameraRig make_default_viewer_rig(const BodyPose& pose, int width, int height, ViewerFrameConvention convention) {
     return make_default_viewer_rig(
-        pose, default_pinhole_viewer_camera_spec(width, height), 4, width, height, convention);
+        pose, default_fisheye_viewer_camera_spec(width, height), 4, width, height, convention);
 }
 
 CameraRig make_default_viewer_rig(
