@@ -1,8 +1,10 @@
 #include "realtime/scene_catalog.h"
+#include "realtime/camera_models.h"
 #include "scene/shared_scene_builders.h"
 #include "test_support.h"
 
 #include <array>
+#include <numbers>
 #include <string_view>
 
 int main() {
@@ -48,6 +50,26 @@ int main() {
         "duplicate cornell_box_extreme removed from public metadata");
     expect_true(rt::scene::find_scene_metadata("unknown") == nullptr, "unknown metadata");
 
+    const rt::scene::CpuRenderPreset* earth_default =
+        rt::scene::find_cpu_render_preset("earth_sphere", "default");
+    expect_true(earth_default != nullptr, "earth_sphere default CPU preset exists");
+    expect_true(earth_default->camera.camera.model == rt::CameraModelType::equi62_lut1d,
+        "earth_sphere default cpu preset now defaults to equi");
+
+    const double default_cpu_height =
+        static_cast<double>(earth_default->camera.camera.height);
+    const double expected_default_cpu_focal =
+        0.5 * static_cast<double>(earth_default->camera.camera.width)
+        / (rt::default_hfov_deg(rt::CameraModelType::equi62_lut1d) * std::numbers::pi / 360.0);
+    expect_near(earth_default->camera.camera.fx, expected_default_cpu_focal, 1e-9,
+        "earth_sphere default cpu equi fx");
+    expect_near(earth_default->camera.camera.fy, expected_default_cpu_focal, 1e-9,
+        "earth_sphere default cpu equi fy");
+    expect_near(earth_default->camera.camera.cx, 0.5 * static_cast<double>(earth_default->camera.camera.width), 1e-9,
+        "earth_sphere default cpu cx");
+    expect_near(earth_default->camera.camera.cy, 0.5 * default_cpu_height, 1e-9,
+        "earth_sphere default cpu cy");
+
     const rt::scene::CpuRenderPreset* cornell_default =
         rt::scene::find_cpu_render_preset("cornell_box", "default");
     const rt::scene::CpuRenderPreset* cornell_extreme =
@@ -56,11 +78,29 @@ int main() {
     expect_true(cornell_extreme != nullptr, "cornell_box extreme CPU preset exists");
     expect_true(cornell_default->samples_per_pixel == 1000, "cornell_box default spp preserved");
     expect_true(cornell_extreme->samples_per_pixel == 10000, "cornell_box extreme spp preserved");
+    expect_true(cornell_default->camera.camera.model == rt::CameraModelType::pinhole32,
+        "cornell_box default cpu preset stays explicit pinhole");
+    expect_true(cornell_extreme->camera.camera.model == rt::CameraModelType::pinhole32,
+        "cornell_box extreme cpu preset stays explicit pinhole");
 
     const rt::scene::RealtimeViewPreset* final_room_view =
         rt::scene::find_realtime_view_preset("final_room");
     expect_true(final_room_view != nullptr, "final_room realtime preset exists");
     expect_true(final_room_view->base_move_speed > 0.0, "final_room move speed is positive");
+    expect_true(final_room_view->camera.model == rt::CameraModelType::pinhole32,
+        "final_room realtime preset stays explicit pinhole");
+
+    const rt::scene::RealtimeViewPreset* earth_view =
+        rt::scene::find_realtime_view_preset("earth_sphere");
+    expect_true(earth_view != nullptr, "earth realtime preset exists");
+    expect_true(earth_view->camera.model == rt::CameraModelType::equi62_lut1d,
+        "earth realtime preset now defaults to equi");
+    const double expected_default_realtime_focal =
+        0.5 * static_cast<double>(earth_view->camera.width)
+        / (rt::default_hfov_deg(rt::CameraModelType::equi62_lut1d) * std::numbers::pi / 360.0);
+    expect_near(earth_view->camera.fx, expected_default_realtime_focal, 1e-9, "earth realtime equi fx");
+    expect_near(earth_view->camera.fy, expected_default_realtime_focal, 1e-9, "earth realtime equi fy");
+
     const rt::scene::CpuRenderPreset* imported_default =
         rt::scene::find_cpu_render_preset("imported_obj_smoke", "default");
     expect_true(imported_default != nullptr, "file-backed default cpu preset exists");

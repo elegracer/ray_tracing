@@ -131,27 +131,27 @@ int main() {
 
     const rt::PackedCameraRig earth_rig = rt::default_camera_rig_for_scene("earth_sphere", 1, 640, 480).pack();
     expect_true(earth_rig.active_count == 1, "earth rig active camera count");
-    expect_true(earth_rig.cameras[0].model == rt::CameraModelType::pinhole32, "earth rig model");
+    expect_true(earth_rig.cameras[0].model == rt::CameraModelType::equi62_lut1d, "earth rig model");
     expect_vec3_near(earth_rig.cameras[0].T_rc.translation(),
         Eigen::Vector3d {-3.0, 6.0, -10.0}, 1e-12,
         "earth rig uses scene camera preset");
-    const double expected_earth_fy =
-        0.5 * 480.0 / std::tan((20.0 * std::numbers::pi / 180.0) * 0.5);
-    expect_near(earth_rig.cameras[0].pinhole.fy, expected_earth_fy, 1e-9,
-        "earth rig preserves authored intrinsics at calibration size");
-    expect_near(earth_rig.cameras[0].pinhole.fx, expected_earth_fy, 1e-9,
-        "earth rig preserves authored fx at calibration size");
+    const double expected_earth_focal =
+        0.5 * 640.0 / (rt::default_hfov_deg(rt::CameraModelType::equi62_lut1d) * std::numbers::pi / 360.0);
+    expect_near(earth_rig.cameras[0].equi.fy, expected_earth_focal, 1e-9,
+        "earth rig preserves authored equi fy at calibration size");
+    expect_near(earth_rig.cameras[0].equi.fx, expected_earth_focal, 1e-9,
+        "earth rig preserves authored equi fx at calibration size");
 
     const rt::PackedCameraRig earth_rig_resized = rt::default_camera_rig_for_scene("earth_sphere", 1, 1280, 960).pack();
     expect_true(earth_rig_resized.cameras[0].width == 1280, "earth resized width");
     expect_true(earth_rig_resized.cameras[0].height == 960, "earth resized height");
-    expect_near(earth_rig_resized.cameras[0].pinhole.fx, 2.0 * expected_earth_fy, 1e-9,
+    expect_near(earth_rig_resized.cameras[0].equi.fx, 2.0 * expected_earth_focal, 1e-9,
         "earth resized rig scales fx");
-    expect_near(earth_rig_resized.cameras[0].pinhole.fy, 2.0 * expected_earth_fy, 1e-9,
+    expect_near(earth_rig_resized.cameras[0].equi.fy, 2.0 * expected_earth_focal, 1e-9,
         "earth resized rig scales fy");
-    expect_near(earth_rig_resized.cameras[0].pinhole.cx, 640.0, 1e-9,
+    expect_near(earth_rig_resized.cameras[0].equi.cx, 640.0, 1e-9,
         "earth resized rig scales cx");
-    expect_near(earth_rig_resized.cameras[0].pinhole.cy, 480.0, 1e-9,
+    expect_near(earth_rig_resized.cameras[0].equi.cy, 480.0, 1e-9,
         "earth resized rig scales cy");
 
     const rt::PackedCameraRig final_room_rig = rt::default_camera_rig_for_scene("final_room", 1, 640, 480).pack();
@@ -241,9 +241,9 @@ int main() {
         const rt::PackedCamera& camera = quads_rig.cameras[0];
         const Eigen::Matrix3d R = camera.T_rc.rotationMatrix();
         const Eigen::Vector3d top_ray =
-            (R * rt::unproject_pinhole32(camera.pinhole, Eigen::Vector2d {320.0, 0.0})).normalized();
+            (R * rt::unproject_equi62_lut1d(camera.equi, Eigen::Vector2d {320.0, 0.0})).normalized();
         const Eigen::Vector3d right_ray =
-            (R * rt::unproject_pinhole32(camera.pinhole, Eigen::Vector2d {639.0, 240.0})).normalized();
+            (R * rt::unproject_equi62_lut1d(camera.equi, Eigen::Vector2d {639.0, 240.0})).normalized();
 
         expect_true(top_ray.y() > 0.0, "legacy scene top pixel points upward");
         expect_true(right_ray.x() > 0.0, "legacy scene right pixel points rightward");

@@ -1,5 +1,6 @@
 #include "scene/shared_scene_builders.h"
 
+#include "realtime/camera_models.h"
 #include "scene/scene_definition.h"
 #include "scene/scene_file_catalog.h"
 
@@ -139,18 +140,40 @@ CornellMaterials add_cornell_room(SceneIR& scene) {
 
 CpuCameraPreset make_cpu_camera(double vfov, const Eigen::Vector3d& lookfrom, const Eigen::Vector3d& lookat,
     double defocus_angle = 0.0) {
+    (void)vfov;
     CpuCameraPreset preset;
-    const double theta = vfov * std::numbers::pi / 180.0;
     const int image_height = static_cast<int>(std::lround(static_cast<double>(preset.image_width) / preset.aspect_ratio));
-    const double fy = 0.5 * static_cast<double>(image_height) / std::tan(theta * 0.5);
+    const DefaultCameraIntrinsics intrinsics = derive_default_camera_intrinsics(
+        CameraModelType::equi62_lut1d, preset.image_width, image_height, default_hfov_deg(CameraModelType::equi62_lut1d));
+    preset.camera = CameraSpec {
+        .model = CameraModelType::equi62_lut1d,
+        .width = preset.image_width,
+        .height = image_height,
+        .fx = intrinsics.fx,
+        .fy = intrinsics.fy,
+        .cx = intrinsics.cx,
+        .cy = intrinsics.cy,
+    };
+    preset.lookfrom = lookfrom;
+    preset.lookat = lookat;
+    preset.defocus_angle = defocus_angle;
+    return preset;
+}
+
+CpuCameraPreset make_explicit_pinhole_cpu_camera(double hfov_deg, const Eigen::Vector3d& lookfrom,
+    const Eigen::Vector3d& lookat, double defocus_angle = 0.0) {
+    CpuCameraPreset preset;
+    const int image_height = static_cast<int>(std::lround(static_cast<double>(preset.image_width) / preset.aspect_ratio));
+    const DefaultCameraIntrinsics intrinsics =
+        derive_default_camera_intrinsics(CameraModelType::pinhole32, preset.image_width, image_height, hfov_deg);
     preset.camera = CameraSpec {
         .model = CameraModelType::pinhole32,
         .width = preset.image_width,
         .height = image_height,
-        .fx = fy,
-        .fy = fy,
-        .cx = 0.5 * static_cast<double>(preset.image_width),
-        .cy = 0.5 * static_cast<double>(image_height),
+        .fx = intrinsics.fx,
+        .fy = intrinsics.fy,
+        .cx = intrinsics.cx,
+        .cy = intrinsics.cy,
     };
     preset.lookfrom = lookfrom;
     preset.lookat = lookat;
@@ -196,19 +219,20 @@ viewer::BodyPose pose_from_look_at(const Eigen::Vector3d& lookfrom, const Eigen:
 
 RealtimeViewPreset make_realtime_view_preset(const Eigen::Vector3d& lookfrom, const Eigen::Vector3d& lookat,
     viewer::ViewerFrameConvention convention, double vfov_deg, double base_move_speed) {
-    const double theta = vfov_deg * std::numbers::pi / 180.0;
-    const double fy = 0.5 * static_cast<double>(kBuiltinRealtimeHeight) / std::tan(theta * 0.5);
+    (void)vfov_deg;
+    const DefaultCameraIntrinsics intrinsics = derive_default_camera_intrinsics(CameraModelType::equi62_lut1d,
+        kBuiltinRealtimeWidth, kBuiltinRealtimeHeight, default_hfov_deg(CameraModelType::equi62_lut1d));
     return RealtimeViewPreset {
         .initial_body_pose = pose_from_look_at(lookfrom, lookat, convention),
         .frame_convention = convention,
         .camera = CameraSpec {
-            .model = CameraModelType::pinhole32,
+            .model = CameraModelType::equi62_lut1d,
             .width = kBuiltinRealtimeWidth,
             .height = kBuiltinRealtimeHeight,
-            .fx = fy,
-            .fy = fy,
-            .cx = 0.5 * static_cast<double>(kBuiltinRealtimeWidth),
-            .cy = 0.5 * static_cast<double>(kBuiltinRealtimeHeight),
+            .fx = intrinsics.fx,
+            .fy = intrinsics.fy,
+            .cx = intrinsics.cx,
+            .cy = intrinsics.cy,
         },
         .base_move_speed = base_move_speed,
     };
@@ -577,7 +601,7 @@ const std::vector<CpuPresetRegistryEntry> kCpuPresetRegistry {
          make_cpu_camera(40.0, Eigen::Vector3d {278.0, 278.0, -800.0}, Eigen::Vector3d {278.0, 278.0, 0.0})},
         true},
     {CpuRenderPreset {"cornell_box", "extreme", 10000,
-         make_cpu_camera(40.0, Eigen::Vector3d {278.0, 278.0, -800.0}, Eigen::Vector3d {278.0, 278.0, 0.0})},
+         make_explicit_pinhole_cpu_camera(40.0, Eigen::Vector3d {278.0, 278.0, -800.0}, Eigen::Vector3d {278.0, 278.0, 0.0})},
         false},
     {CpuRenderPreset {"cornell_box_and_sphere", "default", 1000,
          make_cpu_camera(40.0, Eigen::Vector3d {278.0, 278.0, -800.0}, Eigen::Vector3d {278.0, 278.0, 0.0})},
