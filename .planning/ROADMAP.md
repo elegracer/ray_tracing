@@ -89,9 +89,9 @@ Plans:
   4. Existing relevant render, scene, and viewer regression coverage continues to pass after fisheye becomes the default.
 **Plans**: 3 plans
 Plans:
-- [ ] 05-01-PLAN.md - Anchor representative `pinhole32` and `equi62_lut1d` math directly to the bundled reference headers.
-- [ ] 05-02-PLAN.md - Prove offline CPU and realtime GPU honor the same packed-camera ray contract and default-derived fisheye smoke path.
-- [ ] 05-03-PLAN.md - Tighten authored-versus-default regressions and lock the widened final camera-model slice green.
+- [x] 05-01-PLAN.md - Anchor representative `pinhole32` and `equi62_lut1d` math directly to the bundled reference headers.
+- [x] 05-02-PLAN.md - Prove offline CPU and realtime GPU honor the same packed-camera ray contract and default-derived fisheye smoke path.
+- [x] 05-03-PLAN.md - Tighten authored-versus-default regressions and lock the widened final camera-model slice green.
 
 ## Progress
 
@@ -104,4 +104,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Offline CPU Camera Models | 3/3 | Complete | 2026-04-20 |
 | 3. Realtime GPU And Viewer Camera Models | 3/3 | Complete | 2026-04-21 |
 | 4. Default Intrinsics And Fisheye Defaults | 3/3 | Complete | 2026-04-21 |
-| 5. Camera Model Regression Coverage | 0/3 | Planned | - |
+| 5. Camera Model Regression Coverage | 3/3 | Ready to verify | - |

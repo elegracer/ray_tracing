@@ -113,6 +113,8 @@ int main() {
     expect_true(cornell_box_catalog_default != nullptr, "cornell_box catalog default preset");
     expect_true(cornell_box_catalog_extreme != nullptr, "cornell_box catalog extreme preset");
     expect_true(cornell_box_catalog_default->samples_per_pixel == 1000, "cornell_box catalog default spp");
+    expect_true(cornell_box_catalog_default->camera.camera.model == rt::CameraModelType::pinhole32,
+        "cornell_box catalog cpu camera model");
     expect_true(cornell_box_catalog_extreme->samples_per_pixel == 10000, "cornell_box catalog extreme spp");
     expect_true(cornell_box_catalog_default->camera.camera.fx == cornell_box_yaml_default->camera.camera.fx,
         "cornell_box catalog cpu camera fx preserved");
@@ -152,6 +154,8 @@ int main() {
     const rt::scene::CpuRenderPreset* simple_light_catalog_default = catalog.default_cpu_render_preset("simple_light");
     expect_true(simple_light_catalog_default != nullptr, "simple_light catalog default preset");
     expect_true(simple_light_catalog_default->samples_per_pixel == 500, "simple_light catalog default spp");
+    expect_true(simple_light_catalog_default->camera.camera.model == rt::CameraModelType::pinhole32,
+        "simple_light catalog cpu camera model");
     expect_true(simple_light_catalog_default->camera.camera.fx == simple_light_yaml_default->camera.camera.fx,
         "simple_light catalog cpu camera fx preserved");
     expect_vec3_near(simple_light_catalog_default->camera.lookfrom, Eigen::Vector3d(26.0, 3.0, 6.0), 1e-12,
