@@ -2,10 +2,34 @@
 #include "test_support.h"
 
 #include <array>
+#include <numbers>
+
+namespace {
+
+template <typename Fn>
+void expect_throws_with_message(Fn&& fn, const std::string& message, const std::string& label) {
+    bool threw = false;
+    bool matched = false;
+    try {
+        fn();
+    } catch (const std::exception& ex) {
+        threw = true;
+        matched = std::string(ex.what()).find(message) != std::string::npos;
+    } catch (...) {
+        threw = true;
+    }
+    expect_true(threw, label + " threw");
+    expect_true(matched, label + " message");
+}
+
+}  // namespace
 
 int main() {
+    using rt::DefaultCameraIntrinsics;
     using rt::Equi62Lut1DParams;
     using rt::Pinhole32Params;
+    using rt::default_hfov_deg;
+    using rt::derive_default_camera_intrinsics;
     using rt::make_equi62_lut1d_params;
     using rt::project_equi62_lut1d;
     using rt::project_pinhole32;
@@ -19,6 +43,37 @@ int main() {
 
     expect_vec3_near(unproject_pinhole32(pinhole, Eigen::Vector2d {160.0, 120.0}),
         Eigen::Vector3d {0.0, 0.0, 1.0}, 1e-12, "pinhole center unproject");
+    expect_near(default_hfov_deg(rt::CameraModelType::pinhole32), 90.0, 1e-12, "default pinhole hfov");
+    expect_near(default_hfov_deg(rt::CameraModelType::equi62_lut1d), 120.0, 1e-12, "default equi hfov");
+
+    const DefaultCameraIntrinsics pinhole_default =
+        derive_default_camera_intrinsics(rt::CameraModelType::pinhole32, 640, 480, default_hfov_deg(rt::CameraModelType::pinhole32));
+    expect_near(pinhole_default.fx, 320.0, 1e-12, "default pinhole fx");
+    expect_near(pinhole_default.fy, 320.0, 1e-12, "default pinhole fy");
+    expect_near(pinhole_default.cx, 320.0, 1e-12, "default pinhole cx");
+    expect_near(pinhole_default.cy, 240.0, 1e-12, "default pinhole cy");
+
+    const DefaultCameraIntrinsics equi_default =
+        derive_default_camera_intrinsics(rt::CameraModelType::equi62_lut1d, 640, 480, default_hfov_deg(rt::CameraModelType::equi62_lut1d));
+    const double expected_equi_focal = 320.0 / (120.0 * std::numbers::pi / 360.0);
+    expect_near(equi_default.fx, expected_equi_focal, 1e-12, "default equi fx");
+    expect_near(equi_default.fy, expected_equi_focal, 1e-12, "default equi fy");
+    expect_near(equi_default.cx, 320.0, 1e-12, "default equi cx");
+    expect_near(equi_default.cy, 240.0, 1e-12, "default equi cy");
+
+    expect_throws_with_message(
+        [&]() { (void)derive_default_camera_intrinsics(rt::CameraModelType::pinhole32, 0, 480, 90.0); },
+        "camera dimensions must be positive",
+        "default intrinsics reject non-positive width");
+    expect_throws_with_message(
+        [&]() { (void)derive_default_camera_intrinsics(rt::CameraModelType::equi62_lut1d, 640, 480, 0.0); },
+        "horizontal field of view must be positive",
+        "default intrinsics reject non-positive hfov");
+    expect_throws_with_message(
+        [&]() { (void)derive_default_camera_intrinsics(rt::CameraModelType::pinhole32, 640, 480, 180.0); },
+        "pinhole horizontal field of view must be less than 180 degrees",
+        "default pinhole intrinsics reject 180 degrees");
+
     expect_vec3_near(unproject_pinhole32(pinhole, project_pinhole32(pinhole, Eigen::Vector3d {0.23, -0.17, 1.0})),
         Eigen::Vector3d {0.23, -0.17, 1.0}.normalized(), 1e-9, "pinhole off-axis roundtrip");
     expect_true((project_pinhole32(pinhole, unproject_pinhole32(pinhole, Eigen::Vector2d {160.0, 120.0}))

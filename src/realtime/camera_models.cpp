@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <numbers>
+#include <stdexcept>
 
 namespace rt {
 
@@ -11,6 +13,12 @@ namespace {
 constexpr double kEpsilon = 1e-12;
 constexpr int kPinholeUndistortMaxIterations = 24;
 constexpr double kPinholeUndistortResidualThresholdSq = 1e-20;
+constexpr double kDefaultPinholeHfovDeg = 90.0;
+constexpr double kDefaultEquiHfovDeg = 120.0;
+
+double degrees_to_radians(double degrees) {
+    return degrees * std::numbers::pi / 180.0;
+}
 
 Eigen::Vector2d distort_pinhole_normalized(const Pinhole32Params& params, const Eigen::Vector2d& xy) {
     const double x = xy.x();
@@ -173,6 +181,49 @@ Eigen::Vector3d normalized_fallback_ray(const Eigen::Vector2d& xy) {
 }
 
 }  // namespace
+
+double default_hfov_deg(CameraModelType model) {
+    switch (model) {
+    case CameraModelType::pinhole32:
+        return kDefaultPinholeHfovDeg;
+    case CameraModelType::equi62_lut1d:
+        return kDefaultEquiHfovDeg;
+    }
+
+    throw std::invalid_argument("unsupported camera model");
+}
+
+DefaultCameraIntrinsics derive_default_camera_intrinsics(CameraModelType model, int width, int height, double hfov_deg) {
+    if (width <= 0 || height <= 0) {
+        throw std::invalid_argument("camera dimensions must be positive");
+    }
+    if (hfov_deg <= 0.0) {
+        throw std::invalid_argument("horizontal field of view must be positive");
+    }
+
+    const double hfov_rad = degrees_to_radians(hfov_deg);
+    double focal = 0.0;
+    switch (model) {
+    case CameraModelType::pinhole32:
+        if (hfov_deg >= 180.0) {
+            throw std::invalid_argument("pinhole horizontal field of view must be less than 180 degrees");
+        }
+        focal = 0.5 * static_cast<double>(width) / std::tan(0.5 * hfov_rad);
+        break;
+    case CameraModelType::equi62_lut1d:
+        focal = 0.5 * static_cast<double>(width) / (0.5 * hfov_rad);
+        break;
+    default:
+        throw std::invalid_argument("unsupported camera model");
+    }
+
+    return DefaultCameraIntrinsics {
+        .fx = focal,
+        .fy = focal,
+        .cx = 0.5 * static_cast<double>(width),
+        .cy = 0.5 * static_cast<double>(height),
+    };
+}
 
 Equi62Lut1DParams make_equi62_lut1d_params(int width, int height, double fx, double fy,
     double cx, double cy, const std::array<double, 6>& radial, const Eigen::Vector2d& tangential) {

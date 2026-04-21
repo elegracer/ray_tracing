@@ -150,6 +150,10 @@ add_executable(render_scene)
 target_sources(render_scene PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/utils/render_scene.cpp)
 target_link_libraries(render_scene PRIVATE core)
 
+add_executable(derive_default_camera_intrinsics)
+target_sources(derive_default_camera_intrinsics PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/utils/derive_default_camera_intrinsics.cpp)
+target_link_libraries(derive_default_camera_intrinsics PRIVATE core)
+
 if(ENABLE_GUI_VIEWER)
     add_executable(render_realtime_viewer)
     target_sources(render_realtime_viewer
