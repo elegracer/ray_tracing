@@ -892,6 +892,94 @@ __global__ void radiance_kernel(const LaunchParams* params_ptr) {
     store_output(params, pixel_index, beauty_avg, normal_avg, albedo_avg, depth_avg);
 }
 
+__global__ void resolve_reprojection_kernel(const LaunchParams* params_ptr) {
+    const LaunchParams& params = *params_ptr;
+    const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+    const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
+    if (x >= params.width || y >= params.height) {
+        return;
+    }
+
+    const int pixel_index = y * params.width + x;
+
+    if (params.history_length <= 0
+        || params.history.beauty == nullptr
+        || params.history.normal == nullptr
+        || params.history.depth == nullptr) {
+        return;
+    }
+
+    const float4 current_beauty = params.frame.beauty[pixel_index];
+    const float4 current_normal = params.frame.normal[pixel_index];
+    const float current_depth = params.frame.depth[pixel_index];
+
+    // Reconstruct world-space position from current depth and current camera
+    const float pixel_x = static_cast<float>(x) + 0.5f;
+    const float pixel_y = static_cast<float>(y) + 0.5f;
+    const float3 dir_camera = unproject_camera_ray(params.active_camera, pixel_x, pixel_y);
+    const float3 dir_world = transform_direction(params.active_camera, dir_camera);
+    const float3 origin = camera_origin(params.active_camera);
+    const float3 world_pos = add3(origin, mul3(dir_world, current_depth));
+
+    // Transform world position to previous camera space
+    const float3 world_offset = make_float3(
+        static_cast<float>(world_pos.x - params.prev_origin[0]),
+        static_cast<float>(world_pos.y - params.prev_origin[1]),
+        static_cast<float>(world_pos.z - params.prev_origin[2]));
+
+    const float3 bx = make_float3(
+        static_cast<float>(params.prev_basis_x[0]),
+        static_cast<float>(params.prev_basis_x[1]),
+        static_cast<float>(params.prev_basis_x[2]));
+    const float3 by = make_float3(
+        static_cast<float>(params.prev_basis_y[0]),
+        static_cast<float>(params.prev_basis_y[1]),
+        static_cast<float>(params.prev_basis_y[2]));
+    const float3 bz = make_float3(
+        static_cast<float>(params.prev_basis_z[0]),
+        static_cast<float>(params.prev_basis_z[1]),
+        static_cast<float>(params.prev_basis_z[2]));
+
+    // prev_cam_space = (dot(offset, bx), dot(offset, by), dot(offset, bz))
+    const float3 prev_cam_space = make_float3(
+        dot3(world_offset, bx),
+        dot3(world_offset, by),
+        dot3(world_offset, bz));
+
+    const float2 prev_pixel = project_camera_pixel(params.active_camera, prev_cam_space);
+
+    const int prev_x = static_cast<int>(prev_pixel.x);
+    const int prev_y = static_cast<int>(prev_pixel.y);
+
+    bool valid = false;
+    if (prev_x >= 0 && prev_x < params.width && prev_y >= 0 && prev_y < params.height) {
+        const int prev_idx = prev_y * params.width + prev_x;
+
+        const float3 history_normal = decode_normal(params.history.normal[prev_idx]);
+        const float3 curr_normal_decoded = decode_normal(current_normal);
+        const float normal_dot = dot3(curr_normal_decoded, history_normal);
+
+        const float history_depth = params.history.depth[prev_idx];
+        const float depth_ratio = history_depth > 0.0f ? current_depth / history_depth : 1.0f;
+
+        if (normal_dot > 0.85f && depth_ratio > 0.9f && depth_ratio < 1.1f) {
+            valid = true;
+        }
+    }
+
+    if (valid) {
+        const int prev_idx = prev_y * params.width + prev_x;
+        const float4 h_beauty = params.history.beauty[prev_idx];
+        const int next_len = params.history_length + 1;
+        const float blend = 1.0f / static_cast<float>(next_len);
+        params.frame.beauty[pixel_index] = make_float4(
+            h_beauty.x + (current_beauty.x - h_beauty.x) * blend,
+            h_beauty.y + (current_beauty.y - h_beauty.y) * blend,
+            h_beauty.z + (current_beauty.z - h_beauty.z) * blend,
+            1.0f);
+    }
+}
+
 void throw_cuda_error(cudaError_t error, const char* expr) {
     if (error != cudaSuccess) {
         throw std::runtime_error(std::string("CUDA kernel launch failure at ") + expr + ": "
@@ -1140,6 +1228,25 @@ void launch_radiance_kernel(const LaunchParams& params, cudaStream_t stream) {
             device_params, &params, sizeof(LaunchParams), cudaMemcpyHostToDevice, stream), "cudaMemcpyAsync()");
         const dim3 block_size(8, 8, 1);
         radiance_kernel<<<make_grid(params.width, params.height, block_size), block_size, 0, stream>>>(device_params);
+        throw_cuda_error(cudaGetLastError(), "cudaGetLastError()");
+        throw_cuda_error(cudaFree(device_params), "cudaFree()");
+    } catch (...) {
+        cudaFree(device_params);
+        throw;
+    }
+}
+
+void launch_resolve_kernel(const LaunchParams& params, cudaStream_t stream) {
+    LaunchParams* device_params = nullptr;
+    throw_cuda_error(
+        cudaMalloc(reinterpret_cast<void**>(&device_params), sizeof(LaunchParams)), "cudaMalloc()");
+    try {
+        throw_cuda_error(
+            cudaMemcpyAsync(device_params, &params, sizeof(LaunchParams),
+                cudaMemcpyHostToDevice, stream), "cudaMemcpyAsync()");
+        const dim3 block_size(8, 8, 1);
+        resolve_reprojection_kernel<<<make_grid(params.width, params.height, block_size),
+            block_size, 0, stream>>>(device_params);
         throw_cuda_error(cudaGetLastError(), "cudaGetLastError()");
         throw_cuda_error(cudaFree(device_params), "cudaFree()");
     } catch (...) {
