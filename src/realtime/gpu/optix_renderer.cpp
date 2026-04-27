@@ -344,6 +344,7 @@ OptixRenderer::OptixRenderer() {
 }
 
 OptixRenderer::~OptixRenderer() {
+    free_history_buffers();
     free_device_resources();
     free_staging_buffers();
     if (optix_context_ != nullptr) {
@@ -527,6 +528,102 @@ void OptixRenderer::free_staging_buffers() {
         staging = HostRadianceStaging {};
     }
     host_staging_buffers_.clear();
+}
+
+void OptixRenderer::allocate_history_buffers(int width, int height) {
+    if (width == history_width_ && height == history_height_
+        && device_history_.beauty != nullptr) {
+        return;
+    }
+    free_history_buffers();
+
+    const std::size_t float4_count =
+        static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+    RT_CUDA_CHECK(cudaMalloc(
+        reinterpret_cast<void**>(&device_history_.beauty), float4_count * sizeof(float4)));
+    RT_CUDA_CHECK(cudaMalloc(
+        reinterpret_cast<void**>(&device_history_.normal), float4_count * sizeof(float4)));
+    RT_CUDA_CHECK(cudaMalloc(
+        reinterpret_cast<void**>(&device_history_.albedo), float4_count * sizeof(float4)));
+    RT_CUDA_CHECK(cudaMalloc(
+        reinterpret_cast<void**>(&device_history_.depth), float4_count * sizeof(float)));
+
+    history_width_ = width;
+    history_height_ = height;
+    history_length_ = 0;
+}
+
+void OptixRenderer::free_history_buffers() {
+    if (device_history_.beauty != nullptr) {
+        cudaFree(device_history_.beauty);
+        device_history_.beauty = nullptr;
+    }
+    if (device_history_.normal != nullptr) {
+        cudaFree(device_history_.normal);
+        device_history_.normal = nullptr;
+    }
+    if (device_history_.albedo != nullptr) {
+        cudaFree(device_history_.albedo);
+        device_history_.albedo = nullptr;
+    }
+    if (device_history_.depth != nullptr) {
+        cudaFree(device_history_.depth);
+        device_history_.depth = nullptr;
+    }
+    history_width_ = 0;
+    history_height_ = 0;
+    history_length_ = 0;
+}
+
+void OptixRenderer::swap_history_buffers() {
+    const std::size_t float4_count =
+        static_cast<std::size_t>(history_width_) * static_cast<std::size_t>(history_height_);
+    RT_CUDA_CHECK(cudaMemcpyAsync(
+        device_history_.beauty, device_frame_.beauty,
+        float4_count * sizeof(float4), cudaMemcpyDeviceToDevice, stream_));
+    RT_CUDA_CHECK(cudaMemcpyAsync(
+        device_history_.normal, device_frame_.normal,
+        float4_count * sizeof(float4), cudaMemcpyDeviceToDevice, stream_));
+    RT_CUDA_CHECK(cudaMemcpyAsync(
+        device_history_.depth, device_frame_.depth,
+        float4_count * sizeof(float), cudaMemcpyDeviceToDevice, stream_));
+}
+
+void OptixRenderer::populate_launch_history(LaunchParams& params) {
+    params.history = device_history_;
+    params.history_length = history_length_;
+    params.prev_origin[0] = prev_origin_[0];
+    params.prev_origin[1] = prev_origin_[1];
+    params.prev_origin[2] = prev_origin_[2];
+    params.prev_basis_x[0] = prev_basis_x_[0];
+    params.prev_basis_x[1] = prev_basis_x_[1];
+    params.prev_basis_x[2] = prev_basis_x_[2];
+    params.prev_basis_y[0] = prev_basis_y_[0];
+    params.prev_basis_y[1] = prev_basis_y_[1];
+    params.prev_basis_y[2] = prev_basis_y_[2];
+    params.prev_basis_z[0] = prev_basis_z_[0];
+    params.prev_basis_z[1] = prev_basis_z_[1];
+    params.prev_basis_z[2] = prev_basis_z_[2];
+}
+
+void OptixRenderer::snapshot_camera_for_history(const LaunchParams& params) {
+    const DeviceActiveCamera& cam = params.active_camera;
+    prev_origin_[0] = cam.origin[0];
+    prev_origin_[1] = cam.origin[1];
+    prev_origin_[2] = cam.origin[2];
+    prev_basis_x_[0] = cam.basis_x[0];
+    prev_basis_x_[1] = cam.basis_x[1];
+    prev_basis_x_[2] = cam.basis_x[2];
+    prev_basis_y_[0] = cam.basis_y[0];
+    prev_basis_y_[1] = cam.basis_y[1];
+    prev_basis_y_[2] = cam.basis_y[2];
+    prev_basis_z_[0] = cam.basis_z[0];
+    prev_basis_z_[1] = cam.basis_z[1];
+    prev_basis_z_[2] = cam.basis_z[2];
+}
+
+void OptixRenderer::reset_accumulation() {
+    history_length_ = 0;
 }
 
 void OptixRenderer::build_or_refit_accels(const PackedScene& scene) {

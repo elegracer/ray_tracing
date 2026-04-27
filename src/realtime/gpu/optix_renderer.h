@@ -32,6 +32,7 @@ class OptixRenderer {
 
     DirectionDebugFrame render_direction_debug(const PackedCameraRig& rig, int camera_index = 0);
     void prepare_scene(const PackedScene& scene);
+    void reset_accumulation();
     RadianceFrame render_radiance(const PackedScene& scene, const PackedCameraRig& rig,
         const RenderProfile& profile, int camera_index);
     ProfiledRadianceFrame render_prepared_radiance(
@@ -99,6 +100,21 @@ class OptixRenderer {
     bool scene_prepared_ = false;
     std::uint32_t launch_sample_stream_ = 0;
     std::vector<HostRadianceStaging> host_staging_buffers_{};
+
+    void allocate_history_buffers(int width, int height);
+    void free_history_buffers();
+    void swap_history_buffers();
+    void populate_launch_history(LaunchParams& params);
+    void snapshot_camera_for_history(const LaunchParams& params);
+
+    DeviceFrameBuffers device_history_{};
+    int history_width_ = 0;
+    int history_height_ = 0;
+    int history_length_ = 0;
+    double prev_origin_[3] {};
+    double prev_basis_x_[3] {};
+    double prev_basis_y_[3] {};
+    double prev_basis_z_[3] {};
 };
 
 }  // namespace rt
