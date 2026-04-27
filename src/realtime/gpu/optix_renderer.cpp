@@ -710,6 +710,16 @@ void OptixRenderer::launch_radiance_pipeline(const PackedScene& scene, const Pac
         RT_CUDA_CHECK(cudaMemsetAsync(params.frame.albedo, 0, pixel_count * sizeof(float4), stream_));
         RT_CUDA_CHECK(cudaMemsetAsync(params.frame.depth, 0, pixel_count * sizeof(float), stream_));
         launch_radiance_kernel(params, stream_);
+        allocate_history_buffers(params.width, params.height);
+        populate_launch_history(params);
+        launch_resolve_kernel(params, stream_);
+        snapshot_camera_for_history(params);
+        if (history_length_ == 0) {
+            history_length_ = 1;
+        } else {
+            ++history_length_;
+        }
+        swap_history_buffers();
     } else {
         cudaEvent_t render_start = nullptr;
         cudaEvent_t render_end = nullptr;
@@ -722,6 +732,16 @@ void OptixRenderer::launch_radiance_pipeline(const PackedScene& scene, const Pac
             RT_CUDA_CHECK(cudaMemsetAsync(params.frame.albedo, 0, pixel_count * sizeof(float4), stream_));
             RT_CUDA_CHECK(cudaMemsetAsync(params.frame.depth, 0, pixel_count * sizeof(float), stream_));
             launch_radiance_kernel(params, stream_);
+            allocate_history_buffers(params.width, params.height);
+            populate_launch_history(params);
+            launch_resolve_kernel(params, stream_);
+            snapshot_camera_for_history(params);
+            if (history_length_ == 0) {
+                history_length_ = 1;
+            } else {
+                ++history_length_;
+            }
+            swap_history_buffers();
             RT_CUDA_CHECK(cudaEventRecord(render_end, stream_));
             RT_CUDA_CHECK(cudaEventSynchronize(render_end));
             float elapsed_ms = 0.0f;

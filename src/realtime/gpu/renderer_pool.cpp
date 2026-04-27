@@ -20,6 +20,13 @@ void RendererPool::prepare_scene(const PackedScene& scene) {
     }
 }
 
+void RendererPool::reset_accumulation() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (OptixRenderer& renderer : renderers_) {
+        renderer.reset_accumulation();
+    }
+}
+
 std::vector<CameraRenderResult> RendererPool::render_frame(
     const PackedCameraRig& rig, const RenderProfile& profile, int active_cameras) {
     std::lock_guard<std::mutex> lock(mutex_);

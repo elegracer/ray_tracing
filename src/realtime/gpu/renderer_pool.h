@@ -23,6 +23,7 @@ class RendererPool {
     RendererPool& operator=(RendererPool&&) = delete;
 
     void prepare_scene(const PackedScene& scene);
+    void reset_accumulation();
     std::vector<CameraRenderResult> render_frame(
         const PackedCameraRig& rig, const RenderProfile& profile, int active_cameras);
 
