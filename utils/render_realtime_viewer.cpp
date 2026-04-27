@@ -544,7 +544,7 @@ int main(int argc, char* argv[]) {
         ImGui::Text("Scene: %s", scene_label(scene_controller.current_scene_id()).c_str());
         ImGui::Text("Quality: %s", quality_mode_label(quality_controller.active_mode()));
         ImGui::Text("Move speed: %.3f", move_speed.current_speed());
-        ImGui::Text("cam0 history: %d", quality_controller.history_length(0));
+        ImGui::Text("cam0 history: GPU");
         ImGui::Text("Tab toggles UI cursor");
         ImGui::Text("Controls: WASD + QE move, mouse look, wheel changes speed");
         if (ImGui::Button("Reload Current Scene")) {

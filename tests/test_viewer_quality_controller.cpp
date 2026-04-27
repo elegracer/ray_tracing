@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 
 namespace {
 
@@ -26,20 +25,6 @@ rt::RadianceFrame make_frame(int width, int height, float value) {
         .average_luminance = value,
         .beauty_rgba = std::vector<float>(static_cast<std::size_t>(width * height * 4), value),
     };
-}
-
-void begin_converged_frame(rt::viewer::ViewerQualityController& controller,
-    const rt::viewer::BodyPose& pose) {
-    controller.begin_frame("scene_a", pose);
-    controller.begin_frame("scene_a", pose);
-    expect_true(controller.active_mode() == rt::viewer::ViewerQualityMode::converge, "stable frame converges");
-}
-
-rt::RadianceFrame materialize_resolved_frame(rt::viewer::ViewerQualityController& controller,
-    int camera_index,
-    const rt::RadianceFrame& raw_frame) {
-    const rt::viewer::ResolvedBeautyFrameView resolved = controller.resolve_beauty_view(camera_index, raw_frame);
-    return rt::viewer::ViewerQualityController::materialize_frame(resolved, raw_frame);
 }
 
 }  // namespace
@@ -65,166 +50,116 @@ int main() {
     rt::viewer::ViewerQualityController controller(preview_profile, converge_profile);
     const rt::viewer::BodyPose pose {.position = Eigen::Vector3d::Zero(), .yaw_deg = 0.0, .pitch_deg = 0.0};
 
-    controller.begin_frame("scene_a", pose);
-    expect_true(controller.active_mode() == rt::viewer::ViewerQualityMode::preview, "first frame starts preview");
-    expect_true(controller.active_profile().samples_per_pixel == preview_profile.samples_per_pixel, "preview profile active");
-    const rt::RadianceFrame preview_frame = make_frame(2, 1, 0.5f);
-    const auto preview_view = controller.resolve_beauty_view(0, preview_frame);
-    expect_true(preview_view.width == preview_frame.width, "preview beauty view keeps raw width");
-    expect_true(preview_view.height == preview_frame.height, "preview beauty view keeps raw height");
-    expect_true(preview_view.average_luminance == preview_frame.average_luminance,
-        "preview beauty view keeps raw luminance");
-    expect_true(preview_view.beauty_rgba.data() == preview_frame.beauty_rgba.data(),
-        "preview beauty view aliases raw beauty without copying");
-    expect_true(controller.history_length(0) == 0, "preview beauty view does not create history");
+    // --- Initial state ---
+    {
+        expect_true(controller.active_mode() == rt::viewer::ViewerQualityMode::preview,
+            "initial mode is preview");
+        expect_true(controller.active_profile().samples_per_pixel == preview_profile.samples_per_pixel,
+            "initial profile is preview profile");
+        expect_true(controller.history_length(0) == 0,
+            "initial history_length is 0 for camera 0");
+        expect_true(controller.history_length(1) == 0,
+            "initial history_length is 0 for camera 1");
+        expect_true(controller.history_length(99) == 0,
+            "initial history_length is 0 for any camera index");
+    }
 
-    controller.begin_frame("scene_a", pose);
-    expect_true(controller.active_mode() == rt::viewer::ViewerQualityMode::converge, "stable second frame converges");
-    expect_true(controller.active_profile().samples_per_pixel == converge_profile.samples_per_pixel, "converge profile active");
+    // --- begin_frame transitions to converge after two frames with the same scene_id ---
+    {
+        controller.begin_frame("scene_a", pose);
+        expect_true(controller.active_mode() == rt::viewer::ViewerQualityMode::preview,
+            "first frame with new scene starts in preview");
+        expect_true(controller.active_profile().samples_per_pixel == preview_profile.samples_per_pixel,
+            "preview profile is active in preview mode");
 
-    const rt::RadianceFrame converge_frame = make_frame(2, 1, 1.0f);
-    const auto converge_view = controller.resolve_beauty_view(0, converge_frame);
-    expect_true(converge_view.beauty_rgba.data() != converge_frame.beauty_rgba.data(),
-        "converge beauty view aliases accumulated history instead of raw beauty");
-    expect_true(controller.history_length(0) == 1, "converge beauty view initializes history");
-    const rt::RadianceFrame resolved_first =
-        rt::viewer::ViewerQualityController::materialize_frame(converge_view, converge_frame);
-    expect_true(resolved_first.width == converge_frame.width, "resolve returns raw frame width");
-    expect_true(controller.history_length(0) == 1, "materialize_frame does not advance converge history");
-    const auto second_converge_view = controller.resolve_beauty_view(0, converge_frame);
-    expect_true(second_converge_view.beauty_rgba.data() == converge_view.beauty_rgba.data(),
-        "converge beauty view reuses the same accumulated history buffer");
-    expect_true(controller.history_length(0) == 2, "repeated converge beauty views grow history by one frame each");
-    const rt::RadianceFrame resolved_second =
-        rt::viewer::ViewerQualityController::materialize_frame(second_converge_view, converge_frame);
-    expect_true(controller.history_length(0) == 2, "repeated materialize_frame calls still avoid history changes");
-    expect_true(resolved_second.beauty_rgba[0] == 1.0f, "identical converge frames keep accumulated beauty");
-    controller.resolve_beauty_view(0, converge_frame);
-    expect_true(controller.history_length(0) == 3, "later converge beauty resolves continue growing history");
+        controller.begin_frame("scene_a", pose);
+        expect_true(controller.active_mode() == rt::viewer::ViewerQualityMode::converge,
+            "second frame with same scene transitions to converge");
+        expect_true(controller.active_profile().samples_per_pixel == converge_profile.samples_per_pixel,
+            "converge profile is active in converge mode");
+    }
 
-    controller.resolve_beauty_view(1, converge_frame);
-    expect_true(controller.history_length(1) == 1, "other camera maintains independent history");
-    expect_true(controller.history_length(0) == 3, "primary camera history remains unchanged");
+    // --- resolve_beauty_view pass-through in converge mode ---
+    {
+        const rt::RadianceFrame raw_frame = make_frame(3, 2, 0.5f);
+        const auto resolved = controller.resolve_beauty_view(0, raw_frame);
 
-    const rt::RadianceFrame resized_frame = make_frame(1, 2, 2.0f);
-    controller.resolve_beauty_view(0, resized_frame);
-    expect_true(controller.history_length(0) == 1, "resolution change resets history for camera");
-    expect_true(controller.history_length(1) == 1, "resolution change does not affect other camera");
+        expect_true(resolved.width == raw_frame.width,
+            "resolve_beauty_view preserves width in converge mode");
+        expect_true(resolved.height == raw_frame.height,
+            "resolve_beauty_view preserves height in converge mode");
+        expect_true(resolved.beauty_rgba.data() == raw_frame.beauty_rgba.data(),
+            "resolve_beauty_view aliases raw frame data (no copy into history buffer)");
+        expect_near(resolved.average_luminance, compute_average_luminance(raw_frame.beauty_rgba), 1e-9,
+            "resolve_beauty_view computes average_luminance from raw pixel data");
 
-    rt::viewer::BodyPose rotated = pose;
-    rotated.yaw_deg = 12.0;
-    controller.begin_frame("scene_a", rotated);
-    expect_true(controller.active_mode() == rt::viewer::ViewerQualityMode::preview, "large rotation returns preview");
-    expect_true(controller.history_length(0) == 0, "large rotation clears history");
-    expect_true(controller.history_length(1) == 0, "large rotation clears all camera histories");
+        // history_length is always 0 since blending is GPU-managed
+        expect_true(controller.history_length(0) == 0,
+            "history_length is 0 after resolve in converge mode");
+    }
 
-    controller.begin_frame("scene_b", rotated);
-    expect_true(controller.active_mode() == rt::viewer::ViewerQualityMode::preview, "scene change stays preview");
-    expect_true(controller.history_length(0) == 0, "scene change keeps history cleared");
+    // --- Scene change resets to preview, resolve still works as pass-through ---
+    {
+        controller.begin_frame("scene_b", pose);
+        expect_true(controller.active_mode() == rt::viewer::ViewerQualityMode::preview,
+            "scene change resets mode to preview");
 
-    begin_converged_frame(controller, rotated);
-    controller.resolve_beauty_view(0, converge_frame);
-    controller.resolve_beauty_view(1, converge_frame);
-    expect_true(controller.history_length(0) == 1, "camera 0 repopulates history after reconverge");
-    expect_true(controller.history_length(1) == 1, "camera 1 repopulates history after reconverge");
+        const rt::RadianceFrame raw_frame = make_frame(2, 2, 0.3f);
+        const auto resolved = controller.resolve_beauty_view(0, raw_frame);
 
-    controller.reset_all();
-    begin_converged_frame(controller, pose);
-    rt::RadianceFrame average_first = make_frame(1, 1, 0.20f);
-    average_first.beauty_rgba[3] = 1.0f;
-    rt::RadianceFrame average_second = make_frame(1, 1, 0.60f);
-    average_second.beauty_rgba[3] = 1.0f;
-    const rt::RadianceFrame averaged_first = materialize_resolved_frame(controller, 0, average_first);
-    const rt::RadianceFrame averaged_second = materialize_resolved_frame(controller, 0, average_second);
-    expect_near(averaged_first.beauty_rgba[0], 0.20f, 1e-6, "first converge frame seeds accumulated beauty");
-    expect_near(averaged_second.beauty_rgba[0], 0.40f, 1e-6, "converge mode averages beauty across frames");
-    expect_near(averaged_second.average_luminance, compute_average_luminance(averaged_second.beauty_rgba), 1e-9,
-        "resolve keeps average_luminance in sync with averaged beauty");
-    expect_true(controller.history_length(0) == 2, "averaging path increments history length");
+        expect_true(resolved.width == raw_frame.width,
+            "resolve preserves width after scene change");
+        expect_true(resolved.height == raw_frame.height,
+            "resolve preserves height after scene change");
+        expect_true(resolved.beauty_rgba.data() == raw_frame.beauty_rgba.data(),
+            "resolve aliases raw data after scene change");
+        expect_near(resolved.average_luminance, compute_average_luminance(raw_frame.beauty_rgba), 1e-9,
+            "resolve computes average_luminance after scene change");
+    }
 
-    controller.reset_all();
-    begin_converged_frame(controller, pose);
-    rt::RadianceFrame stale_first = make_frame(1, 1, 0.20f);
-    stale_first.beauty_rgba[3] = 1.0f;
-    rt::RadianceFrame stale_second = make_frame(1, 1, 0.60f);
-    stale_second.beauty_rgba[3] = 1.0f;
-    controller.resolve_beauty_view(0, stale_first);
-    controller.resolve_beauty_view(0, stale_second);
-    expect_true(controller.history_length(0) == 2, "accumulation starts before malformed frame regression");
+    // --- Re-converge after scene change ---
+    {
+        controller.begin_frame("scene_b", pose);
+        expect_true(controller.active_mode() == rt::viewer::ViewerQualityMode::converge,
+            "second frame after scene change re-converges");
+    }
 
-    rt::RadianceFrame undersized_frame = make_frame(1, 1, 0.80f);
-    undersized_frame.beauty_rgba.resize(3);
-    controller.resolve_beauty_view(0, undersized_frame);
-    expect_true(controller.history_length(0) == 0, "undersized converge frame clears stale camera history");
+    // --- reset_all returns to preview and clears state ---
+    {
+        controller.reset_all();
+        expect_true(controller.active_mode() == rt::viewer::ViewerQualityMode::preview,
+            "reset_all returns to preview mode");
+        expect_true(controller.history_length(0) == 0,
+            "history_length is 0 after reset");
+        expect_true(controller.active_profile().samples_per_pixel == preview_profile.samples_per_pixel,
+            "preview profile is active after reset");
+    }
 
-    rt::RadianceFrame restarted_frame = make_frame(1, 1, 0.90f);
-    restarted_frame.beauty_rgba[3] = 1.0f;
-    const rt::RadianceFrame restarted_resolve = materialize_resolved_frame(controller, 0, restarted_frame);
-    expect_true(controller.history_length(0) == 1, "next valid converge frame restarts history from one sample");
-    expect_near(restarted_resolve.beauty_rgba[0], 0.90f, 1e-6, "next valid converge frame does not blend with stale history");
+    // --- First frame after reset starts in preview ---
+    {
+        controller.begin_frame("scene_a", pose);
+        expect_true(controller.active_mode() == rt::viewer::ViewerQualityMode::preview,
+            "first frame after reset starts in preview");
+    }
 
-    controller.reset_all();
-    begin_converged_frame(controller, pose);
-    rt::RadianceFrame valid_history = make_frame(1, 1, 0.50f);
-    valid_history.beauty_rgba[1] = 0.25f;
-    valid_history.beauty_rgba[2] = 0.75f;
-    valid_history.beauty_rgba[3] = 1.0f;
-    const rt::RadianceFrame seeded_history = materialize_resolved_frame(controller, 0, valid_history);
+    // --- materialize_frame copies beauty data from resolved view ---
+    {
+        const rt::RadianceFrame src_frame = make_frame(2, 2, 0.75f);
+        const auto resolved = controller.resolve_beauty_view(0, src_frame);
+        const rt::RadianceFrame materialized =
+            rt::viewer::ViewerQualityController::materialize_frame(resolved, src_frame);
 
-    rt::RadianceFrame invalid_frame = make_frame(1, 1, 0.60f);
-    invalid_frame.beauty_rgba[0] = -1.0f;
-    invalid_frame.beauty_rgba[1] = std::numeric_limits<float>::quiet_NaN();
-    invalid_frame.beauty_rgba[2] = std::numeric_limits<float>::infinity();
-    invalid_frame.beauty_rgba[3] = std::numeric_limits<float>::quiet_NaN();
-    const rt::RadianceFrame sanitized = materialize_resolved_frame(controller, 0, invalid_frame);
-    expect_true(sanitized.beauty_rgba[0] == seeded_history.beauty_rgba[0], "negative beauty falls back to previous history");
-    expect_true(sanitized.beauty_rgba[1] == seeded_history.beauty_rgba[1], "nan beauty falls back to previous history");
-    expect_true(sanitized.beauty_rgba[2] == seeded_history.beauty_rgba[2], "inf beauty falls back to previous history");
-    expect_true(sanitized.beauty_rgba[3] == seeded_history.beauty_rgba[3], "invalid alpha falls back to previous history");
-    expect_true(controller.history_length(0) == 2, "sanitized converge frame still advances history");
-
-    controller.reset_all();
-    begin_converged_frame(controller, pose);
-    rt::RadianceFrame ceiling_seed = make_frame(1, 1, 0.25f);
-    ceiling_seed.beauty_rgba[0] = 0.25f;
-    ceiling_seed.beauty_rgba[1] = 0.50f;
-    ceiling_seed.beauty_rgba[2] = 1.00f;
-    ceiling_seed.beauty_rgba[3] = 1.0f;
-    const rt::RadianceFrame seeded_ceiling = materialize_resolved_frame(controller, 0, ceiling_seed);
-
-    rt::RadianceFrame above_ceiling = make_frame(1, 1, 0.75f);
-    above_ceiling.beauty_rgba[0] = 65.0f;
-    above_ceiling.beauty_rgba[1] = 128.0f;
-    above_ceiling.beauty_rgba[2] = 64.0f;
-    above_ceiling.beauty_rgba[3] = 1.0f;
-    const rt::RadianceFrame rejected_above_ceiling = materialize_resolved_frame(controller, 0, above_ceiling);
-    expect_true(rejected_above_ceiling.beauty_rgba[0] == seeded_ceiling.beauty_rgba[0],
-        "finite beauty above the documented ceiling falls back to previous history");
-    expect_true(rejected_above_ceiling.beauty_rgba[1] == seeded_ceiling.beauty_rgba[1],
-        "all above-ceiling beauty channels are rejected");
-    expect_true(rejected_above_ceiling.beauty_rgba[2] != seeded_ceiling.beauty_rgba[2],
-        "beauty values at the documented ceiling remain valid");
-
-    controller.reset_all();
-    begin_converged_frame(controller, pose);
-    rt::RadianceFrame firefly_seed = make_frame(1, 1, 0.25f);
-    firefly_seed.beauty_rgba[3] = 1.0f;
-    materialize_resolved_frame(controller, 0, firefly_seed);
-    rt::RadianceFrame firefly_frame = make_frame(1, 1, 8.0f);
-    firefly_frame.beauty_rgba[3] = 1.0f;
-    const rt::RadianceFrame accumulated_firefly = materialize_resolved_frame(controller, 0, firefly_frame);
-    expect_near(accumulated_firefly.beauty_rgba[0], 0.625f, 1e-6,
-        "bright converge outliers are softly bounded instead of being crushed toward darker history");
-    expect_near(accumulated_firefly.beauty_rgba[3], 1.0f, 1e-6,
-        "valid alpha history still remains stable while bright samples accumulate");
-
-    controller.reset_all();
-    expect_true(controller.active_mode() == rt::viewer::ViewerQualityMode::preview, "reset_all returns preview mode");
-    expect_true(controller.history_length(0) == 0, "reset_all clears camera 0 history");
-    expect_true(controller.history_length(1) == 0, "reset_all clears camera 1 history");
-
-    controller.begin_frame("scene_a", pose);
-    expect_true(controller.active_mode() == rt::viewer::ViewerQualityMode::preview, "first frame after reset starts preview");
+        expect_true(materialized.width == src_frame.width,
+            "materialize_frame preserves source width");
+        expect_true(materialized.height == src_frame.height,
+            "materialize_frame preserves source height");
+        expect_near(materialized.average_luminance, resolved.average_luminance, 1e-9,
+            "materialize_frame uses resolved average_luminance");
+        expect_true(materialized.beauty_rgba.data() != resolved.beauty_rgba.data(),
+            "materialize_frame deep-copies beauty data (does not alias the span)");
+        expect_near(static_cast<double>(materialized.beauty_rgba[0]), 0.75, 1e-6,
+            "materialized beauty pixels match source values");
+    }
 
     return 0;
 }

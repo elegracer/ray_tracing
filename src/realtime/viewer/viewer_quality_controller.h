@@ -39,8 +39,6 @@ public:
 
 private:
     struct CameraHistory {
-        int width = 0;
-        int height = 0;
     };
 
     void clear_histories();
@@ -51,8 +49,7 @@ private:
     RenderProfile converge_profile_;
     ViewerQualityMode active_mode_ = ViewerQualityMode::preview;
     std::string current_scene_id_;
-    BodyPose last_pose_ {};
-    bool has_last_pose_ = false;
+    bool is_first_frame_ = true;
     int stable_frame_count_ = 0;
     std::vector<CameraHistory> histories_;
 };

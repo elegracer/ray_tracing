@@ -26,7 +26,7 @@ ViewerQualityController::ViewerQualityController(RenderProfile preview_profile, 
 void ViewerQualityController::begin_frame(std::string_view scene_id, const BodyPose& pose) {
     const bool scene_changed = current_scene_id_ != scene_id;
 
-    if (!has_last_pose_ || scene_changed) {
+    if (is_first_frame_ || scene_changed) {
         clear_histories();
         stable_frame_count_ = 0;
         active_mode_ = ViewerQualityMode::preview;
@@ -36,8 +36,8 @@ void ViewerQualityController::begin_frame(std::string_view scene_id, const BodyP
     }
 
     current_scene_id_ = std::string(scene_id);
-    last_pose_ = pose;
-    has_last_pose_ = true;
+    is_first_frame_ = false;
+    (void)pose;
 }
 
 RadianceFrame ViewerQualityController::materialize_frame(const ResolvedBeautyFrameView& resolved_view,
@@ -63,8 +63,7 @@ void ViewerQualityController::reset_all() {
     clear_histories();
     active_mode_ = ViewerQualityMode::preview;
     current_scene_id_.clear();
-    last_pose_ = {};
-    has_last_pose_ = false;
+    is_first_frame_ = true;
     stable_frame_count_ = 0;
 }
 
