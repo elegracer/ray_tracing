@@ -462,6 +462,9 @@ int main(int argc, char* argv[]) {
         }
 
         quality_controller.begin_frame(scene_controller.current_scene_id(), pose);
+        if (quality_controller.active_mode() == rt::viewer::ViewerQualityMode::preview) {
+            pool.reset_accumulation();
+        }
         const rt::PackedCameraRig rig =
             rt::viewer::make_default_viewer_rig(pose, kViewWidth, kViewHeight, frame_convention).pack();
         const std::vector<rt::CameraRenderResult> results =

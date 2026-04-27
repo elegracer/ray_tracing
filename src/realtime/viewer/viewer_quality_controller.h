@@ -41,11 +41,8 @@ private:
     struct CameraHistory {
         int width = 0;
         int height = 0;
-        int history_length = 0;
-        std::vector<float> beauty_rgba;
     };
 
-    bool pose_exceeded_reset_threshold(const BodyPose& pose) const;
     void clear_histories();
     CameraHistory& history_for(int camera_index);
     const CameraHistory& history_for(int camera_index) const;
