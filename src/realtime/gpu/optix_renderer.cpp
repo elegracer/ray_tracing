@@ -17,6 +17,7 @@ namespace rt {
 void launch_direction_debug_kernel(
     const DeviceActiveCamera& camera, std::uint8_t* rgba, int width, int height, cudaStream_t stream);
 void launch_radiance_kernel(const LaunchParams& params, cudaStream_t stream);
+void launch_resolve_kernel(const LaunchParams& params, cudaStream_t stream);
 
 namespace {
 

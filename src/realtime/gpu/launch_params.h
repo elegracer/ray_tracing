@@ -90,6 +90,14 @@ struct LaunchParams {
     int max_bounces = 4;
     int rr_start_bounce = 3;
     int mode = 0;
+
+    // --- temporal reprojection ---
+    DeviceFrameBuffers history {};
+    double prev_origin[3] {};
+    double prev_basis_x[3] {};
+    double prev_basis_y[3] {};
+    double prev_basis_z[3] {};
+    int history_length = 0;
 };
 
 struct PackedSphere {

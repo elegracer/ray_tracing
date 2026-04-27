@@ -43,6 +43,11 @@ __device__ float3 scene_background(const LaunchParams& params);
 __device__ void accumulate_direct_light(const LaunchParams& params, const HitInfo& hit, PathState& state);
 __device__ void sample_bsdf(const LaunchParams& params, const HitInfo& hit, std::uint32_t& rng, PathState& state);
 
+__device__ float3 project_pinhole32(const DevicePinhole32Params& params, const float3& dir_camera);
+__device__ float3 project_equi62_lut1d(const DeviceEqui62Lut1DParams& params, const float3& dir_camera);
+__device__ float2 project_camera_pixel(const DeviceActiveCamera& camera, const float3& dir_camera);
+__device__ float3 decode_normal(const float4& encoded);
+
 namespace {
 
 constexpr float kRayEpsilon = 1e-3f;
