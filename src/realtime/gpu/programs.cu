@@ -43,11 +43,6 @@ __device__ float3 scene_background(const LaunchParams& params);
 __device__ void accumulate_direct_light(const LaunchParams& params, const HitInfo& hit, PathState& state);
 __device__ void sample_bsdf(const LaunchParams& params, const HitInfo& hit, std::uint32_t& rng, PathState& state);
 
-__device__ float3 project_pinhole32(const DevicePinhole32Params& params, const float3& dir_camera);
-__device__ float3 project_equi62_lut1d(const DeviceEqui62Lut1DParams& params, const float3& dir_camera);
-__device__ float2 project_camera_pixel(const DeviceActiveCamera& camera, const float3& dir_camera);
-__device__ float3 decode_normal(const float4& encoded);
-
 namespace {
 
 constexpr float kRayEpsilon = 1e-3f;
@@ -283,6 +278,21 @@ __device__ float3 unproject_pinhole32(const DevicePinhole32Params& params, doubl
     return normalize3(make_float3(static_cast<float>(xy.x), static_cast<float>(xy.y), 1.0f));
 }
 
+__device__ float3 project_pinhole32(const DevicePinhole32Params& params, const float3& dir_camera) {
+    if (fabsf(dir_camera.z) < 1e-7f) {
+        return make_float3(-1.0f, -1.0f, 0.0f);
+    }
+    const double inv_z = 1.0 / static_cast<double>(dir_camera.z);
+    const Double2 xy_undistorted = make_double2_xy(
+        static_cast<double>(dir_camera.x) * inv_z,
+        static_cast<double>(dir_camera.y) * inv_z);
+    const Double2 xy_distorted = distort_pinhole_normalized(params, xy_undistorted);
+    return make_float3(
+        static_cast<float>(xy_distorted.x * params.fx + params.cx),
+        static_cast<float>(xy_distorted.y * params.fy + params.cy),
+        1.0f);
+}
+
 __device__ Double2 apply_equi_tangential(const Double2& xy, const double tangential[2]) {
     const double xr = xy.x;
     const double yr = xy.y;
@@ -330,6 +340,43 @@ __device__ bool interpolate_lut_theta(const DeviceEqui62Lut1DParams& params, dou
     return true;
 }
 
+__device__ double invert_lut_theta(const DeviceEqui62Lut1DParams& params, double theta) {
+    if (theta <= 0.0 || params.lut_step <= 0.0) {
+        return 0.0;
+    }
+    if (theta >= params.lut[1023]) {
+        return 1023.0 * params.lut_step;
+    }
+    for (int i = 0; i < 1023; ++i) {
+        if (params.lut[i] <= theta && theta <= params.lut[i + 1]) {
+            const double denom = params.lut[i + 1] - params.lut[i];
+            const double alpha = denom > 0.0 ? (theta - params.lut[i]) / denom : 0.0;
+            return (static_cast<double>(i) + alpha) * params.lut_step;
+        }
+    }
+    return 1023.0 * params.lut_step;
+}
+
+__device__ float3 project_equi62_lut1d(const DeviceEqui62Lut1DParams& params, const float3& dir_camera) {
+    const double dx = static_cast<double>(dir_camera.x);
+    const double dy = static_cast<double>(dir_camera.y);
+    const double dz = static_cast<double>(dir_camera.z);
+    const double r = sqrt(dx * dx + dy * dy);
+    if (r < kCameraEpsilon) {
+        return make_float3(static_cast<float>(params.cx), static_cast<float>(params.cy), 1.0f);
+    }
+    const double theta = atan2(r, dz);
+    const double rd = invert_lut_theta(params, theta);
+    const double azim_cos = dx / r;
+    const double azim_sin = dy / r;
+    const Double2 xy_radial = make_double2_xy(azim_cos * rd, azim_sin * rd);
+    const Double2 xy_distorted = apply_equi_tangential(xy_radial, params.tangential);
+    return make_float3(
+        static_cast<float>(xy_distorted.x * params.fx + params.cx),
+        static_cast<float>(xy_distorted.y * params.fy + params.cy),
+        1.0f);
+}
+
 __device__ float3 normalized_fallback_ray(const Double2& xy) {
     return normalize3(make_float3(static_cast<float>(xy.x), static_cast<float>(xy.y), 1.0f));
 }
@@ -365,6 +412,23 @@ __device__ float3 unproject_camera_ray(const DeviceActiveCamera& camera, double 
         return unproject_equi62_lut1d(camera.equi, pixel_x, pixel_y);
     }
     return unproject_pinhole32(camera.pinhole, pixel_x, pixel_y);
+}
+
+__device__ float2 project_camera_pixel(const DeviceActiveCamera& camera, const float3& dir_camera) {
+    float3 pixel;
+    if (camera.model == CameraModelType::equi62_lut1d) {
+        pixel = project_equi62_lut1d(camera.equi, dir_camera);
+    } else {
+        pixel = project_pinhole32(camera.pinhole, dir_camera);
+    }
+    return make_float2(pixel.x, pixel.y);
+}
+
+__device__ float3 decode_normal(const float4& encoded) {
+    return make_float3(
+        encoded.x * 2.0f - 1.0f,
+        encoded.y * 2.0f - 1.0f,
+        encoded.z * 2.0f - 1.0f);
 }
 
 __device__ float3 transform_direction(const DeviceActiveCamera& camera, const float3& dir_camera) {
