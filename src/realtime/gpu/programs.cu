@@ -948,8 +948,8 @@ __global__ void resolve_reprojection_kernel(const LaunchParams* params_ptr) {
 
     const float2 prev_pixel = project_camera_pixel(params.active_camera, prev_cam_space);
 
-    const int prev_x = static_cast<int>(prev_pixel.x);
-    const int prev_y = static_cast<int>(prev_pixel.y);
+    const int prev_x = static_cast<int>(floorf(prev_pixel.x));
+    const int prev_y = static_cast<int>(floorf(prev_pixel.y));
 
     bool valid = false;
     if (prev_x >= 0 && prev_x < params.width && prev_y >= 0 && prev_y < params.height) {
@@ -962,7 +962,7 @@ __global__ void resolve_reprojection_kernel(const LaunchParams* params_ptr) {
         const float history_depth = params.history.depth[prev_idx];
         const float depth_ratio = history_depth > 0.0f ? current_depth / history_depth : 1.0f;
 
-        if (normal_dot > 0.85f && depth_ratio > 0.9f && depth_ratio < 1.1f) {
+        if (normal_dot > 0.95f && depth_ratio > 0.95f && depth_ratio < 1.05f) {
             valid = true;
         }
     }
@@ -970,13 +970,31 @@ __global__ void resolve_reprojection_kernel(const LaunchParams* params_ptr) {
     if (valid) {
         const int prev_idx = prev_y * params.width + prev_x;
         const float4 h_beauty = params.history.beauty[prev_idx];
+        const float4 h_normal = params.history.normal[prev_idx];
+        const float h_depth = params.history.depth[prev_idx];
         const int next_len = params.history_length + 1;
         const float blend = 1.0f / static_cast<float>(next_len);
-        params.frame.beauty[pixel_index] = make_float4(
-            h_beauty.x + (current_beauty.x - h_beauty.x) * blend,
-            h_beauty.y + (current_beauty.y - h_beauty.y) * blend,
-            h_beauty.z + (current_beauty.z - h_beauty.z) * blend,
+
+        const float4 clamped_current = make_float4(
+            fminf(fmaxf(current_beauty.x, 0.0f), 10.0f),
+            fminf(fmaxf(current_beauty.y, 0.0f), 10.0f),
+            fminf(fmaxf(current_beauty.z, 0.0f), 10.0f),
             1.0f);
+
+        params.frame.beauty[pixel_index] = make_float4(
+            h_beauty.x + (clamped_current.x - h_beauty.x) * blend,
+            h_beauty.y + (clamped_current.y - h_beauty.y) * blend,
+            h_beauty.z + (clamped_current.z - h_beauty.z) * blend,
+            1.0f);
+
+        params.frame.normal[pixel_index] = make_float4(
+            h_normal.x + (current_normal.x - h_normal.x) * blend,
+            h_normal.y + (current_normal.y - h_normal.y) * blend,
+            h_normal.z + (current_normal.z - h_normal.z) * blend,
+            h_normal.w + (current_normal.w - h_normal.w) * blend);
+
+        params.frame.depth[pixel_index] =
+            h_depth + (current_depth - h_depth) * blend;
     }
 }
 
