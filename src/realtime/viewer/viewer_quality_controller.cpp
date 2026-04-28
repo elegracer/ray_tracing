@@ -31,7 +31,7 @@ void ViewerQualityController::begin_frame(std::string_view scene_id, const BodyP
         const double translation = (pose.position - prev_pose_->position).norm();
         const double yaw_delta = std::abs(pose.yaw_deg - prev_pose_->yaw_deg);
         const double pitch_delta = std::abs(pose.pitch_deg - prev_pose_->pitch_deg);
-        const double rotation = std::max(yaw_delta, pitch_delta);
+        const double rotation = std::sqrt(yaw_delta * yaw_delta + pitch_delta * pitch_delta);
 
         const auto& profile = active_mode_ == ViewerQualityMode::converge
             ? converge_profile_ : preview_profile_;
