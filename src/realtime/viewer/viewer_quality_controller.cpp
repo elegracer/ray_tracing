@@ -25,8 +25,23 @@ ViewerQualityController::ViewerQualityController(RenderProfile preview_profile, 
 
 void ViewerQualityController::begin_frame(std::string_view scene_id, const BodyPose& pose) {
     const bool scene_changed = current_scene_id_ != scene_id;
+    bool pose_changed = false;
 
-    if (is_first_frame_ || scene_changed) {
+    if (prev_pose_.has_value()) {
+        const double translation = (pose.position - prev_pose_->position).norm();
+        const double yaw_delta = std::abs(pose.yaw_deg - prev_pose_->yaw_deg);
+        const double pitch_delta = std::abs(pose.pitch_deg - prev_pose_->pitch_deg);
+        const double rotation = std::max(yaw_delta, pitch_delta);
+
+        const auto& profile = active_mode_ == ViewerQualityMode::converge
+            ? converge_profile_ : preview_profile_;
+        if (translation > profile.accumulation_reset_translation
+            || rotation > profile.accumulation_reset_rotation_deg) {
+            pose_changed = true;
+        }
+    }
+
+    if (is_first_frame_ || scene_changed || pose_changed) {
         clear_histories();
         stable_frame_count_ = 0;
         active_mode_ = ViewerQualityMode::preview;
@@ -37,7 +52,7 @@ void ViewerQualityController::begin_frame(std::string_view scene_id, const BodyP
 
     current_scene_id_ = std::string(scene_id);
     is_first_frame_ = false;
-    (void)pose;
+    prev_pose_ = pose;
 }
 
 RadianceFrame ViewerQualityController::materialize_frame(const ResolvedBeautyFrameView& resolved_view,
@@ -65,6 +80,7 @@ void ViewerQualityController::reset_all() {
     current_scene_id_.clear();
     is_first_frame_ = true;
     stable_frame_count_ = 0;
+    prev_pose_.reset();
 }
 
 ViewerQualityMode ViewerQualityController::active_mode() const {

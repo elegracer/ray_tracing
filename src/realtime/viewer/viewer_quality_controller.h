@@ -4,6 +4,7 @@
 #include "realtime/render_profile.h"
 #include "realtime/viewer/body_pose.h"
 
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -51,6 +52,7 @@ private:
     std::string current_scene_id_;
     bool is_first_frame_ = true;
     int stable_frame_count_ = 0;
+    std::optional<BodyPose> prev_pose_;
     std::vector<CameraHistory> histories_;
 };
 

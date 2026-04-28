@@ -142,6 +142,65 @@ int main() {
             "first frame after reset starts in preview");
     }
 
+    // --- Significant camera motion triggers accumulation reset ---
+    {
+        // Converge first
+        controller.reset_all();
+        controller.begin_frame("scene_a", pose);
+        controller.begin_frame("scene_a", pose);
+        expect_true(controller.active_mode() == rt::viewer::ViewerQualityMode::converge,
+            "converge after two stable frames");
+
+        // Large translation resets to preview
+        const rt::viewer::BodyPose moved_pose {
+            .position = Eigen::Vector3d(1.0, 0.0, 0.0),
+            .yaw_deg = 0.0,
+            .pitch_deg = 0.0,
+        };
+        controller.begin_frame("scene_a", moved_pose);
+        expect_true(controller.active_mode() == rt::viewer::ViewerQualityMode::preview,
+            "large translation resets to preview (1.0 > 0.25 threshold)");
+
+        // Re-converge
+        controller.begin_frame("scene_a", moved_pose);
+        expect_true(controller.active_mode() == rt::viewer::ViewerQualityMode::converge,
+            "re-converge after stable frames at new pose");
+    }
+
+    // --- Small camera motion does NOT trigger reset ---
+    {
+        controller.reset_all();
+        controller.begin_frame("scene_a", pose);
+        controller.begin_frame("scene_a", pose);
+        expect_true(controller.active_mode() == rt::viewer::ViewerQualityMode::converge,
+            "converge after two stable frames");
+
+        const rt::viewer::BodyPose slightly_moved_pose {
+            .position = Eigen::Vector3d(0.01, 0.0, 0.0),
+            .yaw_deg = 0.5,
+            .pitch_deg = 0.0,
+        };
+        controller.begin_frame("scene_a", slightly_moved_pose);
+        expect_true(controller.active_mode() == rt::viewer::ViewerQualityMode::converge,
+            "small camera motion does NOT reset accumulation (0.01 < 0.25, 0.5 < 5.0)");
+    }
+
+    // --- Large rotation triggers reset ---
+    {
+        controller.reset_all();
+        controller.begin_frame("scene_a", pose);
+        controller.begin_frame("scene_a", pose);
+
+        const rt::viewer::BodyPose rotated_pose {
+            .position = Eigen::Vector3d::Zero(),
+            .yaw_deg = 10.0,
+            .pitch_deg = 0.0,
+        };
+        controller.begin_frame("scene_a", rotated_pose);
+        expect_true(controller.active_mode() == rt::viewer::ViewerQualityMode::preview,
+            "large rotation resets to preview (10.0 > 5.0 threshold)");
+    }
+
     // --- materialize_frame copies beauty data from resolved view ---
     {
         const rt::RadianceFrame src_frame = make_frame(2, 2, 0.75f);
