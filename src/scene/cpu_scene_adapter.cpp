@@ -9,25 +9,17 @@
 #include "common/sphere.h"
 #include "common/texture.h"
 #include "common/triangle.h"
+#include "scene/scene_ir_validator.h"
 
 #include <Eigen/Geometry>
 
 #include <cmath>
 #include <stdexcept>
-#include <string>
 #include <type_traits>
 #include <vector>
 
 namespace rt::scene {
 namespace {
-
-template <typename T>
-const T& checked_index(const std::vector<T>& items, const int index, const std::string& label) {
-    if (index < 0 || static_cast<size_t>(index) >= items.size()) {
-        throw std::out_of_range(label + " index out of range");
-    }
-    return items[static_cast<size_t>(index)];
-}
 
 Vec3d to_vec3(const Eigen::Vector3d& v) {
     return Vec3d {v.x(), v.y(), v.z()};
@@ -86,11 +78,6 @@ pro::proxy<Hittable> make_shape_hittable(const ShapeDesc& shape, const pro::prox
             } else if constexpr (std::is_same_v<T, TriangleMeshShape>) {
                 HittableList mesh_world;
                 for (const Eigen::Vector3i& tri : desc.triangles) {
-                    for (int vertex = 0; vertex < 3; ++vertex) {
-                        if (tri[vertex] < 0 || tri[vertex] >= static_cast<int>(desc.positions.size())) {
-                            throw std::out_of_range("triangle mesh vertex index out of range");
-                        }
-                    }
                     mesh_world.add(pro::make_proxy_shared<Hittable, Triangle>(
                         to_vec3(desc.positions[tri.x()]),
                         to_vec3(desc.positions[tri.y()]),
@@ -108,6 +95,8 @@ pro::proxy<Hittable> make_shape_hittable(const ShapeDesc& shape, const pro::prox
 }  // namespace
 
 CpuSceneAdapterResult adapt_to_cpu(const SceneIR& scene) {
+    validate_scene_ir(scene);
+
     const std::vector<TextureDesc>& texture_descs = scene.textures();
     std::vector<pro::proxy<Texture>> textures;
     textures.reserve(texture_descs.size());
@@ -118,8 +107,8 @@ CpuSceneAdapterResult adapt_to_cpu(const SceneIR& scene) {
                 if constexpr (std::is_same_v<T, ConstantColorTextureDesc>) {
                     return pro::make_proxy_shared<Texture, SolidColor>(to_vec3(desc.color));
                 } else if constexpr (std::is_same_v<T, CheckerTextureDesc>) {
-                    const pro::proxy<Texture>& even = checked_index(textures, desc.even_texture, "checker even texture");
-                    const pro::proxy<Texture>& odd = checked_index(textures, desc.odd_texture, "checker odd texture");
+                    const pro::proxy<Texture>& even = textures[static_cast<std::size_t>(desc.even_texture)];
+                    const pro::proxy<Texture>& odd = textures[static_cast<std::size_t>(desc.odd_texture)];
                     return pro::make_proxy_shared<Texture, CheckerTexture>(desc.scale, even, odd);
                 } else if constexpr (std::is_same_v<T, ImageTextureDesc>) {
                     return pro::make_proxy_shared<Texture, ImageTexture>(desc.path);
@@ -141,10 +130,10 @@ CpuSceneAdapterResult adapt_to_cpu(const SceneIR& scene) {
             [&](const auto& desc) -> pro::proxy<Material> {
                 using T = std::decay_t<decltype(desc)>;
                 if constexpr (std::is_same_v<T, DiffuseMaterial>) {
-                    const pro::proxy<Texture>& albedo = checked_index(textures, desc.albedo_texture, "diffuse albedo texture");
+                    const pro::proxy<Texture>& albedo = textures[static_cast<std::size_t>(desc.albedo_texture)];
                     return pro::make_proxy_shared<Material, Lambertion>(albedo);
                 } else if constexpr (std::is_same_v<T, MetalMaterial>) {
-                    const TextureDesc& texture_desc = checked_index(texture_descs, desc.albedo_texture, "metal albedo texture");
+                    const TextureDesc& texture_desc = texture_descs[static_cast<std::size_t>(desc.albedo_texture)];
                     const auto* constant = std::get_if<ConstantColorTextureDesc>(&texture_desc);
                     if (constant == nullptr) {
                         throw std::invalid_argument("metal material requires a constant-color texture");
@@ -153,10 +142,10 @@ CpuSceneAdapterResult adapt_to_cpu(const SceneIR& scene) {
                 } else if constexpr (std::is_same_v<T, DielectricMaterial>) {
                     return pro::make_proxy_shared<Material, Dielectric>(desc.ior);
                 } else if constexpr (std::is_same_v<T, EmissiveMaterial>) {
-                    const pro::proxy<Texture>& emission = checked_index(textures, desc.emission_texture, "emissive texture");
+                    const pro::proxy<Texture>& emission = textures[static_cast<std::size_t>(desc.emission_texture)];
                     return pro::make_proxy_shared<Material, DiffuseLight>(emission);
                 } else if constexpr (std::is_same_v<T, IsotropicVolumeMaterial>) {
-                    const pro::proxy<Texture>& albedo = checked_index(textures, desc.albedo_texture, "isotropic albedo texture");
+                    const pro::proxy<Texture>& albedo = textures[static_cast<std::size_t>(desc.albedo_texture)];
                     return pro::make_proxy_shared<Material, Isotropic>(albedo);
                 } else {
                     static_assert(std::is_same_v<T, void>, "unsupported material type");
@@ -171,9 +160,9 @@ CpuSceneAdapterResult adapt_to_cpu(const SceneIR& scene) {
     HittableList lights;
 
     for (const SurfaceInstance& instance : scene.surface_instances()) {
-        const ShapeDesc& shape_desc = checked_index(shape_descs, instance.shape_index, "surface shape");
-        const MaterialDesc& material_desc = checked_index(material_descs, instance.material_index, "surface material");
-        const pro::proxy<Material>& material = checked_index(materials, instance.material_index, "surface material");
+        const ShapeDesc& shape_desc = shape_descs[static_cast<std::size_t>(instance.shape_index)];
+        const MaterialDesc& material_desc = material_descs[static_cast<std::size_t>(instance.material_index)];
+        const pro::proxy<Material>& material = materials[static_cast<std::size_t>(instance.material_index)];
 
         pro::proxy<Hittable> object = make_shape_hittable(shape_desc, material);
         object = apply_transform(object, instance.transform);
@@ -186,16 +175,9 @@ CpuSceneAdapterResult adapt_to_cpu(const SceneIR& scene) {
 
     const pro::proxy<Material> empty_material = pro::make_proxy_shared<Material, EmptyMaterial>();
     for (const MediumInstance& medium : scene.media()) {
-        if (medium.density <= 0.0) {
-            throw std::invalid_argument("medium density must be positive");
-        }
-
-        const ShapeDesc& shape_desc = checked_index(shape_descs, medium.shape_index, "medium shape");
-        const MaterialDesc& material_desc = checked_index(material_descs, medium.material_index, "medium material");
+        const ShapeDesc& shape_desc = shape_descs[static_cast<std::size_t>(medium.shape_index)];
+        const MaterialDesc& material_desc = material_descs[static_cast<std::size_t>(medium.material_index)];
         const auto* isotropic = std::get_if<IsotropicVolumeMaterial>(&material_desc);
-        if (isotropic == nullptr) {
-            throw std::invalid_argument("medium requires isotropic volume material");
-        }
         if (std::holds_alternative<QuadShape>(shape_desc)) {
             throw std::invalid_argument("quad boundaries are unsupported for homogeneous media");
         }
@@ -207,7 +189,7 @@ CpuSceneAdapterResult adapt_to_cpu(const SceneIR& scene) {
         boundary = apply_transform(boundary, medium.transform);
 
         const pro::proxy<Texture>& albedo =
-            checked_index(textures, isotropic->albedo_texture, "isotropic albedo texture");
+            textures[static_cast<std::size_t>(isotropic->albedo_texture)];
         world.add(pro::make_proxy_shared<Hittable, ConstantMedium>(boundary, medium.density, albedo));
     }
 

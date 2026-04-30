@@ -1,6 +1,7 @@
 #pragma once
 
 #include "realtime/camera_models.h"
+#include "realtime/camera_projection.h"
 #include "realtime/camera_rig.h"
 
 #include <Eigen/Geometry>
@@ -53,10 +54,7 @@ inline Eigen::Vector2d contract_equi_sample_pixel() {
 }
 
 inline Eigen::Vector3d world_direction_for_pixel(const PackedCamera& camera, const Eigen::Vector2d& pixel) {
-    const Eigen::Vector3d dir_camera = camera.model == CameraModelType::equi62_lut1d
-        ? unproject_equi62_lut1d(camera.equi, pixel)
-        : unproject_pinhole32(camera.pinhole, pixel);
-    return (camera.T_rc.rotationMatrix() * dir_camera).normalized();
+    return rt::world_direction_for_pixel(camera, pixel);
 }
 
 }  // namespace rt::test

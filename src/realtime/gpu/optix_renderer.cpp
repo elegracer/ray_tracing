@@ -1,21 +1,22 @@
 #include "realtime/gpu/optix_renderer.h"
 
+#include "realtime/gpu/cuda_event_timer.h"
+#include "realtime/gpu/direction_debug_renderer.h"
+#include "realtime/gpu/packed_scene_preparation.h"
+#include "realtime/gpu/radiance_frame_assembly.h"
+#include "realtime/gpu/radiance_launch_setup.h"
+#include "realtime/gpu/render_request_validation.h"
+
 #include <optix_function_table_definition.h>
 #include <optix_stubs.h>
-#include <opencv2/opencv.hpp>
 
-#include <algorithm>
-#include <array>
-#include <cmath>
 #include <limits>
 #include <stdexcept>
 #include <string>
-#include <type_traits>
+#include <utility>
 
 namespace rt {
 
-void launch_direction_debug_kernel(
-    const DeviceActiveCamera& camera, std::uint8_t* rgba, int width, int height, cudaStream_t stream);
 void launch_radiance_kernel(const LaunchParams& params, cudaStream_t stream);
 void launch_resolve_kernel(const LaunchParams& params, cudaStream_t stream);
 
@@ -55,7 +56,7 @@ void context_log_cb(unsigned int level, const char* tag, const char* message, vo
     (void)message;
 }
 
-int checked_scene_count(std::size_t count, const char* label) {
+int checked_primitive_count(std::size_t count, const char* label) {
     if (count > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
         throw std::runtime_error(std::string("scene ") + label + " count exceeds int range");
     }
@@ -71,269 +72,11 @@ struct PrimitiveCounts {
 
 PrimitiveCounts primitive_counts(const PackedScene& scene) {
     return PrimitiveCounts {
-        .sphere_count = checked_scene_count(scene.spheres.size(), "sphere"),
-        .quad_count = checked_scene_count(scene.quads.size(), "quad"),
-        .triangle_count = checked_scene_count(scene.triangles.size(), "triangle"),
-        .medium_count = checked_scene_count(scene.media.size(), "medium"),
+        .sphere_count = checked_primitive_count(scene.spheres.size(), "sphere"),
+        .quad_count = checked_primitive_count(scene.quads.size(), "quad"),
+        .triangle_count = checked_primitive_count(scene.triangles.size(), "triangle"),
+        .medium_count = checked_primitive_count(scene.media.size(), "medium"),
     };
-}
-
-PackedSphere pack_sphere(const SpherePrimitive& sphere) {
-    return PackedSphere {
-        .center = sphere.center.cast<float>(),
-        .radius = static_cast<float>(sphere.radius),
-        .material_index = sphere.material_index,
-    };
-}
-
-PackedQuad pack_quad(const QuadPrimitive& quad) {
-    return PackedQuad {
-        .origin = quad.origin.cast<float>(),
-        .edge_u = quad.edge_u.cast<float>(),
-        .edge_v = quad.edge_v.cast<float>(),
-        .material_index = quad.material_index,
-    };
-}
-
-PackedTriangle pack_triangle(const TrianglePrimitive& triangle) {
-    return PackedTriangle {
-        .p0 = triangle.p0.cast<float>(),
-        .p1 = triangle.p1.cast<float>(),
-        .p2 = triangle.p2.cast<float>(),
-        .material_index = triangle.material_index,
-    };
-}
-
-PackedMedium pack_medium(const HomogeneousMediumPrimitive& medium) {
-    return PackedMedium {
-        .local_center_or_min = medium.local_center_or_min.cast<float>(),
-        .radius = static_cast<float>(medium.radius),
-        .local_max = medium.local_max.cast<float>(),
-        .density = static_cast<float>(medium.density),
-        .rotation_row0 = medium.world_to_local_rotation.row(0).transpose().cast<float>(),
-        .material_index = medium.material_index,
-        .rotation_row1 = medium.world_to_local_rotation.row(1).transpose().cast<float>(),
-        .boundary_type = medium.boundary_type,
-        .rotation_row2 = medium.world_to_local_rotation.row(2).transpose().cast<float>(),
-        .translation = medium.translation.cast<float>(),
-    };
-}
-
-MaterialSample pack_material(const MaterialDesc& material) {
-    MaterialSample sample {};
-    std::visit(
-        [&](const auto& value) {
-            using T = std::decay_t<decltype(value)>;
-            if constexpr (std::is_same_v<T, LambertianMaterial>) {
-                sample.albedo_texture = value.albedo_texture;
-                sample.type = 0;
-            } else if constexpr (std::is_same_v<T, MetalMaterial>) {
-                sample.albedo_texture = value.albedo_texture;
-                sample.fuzz = static_cast<float>(value.fuzz);
-                sample.type = 1;
-            } else if constexpr (std::is_same_v<T, DielectricMaterial>) {
-                sample.ior = static_cast<float>(value.ior);
-                sample.type = 2;
-            } else if constexpr (std::is_same_v<T, DiffuseLightMaterial>) {
-                sample.emission_texture = value.emission_texture;
-                sample.type = 3;
-            } else if constexpr (std::is_same_v<T, IsotropicVolumeMaterial>) {
-                sample.albedo_texture = value.albedo_texture;
-                sample.type = 4;
-            }
-        },
-        material);
-    return sample;
-}
-
-cv::Mat load_texture_image_rgb32f(const std::string& path) {
-    cv::Mat bgr = cv::imread(path, cv::IMREAD_COLOR);
-    if (bgr.empty()) {
-        const std::array<std::string, 2> fallbacks {std::string("../") + path, std::string("../../") + path};
-        for (const std::string& fallback : fallbacks) {
-            bgr = cv::imread(fallback, cv::IMREAD_COLOR);
-            if (!bgr.empty()) {
-                break;
-            }
-        }
-    }
-    if (bgr.empty()) {
-        return {};
-    }
-
-    cv::Mat rgb_u8;
-    cv::cvtColor(bgr, rgb_u8, cv::COLOR_BGR2RGB);
-    cv::Mat rgb_f32;
-    rgb_u8.convertTo(rgb_f32, CV_32FC3, 1.0 / 255.0);
-    return rgb_f32;
-}
-
-PackedTexture pack_texture(const TextureDesc& texture, std::vector<Eigen::Vector3f>& image_texels) {
-    PackedTexture packed {};
-    std::visit(
-        [&](const auto& value) {
-            using T = std::decay_t<decltype(value)>;
-            if constexpr (std::is_same_v<T, ConstantColorTextureDesc>) {
-                packed.type = 0;
-                packed.color = value.color.template cast<float>();
-            } else if constexpr (std::is_same_v<T, CheckerTextureDesc>) {
-                packed.type = 1;
-                packed.scale = static_cast<float>(value.scale);
-                packed.even_texture = value.even_texture;
-                packed.odd_texture = value.odd_texture;
-            } else if constexpr (std::is_same_v<T, ImageTextureDesc>) {
-                packed.type = 2;
-                packed.image_offset = static_cast<int>(image_texels.size());
-                const cv::Mat image = load_texture_image_rgb32f(value.path);
-                if (image.empty()) {
-                    return;
-                }
-                packed.image_width = image.cols;
-                packed.image_height = image.rows;
-                image_texels.reserve(image_texels.size() + static_cast<std::size_t>(image.cols * image.rows));
-                for (int y = 0; y < image.rows; ++y) {
-                    for (int x = 0; x < image.cols; ++x) {
-                        const cv::Vec3f pixel = image.at<cv::Vec3f>(y, x);
-                        image_texels.emplace_back(pixel[0], pixel[1], pixel[2]);
-                    }
-                }
-            } else if constexpr (std::is_same_v<T, NoiseTextureDesc>) {
-                packed.type = 3;
-                packed.scale = static_cast<float>(value.scale);
-            }
-        },
-        texture);
-    return packed;
-}
-
-DeviceActiveCamera make_active_camera(const PackedCamera& camera) {
-    DeviceActiveCamera active {};
-    active.width = camera.width;
-    active.height = camera.height;
-    active.model = camera.model;
-
-    const Eigen::Vector3d origin = camera.T_rc.translation();
-    const Eigen::Matrix3d rotation = camera.T_rc.rotationMatrix();
-    active.origin[0] = origin.x();
-    active.origin[1] = origin.y();
-    active.origin[2] = origin.z();
-
-    for (int row = 0; row < 3; ++row) {
-        active.basis_x[row] = rotation(row, 0);
-        active.basis_y[row] = rotation(row, 1);
-        active.basis_z[row] = rotation(row, 2);
-    }
-
-    active.pinhole.fx = camera.pinhole.fx;
-    active.pinhole.fy = camera.pinhole.fy;
-    active.pinhole.cx = camera.pinhole.cx;
-    active.pinhole.cy = camera.pinhole.cy;
-    active.pinhole.k1 = camera.pinhole.k1;
-    active.pinhole.k2 = camera.pinhole.k2;
-    active.pinhole.k3 = camera.pinhole.k3;
-    active.pinhole.p1 = camera.pinhole.p1;
-    active.pinhole.p2 = camera.pinhole.p2;
-
-    active.equi.width = camera.equi.width;
-    active.equi.height = camera.equi.height;
-    active.equi.fx = camera.equi.fx;
-    active.equi.fy = camera.equi.fy;
-    active.equi.cx = camera.equi.cx;
-    active.equi.cy = camera.equi.cy;
-    active.equi.tangential[0] = camera.equi.tangential.x();
-    active.equi.tangential[1] = camera.equi.tangential.y();
-    active.equi.lut_step = camera.equi.lut_step;
-    for (int i = 0; i < 6; ++i) {
-        active.equi.radial[i] = camera.equi.radial[static_cast<std::size_t>(i)];
-    }
-    for (int i = 0; i < 1024; ++i) {
-        active.equi.lut[i] = camera.equi.lut[static_cast<std::size_t>(i)];
-    }
-
-    return active;
-}
-
-void free_device_ptr(void* ptr) {
-    if (ptr != nullptr) {
-        cudaFree(ptr);
-    }
-}
-
-void free_frame_buffers(DeviceFrameBuffers& frame) {
-    free_device_ptr(frame.beauty);
-    free_device_ptr(frame.normal);
-    free_device_ptr(frame.albedo);
-    free_device_ptr(frame.depth);
-    frame = DeviceFrameBuffers {};
-}
-
-void free_scene_buffers(PackedSphere*& spheres, PackedQuad*& quads, PackedTriangle*& triangles, PackedMedium*& media,
-    PackedTexture*& textures, Eigen::Vector3f*& image_texels, MaterialSample*& materials) {
-    free_device_ptr(spheres);
-    free_device_ptr(quads);
-    free_device_ptr(triangles);
-    free_device_ptr(media);
-    free_device_ptr(textures);
-    free_device_ptr(image_texels);
-    free_device_ptr(materials);
-    spheres = nullptr;
-    quads = nullptr;
-    triangles = nullptr;
-    media = nullptr;
-    textures = nullptr;
-    image_texels = nullptr;
-    materials = nullptr;
-}
-
-void free_host_ptr(void* ptr) {
-    if (ptr != nullptr) {
-        cudaFreeHost(ptr);
-    }
-}
-
-void free_host_staging(float4*& beauty, float4*& normal, float4*& albedo, float*& depth) {
-    free_host_ptr(depth);
-    free_host_ptr(albedo);
-    free_host_ptr(normal);
-    free_host_ptr(beauty);
-    depth = nullptr;
-    albedo = nullptr;
-    normal = nullptr;
-    beauty = nullptr;
-}
-
-std::vector<float> unpack_rgba_from_float4(const float4* pixels, std::size_t pixel_count) {
-    std::vector<float> rgba(pixel_count * 4U, 0.0f);
-    for (std::size_t i = 0; i < pixel_count; ++i) {
-        rgba[i * 4U + 0] = pixels[i].x;
-        rgba[i * 4U + 1] = pixels[i].y;
-        rgba[i * 4U + 2] = pixels[i].z;
-        rgba[i * 4U + 3] = pixels[i].w;
-    }
-    return rgba;
-}
-
-void validate_radiance_request(const PackedCameraRig& rig, int camera_index) {
-    constexpr int kMaxCameraSlots = 4;
-    if (rig.active_count < 1 || rig.active_count > kMaxCameraSlots) {
-        throw std::runtime_error("render_radiance requires rig.active_count in [1, 4], got "
-            + std::to_string(rig.active_count));
-    }
-    if (camera_index < 0 || camera_index >= rig.active_count) {
-        throw std::runtime_error("render_radiance camera_index out of range: camera_index="
-            + std::to_string(camera_index) + ", active_count=" + std::to_string(rig.active_count));
-    }
-
-    const PackedCamera& camera = rig.cameras[static_cast<std::size_t>(camera_index)];
-    if (camera.enabled == 0) {
-        throw std::runtime_error("render_radiance camera slot is disabled at index "
-            + std::to_string(camera_index));
-    }
-    if (camera.width <= 0 || camera.height <= 0) {
-        throw std::runtime_error("render_radiance camera slot has invalid resolution at index "
-            + std::to_string(camera_index) + ": width=" + std::to_string(camera.width) + ", height="
-            + std::to_string(camera.height));
-    }
 }
 
 }  // namespace
@@ -344,9 +87,7 @@ OptixRenderer::OptixRenderer() {
 }
 
 OptixRenderer::~OptixRenderer() {
-    free_history_buffers();
     free_device_resources();
-    free_staging_buffers();
     if (optix_context_ != nullptr) {
         optixDeviceContextDestroy(optix_context_);
     }
@@ -380,250 +121,29 @@ void OptixRenderer::create_direction_debug_pipeline() {
     }
 }
 
-void OptixRenderer::allocate_frame_buffers(int width, int height) {
-    if (allocated_width_ == width && allocated_height_ == height) {
-        return;
-    }
-    free_frame_buffers(device_frame_);
-    const std::size_t pixel_count = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
-    RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&device_frame_.beauty), pixel_count * sizeof(float4)));
-    RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&device_frame_.normal), pixel_count * sizeof(float4)));
-    RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&device_frame_.albedo), pixel_count * sizeof(float4)));
-    RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&device_frame_.depth), pixel_count * sizeof(float)));
-    allocated_width_ = width;
-    allocated_height_ = height;
-}
-
 DirectionDebugFrame OptixRenderer::render_direction_debug(const PackedCameraRig& rig, int camera_index) {
-    validate_radiance_request(rig, camera_index);
+    validate_render_camera_request(rig, camera_index, "render_radiance");
 
-    DirectionDebugFrame frame {};
-    frame.width = rig.cameras[static_cast<std::size_t>(camera_index)].width;
-    frame.height = rig.cameras[static_cast<std::size_t>(camera_index)].height;
-    frame.rgba.resize(static_cast<std::size_t>(frame.width) * static_cast<std::size_t>(frame.height) * 4U, 0);
-
-    std::uint8_t* device_rgba = nullptr;
-    const std::size_t byte_count = frame.rgba.size() * sizeof(std::uint8_t);
-    RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&device_rgba), byte_count));
-
-    try {
-        const PackedCamera& camera = rig.cameras[static_cast<std::size_t>(camera_index)];
-        launch_direction_debug_kernel(make_active_camera(camera), device_rgba, frame.width, frame.height, stream_);
-        RT_CUDA_CHECK(cudaMemcpyAsync(frame.rgba.data(), device_rgba, byte_count, cudaMemcpyDeviceToHost, stream_));
-        RT_CUDA_CHECK(cudaStreamSynchronize(stream_));
-        RT_CUDA_CHECK(cudaFree(device_rgba));
-    } catch (...) {
-        cudaFree(device_rgba);
-        throw;
-    }
-
-    return frame;
+    return render_direction_debug_frame(rig.cameras[static_cast<std::size_t>(camera_index)], stream_);
 }
 
 void OptixRenderer::upload_scene(const PackedScene& scene) {
     scene_prepared_ = false;
-    device_image_texel_count_ = 0;
-    free_scene_buffers(device_spheres_, device_quads_, device_triangles_, device_media_, device_textures_,
-        device_image_texels_, device_materials_);
-
-    if (!scene.spheres.empty()) {
-        std::vector<PackedSphere> packed_spheres;
-        packed_spheres.reserve(scene.spheres.size());
-        for (const SpherePrimitive& sphere : scene.spheres) {
-            packed_spheres.push_back(pack_sphere(sphere));
-        }
-        RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&device_spheres_),
-            packed_spheres.size() * sizeof(PackedSphere)));
-        RT_CUDA_CHECK(cudaMemcpy(device_spheres_, packed_spheres.data(),
-            packed_spheres.size() * sizeof(PackedSphere), cudaMemcpyHostToDevice));
-    }
-
-    if (!scene.quads.empty()) {
-        std::vector<PackedQuad> packed_quads;
-        packed_quads.reserve(scene.quads.size());
-        for (const QuadPrimitive& quad : scene.quads) {
-            packed_quads.push_back(pack_quad(quad));
-        }
-        RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&device_quads_),
-            packed_quads.size() * sizeof(PackedQuad)));
-        RT_CUDA_CHECK(cudaMemcpy(device_quads_, packed_quads.data(),
-            packed_quads.size() * sizeof(PackedQuad), cudaMemcpyHostToDevice));
-    }
-
-    if (!scene.triangles.empty()) {
-        std::vector<PackedTriangle> packed_triangles;
-        packed_triangles.reserve(scene.triangles.size());
-        for (const TrianglePrimitive& triangle : scene.triangles) {
-            packed_triangles.push_back(pack_triangle(triangle));
-        }
-        RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&device_triangles_),
-            packed_triangles.size() * sizeof(PackedTriangle)));
-        RT_CUDA_CHECK(cudaMemcpy(device_triangles_, packed_triangles.data(),
-            packed_triangles.size() * sizeof(PackedTriangle), cudaMemcpyHostToDevice));
-    }
-
-    if (!scene.media.empty()) {
-        std::vector<PackedMedium> packed_media;
-        packed_media.reserve(scene.media.size());
-        for (const HomogeneousMediumPrimitive& medium : scene.media) {
-            packed_media.push_back(pack_medium(medium));
-        }
-        RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&device_media_),
-            packed_media.size() * sizeof(PackedMedium)));
-        RT_CUDA_CHECK(cudaMemcpy(device_media_, packed_media.data(),
-            packed_media.size() * sizeof(PackedMedium), cudaMemcpyHostToDevice));
-    }
-
-    if (!scene.materials.empty()) {
-        std::vector<MaterialSample> packed_materials;
-        packed_materials.reserve(scene.materials.size());
-        for (const MaterialDesc& material : scene.materials) {
-            packed_materials.push_back(pack_material(material));
-        }
-        RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&device_materials_),
-            packed_materials.size() * sizeof(MaterialSample)));
-        RT_CUDA_CHECK(cudaMemcpy(device_materials_, packed_materials.data(),
-            packed_materials.size() * sizeof(MaterialSample), cudaMemcpyHostToDevice));
-    }
-
-    if (!scene.textures.empty()) {
-        std::vector<Eigen::Vector3f> image_texels;
-        std::vector<PackedTexture> packed_textures;
-        packed_textures.reserve(scene.textures.size());
-        for (const TextureDesc& texture : scene.textures) {
-            packed_textures.push_back(pack_texture(texture, image_texels));
-        }
-
-        RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&device_textures_),
-            packed_textures.size() * sizeof(PackedTexture)));
-        RT_CUDA_CHECK(cudaMemcpy(device_textures_, packed_textures.data(),
-            packed_textures.size() * sizeof(PackedTexture), cudaMemcpyHostToDevice));
-
-        if (!image_texels.empty()) {
-            RT_CUDA_CHECK(cudaMalloc(
-                reinterpret_cast<void**>(&device_image_texels_), image_texels.size() * sizeof(Eigen::Vector3f)));
-            RT_CUDA_CHECK(cudaMemcpy(device_image_texels_, image_texels.data(),
-                image_texels.size() * sizeof(Eigen::Vector3f), cudaMemcpyHostToDevice));
-        }
-        device_image_texel_count_ = static_cast<int>(image_texels.size());
-    }
-
+    scene_buffers_.upload(prepare_gpu_scene(scene));
     uploaded_scene_ = scene;
 }
 
 void OptixRenderer::free_device_resources() {
-    free_frame_buffers(device_frame_);
-    free_scene_buffers(device_spheres_, device_quads_, device_triangles_, device_media_, device_textures_,
-        device_image_texels_, device_materials_);
-    device_image_texel_count_ = 0;
-    allocated_width_ = 0;
-    allocated_height_ = 0;
+    frame_buffers_.reset_frame();
+    frame_buffers_.reset_history();
+    scene_buffers_.reset();
+    host_staging_.reset();
     uploaded_scene_ = PackedScene {};
     scene_prepared_ = false;
 }
 
-void OptixRenderer::free_staging_buffers() {
-    for (HostRadianceStaging& staging : host_staging_buffers_) {
-        free_host_staging(staging.beauty, staging.normal, staging.albedo, staging.depth);
-        staging = HostRadianceStaging {};
-    }
-    host_staging_buffers_.clear();
-}
-
-void OptixRenderer::allocate_history_buffers(int width, int height) {
-    if (width == history_width_ && height == history_height_
-        && device_history_.beauty != nullptr) {
-        return;
-    }
-    free_history_buffers();
-
-    const std::size_t float4_count =
-        static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
-    RT_CUDA_CHECK(cudaMalloc(
-        reinterpret_cast<void**>(&device_history_.beauty), float4_count * sizeof(float4)));
-    RT_CUDA_CHECK(cudaMalloc(
-        reinterpret_cast<void**>(&device_history_.normal), float4_count * sizeof(float4)));
-    RT_CUDA_CHECK(cudaMalloc(
-        reinterpret_cast<void**>(&device_history_.albedo), float4_count * sizeof(float4)));
-    RT_CUDA_CHECK(cudaMalloc(
-        reinterpret_cast<void**>(&device_history_.depth), float4_count * sizeof(float)));
-
-    history_width_ = width;
-    history_height_ = height;
-    history_length_ = 0;
-}
-
-void OptixRenderer::free_history_buffers() {
-    if (device_history_.beauty != nullptr) {
-        cudaFree(device_history_.beauty);
-        device_history_.beauty = nullptr;
-    }
-    if (device_history_.normal != nullptr) {
-        cudaFree(device_history_.normal);
-        device_history_.normal = nullptr;
-    }
-    if (device_history_.albedo != nullptr) {
-        cudaFree(device_history_.albedo);
-        device_history_.albedo = nullptr;
-    }
-    if (device_history_.depth != nullptr) {
-        cudaFree(device_history_.depth);
-        device_history_.depth = nullptr;
-    }
-    history_width_ = 0;
-    history_height_ = 0;
-    history_length_ = 0;
-}
-
-void OptixRenderer::swap_history_buffers() {
-    const std::size_t float4_count =
-        static_cast<std::size_t>(history_width_) * static_cast<std::size_t>(history_height_);
-    RT_CUDA_CHECK(cudaMemcpyAsync(
-        device_history_.beauty, device_frame_.beauty,
-        float4_count * sizeof(float4), cudaMemcpyDeviceToDevice, stream_));
-    RT_CUDA_CHECK(cudaMemcpyAsync(
-        device_history_.normal, device_frame_.normal,
-        float4_count * sizeof(float4), cudaMemcpyDeviceToDevice, stream_));
-    RT_CUDA_CHECK(cudaMemcpyAsync(
-        device_history_.depth, device_frame_.depth,
-        float4_count * sizeof(float), cudaMemcpyDeviceToDevice, stream_));
-}
-
-void OptixRenderer::populate_launch_history(LaunchParams& params) {
-    params.history = device_history_;
-    params.history_length = history_length_;
-    params.prev_origin[0] = prev_origin_[0];
-    params.prev_origin[1] = prev_origin_[1];
-    params.prev_origin[2] = prev_origin_[2];
-    params.prev_basis_x[0] = prev_basis_x_[0];
-    params.prev_basis_x[1] = prev_basis_x_[1];
-    params.prev_basis_x[2] = prev_basis_x_[2];
-    params.prev_basis_y[0] = prev_basis_y_[0];
-    params.prev_basis_y[1] = prev_basis_y_[1];
-    params.prev_basis_y[2] = prev_basis_y_[2];
-    params.prev_basis_z[0] = prev_basis_z_[0];
-    params.prev_basis_z[1] = prev_basis_z_[1];
-    params.prev_basis_z[2] = prev_basis_z_[2];
-}
-
-void OptixRenderer::snapshot_camera_for_history(const LaunchParams& params) {
-    const DeviceActiveCamera& cam = params.active_camera;
-    prev_origin_[0] = cam.origin[0];
-    prev_origin_[1] = cam.origin[1];
-    prev_origin_[2] = cam.origin[2];
-    prev_basis_x_[0] = cam.basis_x[0];
-    prev_basis_x_[1] = cam.basis_x[1];
-    prev_basis_x_[2] = cam.basis_x[2];
-    prev_basis_y_[0] = cam.basis_y[0];
-    prev_basis_y_[1] = cam.basis_y[1];
-    prev_basis_y_[2] = cam.basis_y[2];
-    prev_basis_z_[0] = cam.basis_z[0];
-    prev_basis_z_[1] = cam.basis_z[1];
-    prev_basis_z_[2] = cam.basis_z[2];
-}
-
 void OptixRenderer::reset_accumulation() {
-    history_length_ = 0;
+    frame_buffers_.reset_accumulation();
 }
 
 void OptixRenderer::build_or_refit_accels(const PackedScene& scene) {
@@ -647,119 +167,35 @@ void OptixRenderer::launch_radiance(const PackedCameraRig& rig, const RenderProf
     launch_radiance_pipeline(uploaded_scene_, rig, profile, camera_index, timing);
 }
 
-OptixRenderer::HostRadianceStaging& OptixRenderer::staging_buffer_for(int width, int height) {
-    for (HostRadianceStaging& staging : host_staging_buffers_) {
-        if (staging.width == width && staging.height == height) {
-            return staging;
-        }
-    }
-
-    HostRadianceStaging staging {};
-    staging.width = width;
-    staging.height = height;
-    const std::size_t pixel_count = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
-
-    RT_CUDA_CHECK(cudaMallocHost(reinterpret_cast<void**>(&staging.beauty), pixel_count * sizeof(float4)));
-    try {
-        RT_CUDA_CHECK(cudaMallocHost(reinterpret_cast<void**>(&staging.normal), pixel_count * sizeof(float4)));
-        RT_CUDA_CHECK(cudaMallocHost(reinterpret_cast<void**>(&staging.albedo), pixel_count * sizeof(float4)));
-        RT_CUDA_CHECK(cudaMallocHost(reinterpret_cast<void**>(&staging.depth), pixel_count * sizeof(float)));
-    } catch (...) {
-        free_host_staging(staging.beauty, staging.normal, staging.albedo, staging.depth);
-        throw;
-    }
-
-    host_staging_buffers_.push_back(staging);
-    return host_staging_buffers_.back();
-}
-
 void OptixRenderer::launch_radiance_pipeline(const PackedScene& scene, const PackedCameraRig& rig,
     const RenderProfile& profile, int camera_index, RadianceTiming* timing) {
-    LaunchParams params {};
-    params.width = rig.cameras[camera_index].width;
-    params.height = rig.cameras[camera_index].height;
-    params.sample_stream = launch_sample_stream_++;
-    params.active_camera = make_active_camera(rig.cameras[camera_index]);
-    params.background[0] = static_cast<float>(scene.background.x());
-    params.background[1] = static_cast<float>(scene.background.y());
-    params.background[2] = static_cast<float>(scene.background.z());
-    allocate_frame_buffers(params.width, params.height);
-    params.frame = device_frame_;
-    params.scene.spheres = device_spheres_;
-    params.scene.quads = device_quads_;
-    params.scene.triangles = device_triangles_;
-    params.scene.media = device_media_;
-    params.scene.textures = device_textures_;
-    params.scene.image_texels = device_image_texels_;
-    params.scene.materials = device_materials_;
-    params.scene.sphere_count = checked_scene_count(scene.spheres.size(), "sphere");
-    params.scene.quad_count = checked_scene_count(scene.quads.size(), "quad");
-    params.scene.triangle_count = checked_scene_count(scene.triangles.size(), "triangle");
-    params.scene.medium_count = checked_scene_count(scene.media.size(), "medium");
-    params.scene.texture_count = checked_scene_count(scene.textures.size(), "texture");
-    params.scene.image_texel_count = device_image_texel_count_;
-    params.scene.material_count = checked_scene_count(scene.materials.size(), "material");
-    params.samples_per_pixel = profile.samples_per_pixel;
-    params.max_bounces = profile.max_bounces;
-    params.rr_start_bounce = profile.rr_start_bounce;
-    params.mode = 1;
+    const PackedCamera& camera = rig.cameras[static_cast<std::size_t>(camera_index)];
+    frame_buffers_.resize_frame(camera.width, camera.height);
+    LaunchParams params = make_radiance_launch_params(
+        scene, scene_buffers_.view(), rig, profile, camera_index, launch_sample_stream_++, frame_buffers_.frame(),
+        frame_buffers_.history_state());
     const std::size_t pixel_count = static_cast<std::size_t>(params.width) * static_cast<std::size_t>(params.height);
-    if (timing == nullptr) {
+
+    const auto launch = [&]() {
         RT_CUDA_CHECK(cudaMemsetAsync(params.frame.beauty, 0, pixel_count * sizeof(float4), stream_));
         RT_CUDA_CHECK(cudaMemsetAsync(params.frame.normal, 0, pixel_count * sizeof(float4), stream_));
         RT_CUDA_CHECK(cudaMemsetAsync(params.frame.albedo, 0, pixel_count * sizeof(float4), stream_));
         RT_CUDA_CHECK(cudaMemsetAsync(params.frame.depth, 0, pixel_count * sizeof(float), stream_));
         launch_radiance_kernel(params, stream_);
-        allocate_history_buffers(params.width, params.height);
-        populate_launch_history(params);
+        frame_buffers_.resize_history(params.width, params.height);
+        params.history = frame_buffers_.history();
         launch_resolve_kernel(params, stream_);
-        snapshot_camera_for_history(params);
-        if (history_length_ == 0) {
-            history_length_ = 1;
-        } else {
-            ++history_length_;
-        }
-        swap_history_buffers();
+        frame_buffers_.apply_history_state(capture_launch_history(params));
+        frame_buffers_.copy_frame_to_history(stream_);
+    };
+
+    if (timing == nullptr) {
+        launch();
     } else {
-        cudaEvent_t render_start = nullptr;
-        cudaEvent_t render_end = nullptr;
-        RT_CUDA_CHECK(cudaEventCreate(&render_start));
-        try {
-            RT_CUDA_CHECK(cudaEventCreate(&render_end));
-            RT_CUDA_CHECK(cudaEventRecord(render_start, stream_));
-            RT_CUDA_CHECK(cudaMemsetAsync(params.frame.beauty, 0, pixel_count * sizeof(float4), stream_));
-            RT_CUDA_CHECK(cudaMemsetAsync(params.frame.normal, 0, pixel_count * sizeof(float4), stream_));
-            RT_CUDA_CHECK(cudaMemsetAsync(params.frame.albedo, 0, pixel_count * sizeof(float4), stream_));
-            RT_CUDA_CHECK(cudaMemsetAsync(params.frame.depth, 0, pixel_count * sizeof(float), stream_));
-            launch_radiance_kernel(params, stream_);
-            allocate_history_buffers(params.width, params.height);
-            populate_launch_history(params);
-            launch_resolve_kernel(params, stream_);
-            snapshot_camera_for_history(params);
-            if (history_length_ == 0) {
-                history_length_ = 1;
-            } else {
-                ++history_length_;
-            }
-            swap_history_buffers();
-            RT_CUDA_CHECK(cudaEventRecord(render_end, stream_));
-            RT_CUDA_CHECK(cudaEventSynchronize(render_end));
-            float elapsed_ms = 0.0f;
-            RT_CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, render_start, render_end));
-            timing->render_ms = elapsed_ms;
-            RT_CUDA_CHECK(cudaEventDestroy(render_end));
-            render_end = nullptr;
-            RT_CUDA_CHECK(cudaEventDestroy(render_start));
-            render_start = nullptr;
-        } catch (...) {
-            if (render_end != nullptr) {
-                cudaEventDestroy(render_end);
-            }
-            if (render_start != nullptr) {
-                cudaEventDestroy(render_start);
-            }
-            throw;
-        }
+        CudaEventTimer timer(stream_);
+        timer.record_start();
+        launch();
+        timing->render_ms = timer.record_stop_and_elapsed_ms();
     }
     uploaded_scene_ = scene;
     last_width_ = params.width;
@@ -778,71 +214,60 @@ RadianceFrame OptixRenderer::download_radiance_frame_profiled(int camera_index, 
     frame.height = last_launch_height(camera_index);
 
     const std::size_t pixel_count = static_cast<std::size_t>(frame.width) * static_cast<std::size_t>(frame.height);
-    if (pixel_count == 0 || device_frame_.beauty == nullptr || device_frame_.normal == nullptr
-        || device_frame_.albedo == nullptr || device_frame_.depth == nullptr) {
+    const DeviceFrameBuffers& device_frame = frame_buffers_.frame();
+    if (pixel_count == 0 || device_frame.beauty == nullptr || device_frame.normal == nullptr
+        || device_frame.albedo == nullptr || device_frame.depth == nullptr) {
         return frame;
     }
 
-    cudaEvent_t download_start = nullptr;
-    cudaEvent_t download_end = nullptr;
-    HostRadianceStaging& staging = staging_buffer_for(frame.width, frame.height);
+    HostRadianceStaging& staging = host_staging_.buffer_for(frame.width, frame.height);
 
-    try {
-        RT_CUDA_CHECK(cudaEventCreate(&download_start));
-        RT_CUDA_CHECK(cudaEventCreate(&download_end));
-        RT_CUDA_CHECK(cudaEventRecord(download_start, stream_));
+    if (timing == nullptr) {
         RT_CUDA_CHECK(cudaMemcpyAsync(
-            staging.beauty, device_frame_.beauty, pixel_count * sizeof(float4), cudaMemcpyDeviceToHost, stream_));
+            staging.beauty, device_frame.beauty, pixel_count * sizeof(float4), cudaMemcpyDeviceToHost, stream_));
         RT_CUDA_CHECK(cudaMemcpyAsync(
-            staging.normal, device_frame_.normal, pixel_count * sizeof(float4), cudaMemcpyDeviceToHost, stream_));
+            staging.normal, device_frame.normal, pixel_count * sizeof(float4), cudaMemcpyDeviceToHost, stream_));
         RT_CUDA_CHECK(cudaMemcpyAsync(
-            staging.albedo, device_frame_.albedo, pixel_count * sizeof(float4), cudaMemcpyDeviceToHost, stream_));
+            staging.albedo, device_frame.albedo, pixel_count * sizeof(float4), cudaMemcpyDeviceToHost, stream_));
         RT_CUDA_CHECK(
-            cudaMemcpyAsync(staging.depth, device_frame_.depth, pixel_count * sizeof(float), cudaMemcpyDeviceToHost,
+            cudaMemcpyAsync(staging.depth, device_frame.depth, pixel_count * sizeof(float), cudaMemcpyDeviceToHost,
                 stream_));
-        RT_CUDA_CHECK(cudaEventRecord(download_end, stream_));
-        RT_CUDA_CHECK(cudaEventSynchronize(download_end));
-
-        if (timing != nullptr) {
-            float elapsed_ms = 0.0f;
-            RT_CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, download_start, download_end));
-            timing->download_ms = elapsed_ms;
-        }
-
-        frame.beauty_rgba = unpack_rgba_from_float4(staging.beauty, pixel_count);
-        frame.normal_rgba = unpack_rgba_from_float4(staging.normal, pixel_count);
-        frame.albedo_rgba = unpack_rgba_from_float4(staging.albedo, pixel_count);
-        frame.depth.assign(staging.depth, staging.depth + pixel_count);
-        frame.average_luminance = compute_average_luminance(frame.beauty_rgba);
-
-        RT_CUDA_CHECK(cudaEventDestroy(download_end));
-        download_end = nullptr;
-        RT_CUDA_CHECK(cudaEventDestroy(download_start));
-        download_start = nullptr;
-    } catch (...) {
-        if (download_end != nullptr) {
-            cudaEventDestroy(download_end);
-        }
-        if (download_start != nullptr) {
-            cudaEventDestroy(download_start);
-        }
-        throw;
+        RT_CUDA_CHECK(cudaStreamSynchronize(stream_));
+    } else {
+        CudaEventTimer timer(stream_);
+        timer.record_start();
+        RT_CUDA_CHECK(cudaMemcpyAsync(
+            staging.beauty, device_frame.beauty, pixel_count * sizeof(float4), cudaMemcpyDeviceToHost, stream_));
+        RT_CUDA_CHECK(cudaMemcpyAsync(
+            staging.normal, device_frame.normal, pixel_count * sizeof(float4), cudaMemcpyDeviceToHost, stream_));
+        RT_CUDA_CHECK(cudaMemcpyAsync(
+            staging.albedo, device_frame.albedo, pixel_count * sizeof(float4), cudaMemcpyDeviceToHost, stream_));
+        RT_CUDA_CHECK(
+            cudaMemcpyAsync(staging.depth, device_frame.depth, pixel_count * sizeof(float), cudaMemcpyDeviceToHost,
+                stream_));
+        timing->download_ms = timer.record_stop_and_elapsed_ms();
     }
+
+    frame = make_radiance_frame(staging);
 
     return frame;
 }
 
 RadianceFrame OptixRenderer::download_camera_frame(int camera_index) const {
-    RadianceFrame frame {};
-    frame.width = last_launch_width(camera_index);
-    frame.height = last_launch_height(camera_index);
+    const int width = last_launch_width(camera_index);
+    const int height = last_launch_height(camera_index);
     RT_CUDA_CHECK(cudaStreamSynchronize(stream_));
-    frame.beauty_rgba = download_beauty();
-    frame.normal_rgba = download_normal();
-    frame.albedo_rgba = download_albedo();
-    frame.depth = download_depth();
-    frame.average_luminance = compute_average_luminance(frame.beauty_rgba);
-    return frame;
+    std::vector<float> beauty = download_beauty();
+    const double average_luminance = compute_frame_average_luminance(beauty);
+    return RadianceFrame {
+        .width = width,
+        .height = height,
+        .average_luminance = average_luminance,
+        .beauty_rgba = std::move(beauty),
+        .normal_rgba = download_normal(),
+        .albedo_rgba = download_albedo(),
+        .depth = download_depth(),
+    };
 }
 
 int OptixRenderer::last_launch_width(int camera_index) const {
@@ -857,78 +282,50 @@ int OptixRenderer::last_launch_height(int camera_index) const {
 
 std::vector<float> OptixRenderer::download_beauty() const {
     const std::size_t pixel_count = static_cast<std::size_t>(last_width_) * static_cast<std::size_t>(last_height_);
-    if (pixel_count == 0 || device_frame_.beauty == nullptr) {
+    const DeviceFrameBuffers& device_frame = frame_buffers_.frame();
+    if (pixel_count == 0 || device_frame.beauty == nullptr) {
         return {};
     }
     std::vector<float4> host_pixels(pixel_count);
     RT_CUDA_CHECK(cudaMemcpy(
-        host_pixels.data(), device_frame_.beauty, pixel_count * sizeof(float4), cudaMemcpyDeviceToHost));
-    std::vector<float> rgba(pixel_count * 4U, 0.0f);
-    for (std::size_t i = 0; i < pixel_count; ++i) {
-        rgba[i * 4U + 0] = host_pixels[i].x;
-        rgba[i * 4U + 1] = host_pixels[i].y;
-        rgba[i * 4U + 2] = host_pixels[i].z;
-        rgba[i * 4U + 3] = host_pixels[i].w;
-    }
-    return rgba;
+        host_pixels.data(), device_frame.beauty, pixel_count * sizeof(float4), cudaMemcpyDeviceToHost));
+    return unpack_float4_rgba(host_pixels.data(), pixel_count);
 }
 
 std::vector<float> OptixRenderer::download_normal() const {
     const std::size_t pixel_count = static_cast<std::size_t>(last_width_) * static_cast<std::size_t>(last_height_);
-    if (pixel_count == 0 || device_frame_.normal == nullptr) {
+    const DeviceFrameBuffers& device_frame = frame_buffers_.frame();
+    if (pixel_count == 0 || device_frame.normal == nullptr) {
         return {};
     }
     std::vector<float4> host_pixels(pixel_count);
     RT_CUDA_CHECK(cudaMemcpy(
-        host_pixels.data(), device_frame_.normal, pixel_count * sizeof(float4), cudaMemcpyDeviceToHost));
-    std::vector<float> rgba(pixel_count * 4U, 0.0f);
-    for (std::size_t i = 0; i < pixel_count; ++i) {
-        rgba[i * 4U + 0] = host_pixels[i].x;
-        rgba[i * 4U + 1] = host_pixels[i].y;
-        rgba[i * 4U + 2] = host_pixels[i].z;
-        rgba[i * 4U + 3] = host_pixels[i].w;
-    }
-    return rgba;
+        host_pixels.data(), device_frame.normal, pixel_count * sizeof(float4), cudaMemcpyDeviceToHost));
+    return unpack_float4_rgba(host_pixels.data(), pixel_count);
 }
 
 std::vector<float> OptixRenderer::download_albedo() const {
     const std::size_t pixel_count = static_cast<std::size_t>(last_width_) * static_cast<std::size_t>(last_height_);
-    if (pixel_count == 0 || device_frame_.albedo == nullptr) {
+    const DeviceFrameBuffers& device_frame = frame_buffers_.frame();
+    if (pixel_count == 0 || device_frame.albedo == nullptr) {
         return {};
     }
     std::vector<float4> host_pixels(pixel_count);
     RT_CUDA_CHECK(cudaMemcpy(
-        host_pixels.data(), device_frame_.albedo, pixel_count * sizeof(float4), cudaMemcpyDeviceToHost));
-    std::vector<float> rgba(pixel_count * 4U, 0.0f);
-    for (std::size_t i = 0; i < pixel_count; ++i) {
-        rgba[i * 4U + 0] = host_pixels[i].x;
-        rgba[i * 4U + 1] = host_pixels[i].y;
-        rgba[i * 4U + 2] = host_pixels[i].z;
-        rgba[i * 4U + 3] = host_pixels[i].w;
-    }
-    return rgba;
+        host_pixels.data(), device_frame.albedo, pixel_count * sizeof(float4), cudaMemcpyDeviceToHost));
+    return unpack_float4_rgba(host_pixels.data(), pixel_count);
 }
 
 std::vector<float> OptixRenderer::download_depth() const {
     const std::size_t pixel_count = static_cast<std::size_t>(last_width_) * static_cast<std::size_t>(last_height_);
-    if (pixel_count == 0 || device_frame_.depth == nullptr) {
+    const DeviceFrameBuffers& device_frame = frame_buffers_.frame();
+    if (pixel_count == 0 || device_frame.depth == nullptr) {
         return {};
     }
     std::vector<float> depth(pixel_count, 0.0f);
     RT_CUDA_CHECK(
-        cudaMemcpy(depth.data(), device_frame_.depth, pixel_count * sizeof(float), cudaMemcpyDeviceToHost));
+        cudaMemcpy(depth.data(), device_frame.depth, pixel_count * sizeof(float), cudaMemcpyDeviceToHost));
     return depth;
-}
-
-double OptixRenderer::compute_average_luminance(const std::vector<float>& rgba) const {
-    double sum = 0.0;
-    for (std::size_t i = 0; i < rgba.size(); i += 4) {
-        const double r = std::clamp(std::sqrt(static_cast<double>(std::max(0.0f, rgba[i + 0]))), 0.0, 0.999);
-        const double g = std::clamp(std::sqrt(static_cast<double>(std::max(0.0f, rgba[i + 1]))), 0.0, 0.999);
-        const double b = std::clamp(std::sqrt(static_cast<double>(std::max(0.0f, rgba[i + 2]))), 0.0, 0.999);
-        sum += (r + g + b) / 3.0;
-    }
-    return rgba.empty() ? 0.0 : sum / static_cast<double>(rgba.size() / 4);
 }
 
 void OptixRenderer::prepare_scene(const PackedScene& scene) {
@@ -936,11 +333,12 @@ void OptixRenderer::prepare_scene(const PackedScene& scene) {
     build_or_refit_accels(scene);
     scene_prepared_ = true;
     launch_sample_stream_ = 0;
+    reset_accumulation();
 }
 
 RadianceFrame OptixRenderer::render_radiance(const PackedScene& scene, const PackedCameraRig& rig,
     const RenderProfile& profile, int camera_index) {
-    validate_radiance_request(rig, camera_index);
+    validate_render_camera_request(rig, camera_index, "render_radiance");
     upload_scene(scene);
     build_or_refit_accels(scene);
     launch_radiance(rig, profile, camera_index);
@@ -949,7 +347,7 @@ RadianceFrame OptixRenderer::render_radiance(const PackedScene& scene, const Pac
 
 ProfiledRadianceFrame OptixRenderer::render_prepared_radiance(
     const PackedCameraRig& rig, const RenderProfile& profile, int camera_index) {
-    validate_radiance_request(rig, camera_index);
+    validate_render_camera_request(rig, camera_index, "render_radiance");
     if (!scene_prepared_) {
         throw std::runtime_error("render_prepared_radiance requires prepare_scene() first");
     }
@@ -962,7 +360,7 @@ ProfiledRadianceFrame OptixRenderer::render_prepared_radiance(
 
 ProfiledRadianceFrame OptixRenderer::render_radiance_profiled(const PackedScene& scene, const PackedCameraRig& rig,
     const RenderProfile& profile, int camera_index) {
-    validate_radiance_request(rig, camera_index);
+    validate_render_camera_request(rig, camera_index, "render_radiance");
     prepare_scene(scene);
     return render_prepared_radiance(rig, profile, camera_index);
 }

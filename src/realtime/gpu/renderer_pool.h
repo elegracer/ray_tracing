@@ -2,6 +2,7 @@
 
 #include "realtime/gpu/optix_renderer.h"
 
+#include <deque>
 #include <mutex>
 #include <vector>
 
@@ -28,9 +29,7 @@ class RendererPool {
         const PackedCameraRig& rig, const RenderProfile& profile, int active_cameras);
 
    private:
-    void validate_render_request(const PackedCameraRig& rig, int active_cameras) const;
-
-    std::vector<OptixRenderer> renderers_;
+    std::deque<OptixRenderer> renderers_;
     mutable std::mutex mutex_;
 };
 

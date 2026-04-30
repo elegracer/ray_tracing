@@ -98,12 +98,18 @@ target_sources(core
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/realtime_scene_adapter.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/scene_file_catalog.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/scene_definition.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/scene_ir_validator.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/scene_ir_validator.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/yaml_scene_loader.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/shared_scene_ir.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/shared_scene_builders.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/camera_models.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/camera_projection.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/camera_projection.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/camera_rig.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/profiling/benchmark_report.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/render_profile.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/render_profile.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/scene_catalog.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/realtime_scene_factory.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/scene_description.cpp
@@ -163,6 +169,7 @@ if(ENABLE_GUI_VIEWER)
             src/realtime/viewer/move_speed.cpp
             src/realtime/viewer/scene_switch_controller.cpp
             src/realtime/viewer/viewer_quality_controller.cpp
+            src/realtime/viewer/viewer_render_session.cpp
     )
     target_link_libraries(render_realtime_viewer PRIVATE realtime_gpu core imgui::imgui ${GLFW_TARGET} OpenGL::GL)
 endif()
@@ -263,6 +270,16 @@ target_sources(test_viewer_quality_controller
 target_link_libraries(test_viewer_quality_controller PRIVATE core)
 add_test(NAME test_viewer_quality_controller COMMAND test_viewer_quality_controller)
 
+add_executable(test_viewer_render_session)
+target_sources(test_viewer_render_session
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_viewer_render_session.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/viewer/viewer_quality_controller.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/viewer/viewer_render_session.cpp
+)
+target_link_libraries(test_viewer_render_session PRIVATE core)
+add_test(NAME test_viewer_render_session COMMAND test_viewer_render_session)
+
 add_executable(test_display_transfer)
 target_sources(test_display_transfer
     PRIVATE
@@ -337,6 +354,14 @@ target_sources(test_shared_scene_ir
 target_link_libraries(test_shared_scene_ir PRIVATE core)
 add_test(NAME test_shared_scene_ir COMMAND test_shared_scene_ir)
 
+add_executable(test_scene_ir_validator)
+target_sources(test_scene_ir_validator
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_scene_ir_validator.cpp
+)
+target_link_libraries(test_scene_ir_validator PRIVATE core)
+add_test(NAME test_scene_ir_validator COMMAND test_scene_ir_validator)
+
 add_executable(test_shared_scene_builders)
 target_sources(test_shared_scene_builders
     PRIVATE
@@ -408,7 +433,25 @@ target_link_libraries(test_realtime_benchmark_report PRIVATE core)
 add_test(NAME test_realtime_benchmark_report COMMAND test_realtime_benchmark_report)
 
 add_library(realtime_gpu STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/cuda_event_timer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/cuda_event_timer.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/device_frame_buffers.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/device_frame_buffers.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/device_scene_buffers.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/device_scene_buffers.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/direction_debug_renderer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/direction_debug_renderer.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/host_radiance_staging.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/host_radiance_staging.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/optix_renderer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/packed_scene_preparation.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/packed_scene_preparation.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/radiance_frame_assembly.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/radiance_frame_assembly.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/radiance_launch_setup.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/radiance_launch_setup.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/render_request_validation.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/render_request_validation.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/programs.cu
 )
 target_include_directories(realtime_gpu PUBLIC
@@ -429,6 +472,78 @@ target_sources(test_optix_direction
 )
 target_link_libraries(test_optix_direction PRIVATE realtime_gpu)
 add_test(NAME test_optix_direction COMMAND test_optix_direction)
+
+add_executable(test_gpu_scene_preparation)
+target_sources(test_gpu_scene_preparation
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_gpu_scene_preparation.cpp
+)
+target_link_libraries(test_gpu_scene_preparation PRIVATE realtime_gpu)
+add_test(NAME test_gpu_scene_preparation COMMAND test_gpu_scene_preparation)
+
+add_executable(test_device_scene_buffers)
+target_sources(test_device_scene_buffers
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_device_scene_buffers.cpp
+)
+target_link_libraries(test_device_scene_buffers PRIVATE realtime_gpu)
+add_test(NAME test_device_scene_buffers COMMAND test_device_scene_buffers)
+
+add_executable(test_device_frame_buffers)
+target_sources(test_device_frame_buffers
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_device_frame_buffers.cpp
+)
+target_link_libraries(test_device_frame_buffers PRIVATE realtime_gpu)
+add_test(NAME test_device_frame_buffers COMMAND test_device_frame_buffers)
+
+add_executable(test_host_radiance_staging)
+target_sources(test_host_radiance_staging
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_host_radiance_staging.cpp
+)
+target_link_libraries(test_host_radiance_staging PRIVATE realtime_gpu)
+add_test(NAME test_host_radiance_staging COMMAND test_host_radiance_staging)
+
+add_executable(test_cuda_event_timer)
+target_sources(test_cuda_event_timer
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_cuda_event_timer.cpp
+)
+target_link_libraries(test_cuda_event_timer PRIVATE realtime_gpu)
+add_test(NAME test_cuda_event_timer COMMAND test_cuda_event_timer)
+
+add_executable(test_direction_debug_renderer)
+target_sources(test_direction_debug_renderer
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_direction_debug_renderer.cpp
+)
+target_link_libraries(test_direction_debug_renderer PRIVATE realtime_gpu)
+add_test(NAME test_direction_debug_renderer COMMAND test_direction_debug_renderer)
+
+add_executable(test_render_request_validation)
+target_sources(test_render_request_validation
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_render_request_validation.cpp
+)
+target_link_libraries(test_render_request_validation PRIVATE realtime_gpu)
+add_test(NAME test_render_request_validation COMMAND test_render_request_validation)
+
+add_executable(test_radiance_launch_setup)
+target_sources(test_radiance_launch_setup
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_radiance_launch_setup.cpp
+)
+target_link_libraries(test_radiance_launch_setup PRIVATE realtime_gpu)
+add_test(NAME test_radiance_launch_setup COMMAND test_radiance_launch_setup)
+
+add_executable(test_radiance_frame_assembly)
+target_sources(test_radiance_frame_assembly
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_radiance_frame_assembly.cpp
+)
+target_link_libraries(test_radiance_frame_assembly PRIVATE realtime_gpu)
+add_test(NAME test_radiance_frame_assembly COMMAND test_radiance_frame_assembly)
 
 add_executable(test_optix_path_trace)
 target_sources(test_optix_path_trace

@@ -2,6 +2,9 @@
 #include "realtime/viewer/default_viewer_scene.h"
 #include "test_support.h"
 
+#include <optional>
+#include <string>
+
 int main() {
     const rt::RenderProfile quality = rt::RenderProfile::quality();
     expect_true(quality.samples_per_pixel == 4, "quality spp");
@@ -58,5 +61,19 @@ int main() {
     expect_true(viewer_default.rr_start_bounce == viewer_preview.rr_start_bounce, "viewer default rr start matches preview");
     expect_true(viewer_default.accumulation_reset_rotation_deg == viewer_preview.accumulation_reset_rotation_deg, "viewer default rotation matches preview");
     expect_true(viewer_default.accumulation_reset_translation == viewer_preview.accumulation_reset_translation, "viewer default translation matches preview");
+
+    const std::optional<rt::RenderProfile> named_quality = rt::render_profile_from_name("quality");
+    expect_true(named_quality.has_value(), "quality profile resolved");
+    expect_true(named_quality->samples_per_pixel == quality.samples_per_pixel, "quality profile spp resolved");
+    const std::optional<rt::RenderProfile> named_balanced = rt::render_profile_from_name("balanced");
+    expect_true(named_balanced.has_value(), "balanced profile resolved");
+    expect_true(named_balanced->samples_per_pixel == balanced.samples_per_pixel, "balanced profile spp resolved");
+    const std::optional<rt::RenderProfile> named_realtime = rt::render_profile_from_name("realtime");
+    expect_true(named_realtime.has_value(), "realtime profile resolved");
+    expect_true(named_realtime->samples_per_pixel == realtime.samples_per_pixel, "realtime profile spp resolved");
+    expect_true(!rt::render_profile_from_name("bad").has_value(), "unknown profile rejected");
+    expect_true(rt::render_profile_name(rt::RenderProfile::realtime_default()) == std::string("balanced"),
+        "default profile name");
+    expect_true(rt::render_profile_name(rt::RenderProfile {}) == std::string("default"), "custom profile name");
     return 0;
 }

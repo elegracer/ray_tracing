@@ -8,6 +8,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <vector>
 #include <string>
 
 namespace {
@@ -51,6 +52,18 @@ void expect_rgb_differs(const std::array<std::uint8_t, 3>& actual, const std::ar
     expect_true(differs, label);
 }
 
+void expect_direction_samples_match_cpu_contract(const rt::DirectionDebugFrame& frame,
+    const rt::PackedCamera& camera, const std::vector<Eigen::Vector2d>& pixels, const std::string& label) {
+    for (std::size_t i = 0; i < pixels.size(); ++i) {
+        const Eigen::Vector2d& pixel = pixels[i];
+        expect_rgb_near(
+            pixel_rgb(frame, static_cast<int>(pixel.x()), static_cast<int>(pixel.y())),
+            encode_direction(rt::test::world_direction_for_pixel(camera, pixel)),
+            2,
+            label + " sample[" + std::to_string(i) + "]");
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -61,22 +74,29 @@ int main() {
     expect_near(static_cast<double>(pinhole_frame.width), 64.0, 1e-12, "pinhole debug width");
     expect_near(static_cast<double>(pinhole_frame.height), 48.0, 1e-12, "pinhole debug height");
     expect_true(!pinhole_frame.rgba.empty(), "pinhole debug image has pixels");
-    expect_rgb_near(pixel_rgb(pinhole_frame,
-                        static_cast<int>(rt::test::contract_pinhole_sample_pixel().x()),
-                        static_cast<int>(rt::test::contract_pinhole_sample_pixel().y())),
-        encode_direction(rt::test::world_direction_for_pixel(packed.cameras[0], rt::test::contract_pinhole_sample_pixel())),
-        2, "pinhole contract sample direction");
+    expect_direction_samples_match_cpu_contract(
+        pinhole_frame,
+        packed.cameras[0],
+        {
+            Eigen::Vector2d {31.5, 23.5},
+            rt::test::contract_pinhole_sample_pixel(),
+            Eigen::Vector2d {55.5, 38.5},
+        },
+        "pinhole contract direction");
 
     const rt::DirectionDebugFrame equi_frame = renderer.render_direction_debug(packed, 1);
     expect_near(static_cast<double>(equi_frame.width), 64.0, 1e-12, "equi debug width");
     expect_near(static_cast<double>(equi_frame.height), 48.0, 1e-12, "equi debug height");
     expect_true(!equi_frame.rgba.empty(), "equi debug image has pixels");
-    expect_rgb_near(
-        pixel_rgb(equi_frame,
-            static_cast<int>(rt::test::contract_equi_sample_pixel().x()),
-            static_cast<int>(rt::test::contract_equi_sample_pixel().y())),
-        encode_direction(rt::test::world_direction_for_pixel(packed.cameras[1], rt::test::contract_equi_sample_pixel())),
-        2, "equi contract sample direction");
+    expect_direction_samples_match_cpu_contract(
+        equi_frame,
+        packed.cameras[1],
+        {
+            Eigen::Vector2d {31.5, 23.5},
+            rt::test::contract_equi_sample_pixel(),
+            Eigen::Vector2d {58.5, 40.5},
+        },
+        "equi contract direction");
 
     expect_rgb_differs(
         pixel_rgb(equi_frame,

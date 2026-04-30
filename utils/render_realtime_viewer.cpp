@@ -7,7 +7,7 @@
 #include "realtime/viewer/default_viewer_scene.h"
 #include "realtime/viewer/four_camera_rig.h"
 #include "realtime/viewer/move_speed.h"
-#include "realtime/viewer/viewer_quality_controller.h"
+#include "realtime/viewer/viewer_render_session.h"
 #include "realtime/viewer/scene_switch_controller.h"
 #include "scene/scene_file_catalog.h"
 
@@ -350,9 +350,10 @@ int main(int argc, char* argv[]) {
     rt::viewer::ViewerFrameConvention frame_convention = rt::viewer_frame_convention_for_scene(scene_name);
     rt::viewer::MoveSpeedState move_speed(rt::default_move_speed_for_scene(scene_name));
     rt::PackedScene packed_scene = rt::make_realtime_scene(scene_name).pack();
-    rt::viewer::ViewerQualityController quality_controller(
+    rt::viewer::ViewerRenderSession render_session(
         rt::viewer::default_viewer_preview_profile(),
         rt::viewer::default_viewer_converge_profile());
+    rt::viewer::ViewerQualityMode quality_mode = rt::viewer::ViewerQualityMode::preview;
     std::string viewer_error_message;
     bool ui_interaction_enabled = false;
     bool previous_tab_down = false;
@@ -426,7 +427,7 @@ int main(int argc, char* argv[]) {
                 pose = rt::default_spawn_pose_for_scene(scene_controller.current_scene_id());
                 frame_convention = rt::viewer_frame_convention_for_scene(scene_controller.current_scene_id());
                 move_speed.reset(rt::default_move_speed_for_scene(scene_controller.current_scene_id()));
-                quality_controller.reset_all();
+                render_session.reset_all();
                 viewer_error_message.clear();
                 set_ui_interaction(window, ui_interaction_enabled, last_cursor_x, last_cursor_y);
             } catch (const std::exception& err) {
@@ -447,7 +448,7 @@ int main(int argc, char* argv[]) {
                 pose = rt::default_spawn_pose_for_scene(scene_controller.current_scene_id());
                 frame_convention = rt::viewer_frame_convention_for_scene(scene_controller.current_scene_id());
                 move_speed.reset(rt::default_move_speed_for_scene(scene_controller.current_scene_id()));
-                quality_controller.reset_all();
+                render_session.reset_all();
                 viewer_error_message.clear();
                 reload_catalog_snapshot.reset();
             } catch (const std::exception& err) {
@@ -461,24 +462,34 @@ int main(int argc, char* argv[]) {
             request_scene_reload = false;
         }
 
-        quality_controller.begin_frame(scene_controller.current_scene_id(), pose);
-        if (quality_controller.active_mode() == rt::viewer::ViewerQualityMode::preview) {
-            pool.reset_accumulation();
-        }
         const rt::PackedCameraRig rig =
             rt::viewer::make_default_viewer_rig(pose, kViewWidth, kViewHeight, frame_convention).pack();
-        const std::vector<rt::CameraRenderResult> results =
-            pool.render_frame(rig, quality_controller.active_profile(), static_cast<int>(textures.size()));
-        for (const auto& result : results) {
-            const int idx = result.camera_index;
+        const rt::viewer::ViewerRenderBatch render_batch = render_session.render_frame(
+            scene_controller.current_scene_id(),
+            pose,
+            [&]() { pool.reset_accumulation(); },
+            [&](const rt::RenderProfile& profile) {
+                std::vector<rt::viewer::ViewerRawFrame> raw_frames;
+                const std::vector<rt::CameraRenderResult> results =
+                    pool.render_frame(rig, profile, static_cast<int>(textures.size()));
+                raw_frames.reserve(results.size());
+                for (const rt::CameraRenderResult& result : results) {
+                    raw_frames.push_back(rt::viewer::ViewerRawFrame {
+                        .camera_index = result.camera_index,
+                        .frame = result.profiled.frame,
+                    });
+                }
+                return raw_frames;
+            });
+        quality_mode = render_batch.mode;
+        for (const auto& frame : render_batch.frames) {
+            const int idx = frame.camera_index;
             if (idx < 0 || idx >= static_cast<int>(textures.size())) {
                 continue;
             }
-            const rt::viewer::ResolvedBeautyFrameView display_frame =
-                quality_controller.resolve_beauty_view(idx, result.profiled.frame);
             const UploadStatus upload_status = upload_texture(
                 textures[static_cast<std::size_t>(idx)],
-                display_frame,
+                frame.display_frame,
                 texture_scratch[static_cast<std::size_t>(idx)]);
             if (upload_status == UploadStatus::ok) {
                 warned_texture_mismatch[static_cast<std::size_t>(idx)] = false;
@@ -489,11 +500,11 @@ int main(int argc, char* argv[]) {
                 if (upload_status == UploadStatus::resolution_mismatch) {
                     fmt::print(stderr,
                         "viewer frame size mismatch for camera {}: got {}x{}, expected {}x{}\n",
-                        idx, display_frame.width, display_frame.height, kViewWidth, kViewHeight);
+                        idx, frame.display_frame.width, frame.display_frame.height, kViewWidth, kViewHeight);
                 } else {
                     fmt::print(stderr,
                         "viewer frame buffer too small for camera {}: got {}, need at least {}\n",
-                        idx, display_frame.beauty_rgba.size(),
+                        idx, frame.display_frame.beauty_rgba.size(),
                         static_cast<std::size_t>(kViewWidth * kViewHeight * 4));
                 }
                 warned_texture_mismatch[static_cast<std::size_t>(idx)] = true;
@@ -542,7 +553,7 @@ int main(int argc, char* argv[]) {
 
         ImGui::Begin("Viewer");
         ImGui::Text("Scene: %s", scene_label(scene_controller.current_scene_id()).c_str());
-        ImGui::Text("Quality: %s", quality_mode_label(quality_controller.active_mode()));
+        ImGui::Text("Quality: %s", quality_mode_label(quality_mode));
         ImGui::Text("Move speed: %.3f", move_speed.current_speed());
         ImGui::Text("cam0 history: GPU");
         ImGui::Text("Tab toggles UI cursor");

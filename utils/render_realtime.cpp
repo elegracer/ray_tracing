@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <future>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -69,42 +70,6 @@ void write_frame_image(const std::filesystem::path& output_dir, int frame_index,
     }
 }
 
-bool resolve_render_profile(const std::string& profile_name, rt::RenderProfile& profile) {
-    if (profile_name == "quality") {
-        profile = rt::RenderProfile::quality();
-        return true;
-    }
-    if (profile_name == "balanced") {
-        profile = rt::RenderProfile::balanced();
-        return true;
-    }
-    if (profile_name == "realtime") {
-        profile = rt::RenderProfile::realtime();
-        return true;
-    }
-    return false;
-}
-
-bool render_profiles_equal(const rt::RenderProfile& lhs, const rt::RenderProfile& rhs) {
-    return lhs.samples_per_pixel == rhs.samples_per_pixel && lhs.max_bounces == rhs.max_bounces &&
-        lhs.enable_denoise == rhs.enable_denoise && lhs.rr_start_bounce == rhs.rr_start_bounce &&
-        lhs.accumulation_reset_rotation_deg == rhs.accumulation_reset_rotation_deg &&
-        lhs.accumulation_reset_translation == rhs.accumulation_reset_translation;
-}
-
-std::string render_profile_name(const rt::RenderProfile& profile) {
-    if (render_profiles_equal(profile, rt::RenderProfile::quality())) {
-        return "quality";
-    }
-    if (render_profiles_equal(profile, rt::RenderProfile::balanced())) {
-        return "balanced";
-    }
-    if (render_profiles_equal(profile, rt::RenderProfile::realtime())) {
-        return "realtime";
-    }
-    return "default";
-}
-
 struct PostprocessResult {
     int camera_index = 0;
     float render_ms = 0.0f;
@@ -127,7 +92,7 @@ int main(int argc, const char* argv[]) {
     bool skip_image_write = false;
 
     rt::RenderProfile profile = rt::RenderProfile::realtime_default();
-    std::string profile_name = render_profile_name(profile);
+    std::string profile_name = rt::render_profile_name(profile);
 
     argparse::ArgumentParser program("render_realtime", version_string);
     program.add_argument("--camera-count")
@@ -179,10 +144,12 @@ int main(int argc, const char* argv[]) {
     }
 
     if (!profile_arg.empty()) {
-        if (!resolve_render_profile(profile_arg, profile)) {
+        const std::optional<rt::RenderProfile> resolved_profile = rt::render_profile_from_name(profile_arg);
+        if (!resolved_profile.has_value()) {
             fmt::print(stderr, "--profile must be one of: quality, balanced, realtime\n");
             return EXIT_FAILURE;
         }
+        profile = *resolved_profile;
         profile_name = profile_arg;
     }
 

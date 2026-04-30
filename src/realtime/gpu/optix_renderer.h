@@ -1,8 +1,12 @@
 #pragma once
 
 #include "realtime/camera_rig.h"
+#include "realtime/gpu/device_frame_buffers.h"
+#include "realtime/gpu/device_scene_buffers.h"
 #include "realtime/gpu/frame_types.h"
+#include "realtime/gpu/host_radiance_staging.h"
 #include "realtime/gpu/launch_params.h"
+#include "realtime/gpu/radiance_launch_setup.h"
 #include "realtime/render_profile.h"
 #include "realtime/scene_description.h"
 
@@ -41,21 +45,10 @@ class OptixRenderer {
         const RenderProfile& profile, int camera_index);
 
    private:
-    struct HostRadianceStaging {
-        int width = 0;
-        int height = 0;
-        float4* beauty = nullptr;
-        float4* normal = nullptr;
-        float4* albedo = nullptr;
-        float* depth = nullptr;
-    };
-
     void initialize_optix();
     void create_direction_debug_pipeline();
-    void allocate_frame_buffers(int width, int height);
     void upload_scene(const PackedScene& scene);
     void free_device_resources();
-    void free_staging_buffers();
     void build_or_refit_accels(const PackedScene& scene);
     void launch_radiance(const PackedCameraRig& rig, const RenderProfile& profile, int camera_index,
         RadianceTiming* timing = nullptr);
@@ -65,29 +58,18 @@ class OptixRenderer {
     void launch_radiance_pipeline(const PackedScene& scene, const PackedCameraRig& rig,
         const RenderProfile& profile, int camera_index, RadianceTiming* timing = nullptr);
     RadianceFrame download_camera_frame(int camera_index) const;
-    HostRadianceStaging& staging_buffer_for(int width, int height);
     int last_launch_width(int camera_index) const;
     int last_launch_height(int camera_index) const;
     std::vector<float> download_beauty() const;
     std::vector<float> download_normal() const;
     std::vector<float> download_albedo() const;
     std::vector<float> download_depth() const;
-    double compute_average_luminance(const std::vector<float>& rgba) const;
 
     CUcontext cu_context_ = nullptr;
     cudaStream_t stream_ = nullptr;
     OptixDeviceContext optix_context_ = nullptr;
-    DeviceFrameBuffers device_frame_{};
-    PackedSphere* device_spheres_ = nullptr;
-    PackedQuad* device_quads_ = nullptr;
-    PackedTriangle* device_triangles_ = nullptr;
-    PackedMedium* device_media_ = nullptr;
-    PackedTexture* device_textures_ = nullptr;
-    Eigen::Vector3f* device_image_texels_ = nullptr;
-    MaterialSample* device_materials_ = nullptr;
-    int device_image_texel_count_ = 0;
-    int allocated_width_ = 0;
-    int allocated_height_ = 0;
+    DeviceFrameBufferSet frame_buffers_;
+    DeviceSceneBuffers scene_buffers_;
     PackedScene uploaded_scene_{};
     int last_width_ = 0;
     int last_height_ = 0;
@@ -99,22 +81,7 @@ class OptixRenderer {
     RenderProfile last_profile_{};
     bool scene_prepared_ = false;
     std::uint32_t launch_sample_stream_ = 0;
-    std::vector<HostRadianceStaging> host_staging_buffers_{};
-
-    void allocate_history_buffers(int width, int height);
-    void free_history_buffers();
-    void swap_history_buffers();
-    void populate_launch_history(LaunchParams& params);
-    void snapshot_camera_for_history(const LaunchParams& params);
-
-    DeviceFrameBuffers device_history_{};
-    int history_width_ = 0;
-    int history_height_ = 0;
-    int history_length_ = 0;
-    double prev_origin_[3] {};
-    double prev_basis_x_[3] {};
-    double prev_basis_y_[3] {};
-    double prev_basis_z_[3] {};
+    HostRadianceStagingPool host_staging_;
 };
 
 }  // namespace rt

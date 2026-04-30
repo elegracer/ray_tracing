@@ -1,5 +1,8 @@
 #pragma once
 
+#include <optional>
+#include <string>
+
 namespace rt {
 
 struct RenderProfile {
@@ -45,5 +48,8 @@ struct RenderProfile {
 
     static RenderProfile realtime_default() { return balanced(); }
 };
+
+std::optional<RenderProfile> render_profile_from_name(const std::string& profile_name);
+std::string render_profile_name(const RenderProfile& profile);
 
 }  // namespace rt

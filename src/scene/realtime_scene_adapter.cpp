@@ -1,20 +1,13 @@
 #include "scene/realtime_scene_adapter.h"
 
+#include "scene/scene_ir_validator.h"
+
 #include <stdexcept>
-#include <string>
 #include <type_traits>
 #include <vector>
 
 namespace rt::scene {
 namespace {
-
-template <typename T>
-const T& checked_index(const std::vector<T>& items, const int index, const std::string& label) {
-    if (index < 0 || static_cast<std::size_t>(index) >= items.size()) {
-        throw std::out_of_range(label + " index out of range");
-    }
-    return items[static_cast<std::size_t>(index)];
-}
 
 Eigen::Vector3d transform_point(const Transform& transform, const Eigen::Vector3d& point) {
     return transform.rotation * point + transform.translation;
@@ -99,6 +92,8 @@ void add_box_quads(rt::SceneDescription& out, int material_index, const BoxShape
 }  // namespace
 
 rt::SceneDescription adapt_to_realtime(const SceneIR& scene) {
+    validate_scene_ir(scene);
+
     rt::SceneDescription out;
 
     for (const scene::TextureDesc& texture : scene.textures()) {
@@ -109,11 +104,9 @@ rt::SceneDescription adapt_to_realtime(const SceneIR& scene) {
     }
 
     const std::vector<ShapeDesc>& shapes = scene.shapes();
-    const std::vector<scene::MaterialDesc>& materials = scene.materials();
 
     for (const SurfaceInstance& instance : scene.surface_instances()) {
-        const ShapeDesc& shape = checked_index(shapes, instance.shape_index, "surface shape");
-        (void)checked_index(materials, instance.material_index, "surface material");
+        const ShapeDesc& shape = shapes[static_cast<std::size_t>(instance.shape_index)];
         std::visit(
             [&](const auto& desc) {
                 using T = std::decay_t<decltype(desc)>;
@@ -136,11 +129,6 @@ rt::SceneDescription adapt_to_realtime(const SceneIR& scene) {
                     add_box_quads(out, instance.material_index, desc, instance.transform);
                 } else if constexpr (std::is_same_v<T, TriangleMeshShape>) {
                     for (const Eigen::Vector3i& tri : desc.triangles) {
-                        for (int vertex = 0; vertex < 3; ++vertex) {
-                            if (tri[vertex] < 0 || tri[vertex] >= static_cast<int>(desc.positions.size())) {
-                                throw std::out_of_range("triangle mesh vertex index out of range");
-                            }
-                        }
                         out.add_triangle(TrianglePrimitive {
                             .material_index = instance.material_index,
                             .p0 = transform_point(instance.transform, desc.positions[tri.x()]),
@@ -157,14 +145,7 @@ rt::SceneDescription adapt_to_realtime(const SceneIR& scene) {
     }
 
     for (const MediumInstance& medium : scene.media()) {
-        if (medium.density <= 0.0) {
-            throw std::invalid_argument("medium density must be positive");
-        }
-        const ShapeDesc& shape = checked_index(shapes, medium.shape_index, "medium shape");
-        const scene::MaterialDesc& material = checked_index(materials, medium.material_index, "medium material");
-        if (!std::holds_alternative<scene::IsotropicVolumeMaterial>(material)) {
-            throw std::invalid_argument("medium requires isotropic volume material");
-        }
+        const ShapeDesc& shape = shapes[static_cast<std::size_t>(medium.shape_index)];
 
         rt::HomogeneousMediumPrimitive packed {};
         packed.material_index = medium.material_index;

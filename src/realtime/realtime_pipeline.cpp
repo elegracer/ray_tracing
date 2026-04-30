@@ -23,7 +23,7 @@ PackedScene make_smoke_scene() {
         light,
         legacy_renderer_to_world(Eigen::Vector3d {-1.0, 1.5, -3.5}),
         legacy_renderer_to_world(Eigen::Vector3d {2.0, 0.0, 0.0}),
-        legacy_renderer_to_world(Eigen::Vector3d {0.0, 0.0, -2.0}),
+        legacy_renderer_to_world(Eigen::Vector3d {0.0, 0.0, 2.0}),
         false,
     });
     scene.add_sphere(SpherePrimitive {smoke, legacy_renderer_to_world(Eigen::Vector3d {0.0, 0.0, -4.0}), 0.7, false});

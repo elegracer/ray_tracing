@@ -25,6 +25,15 @@ void expect_frame_near(const rt::RadianceFrame& actual, const rt::RadianceFrame&
     expect_near(actual.average_luminance, expected.average_luminance, 1e-9, label + " luminance");
 }
 
+void expect_frame_shape(const rt::RadianceFrame& actual, const rt::RadianceFrame& expected, const std::string& label) {
+    expect_true(actual.width == expected.width, label + " width");
+    expect_true(actual.height == expected.height, label + " height");
+    expect_true(actual.beauty_rgba.size() == expected.beauty_rgba.size(), label + " beauty size");
+    expect_true(actual.normal_rgba.size() == expected.normal_rgba.size(), label + " normal size");
+    expect_true(actual.albedo_rgba.size() == expected.albedo_rgba.size(), label + " albedo size");
+    expect_true(actual.depth.size() == expected.depth.size(), label + " depth size");
+}
+
 template <typename Fn>
 void expect_throws(Fn&& fn, const std::string& label) {
     bool threw = false;
@@ -63,10 +72,14 @@ int main() {
     renderer.prepare_scene(packed_scene);
     const rt::ProfiledRadianceFrame prepared_first = renderer.render_prepared_radiance(packed_rig, profile, 0);
     const rt::ProfiledRadianceFrame prepared_second = renderer.render_prepared_radiance(packed_rig, profile, 0);
+    renderer.prepare_scene(packed_scene);
+    const rt::ProfiledRadianceFrame prepared_after_reset = renderer.render_prepared_radiance(packed_rig, profile, 0);
     const rt::ProfiledRadianceFrame fallback =
         renderer.render_radiance_profiled(packed_scene, packed_rig, profile, 0);
 
-    expect_frame_near(prepared_second.frame, prepared_first.frame, "prepared repeat parity");
+    expect_frame_shape(prepared_second.frame, prepared_first.frame, "prepared repeat shape");
+    expect_true(prepared_second.frame.average_luminance > 0.0, "prepared repeat remains lit");
+    expect_frame_near(prepared_after_reset.frame, prepared_first.frame, "prepared reset parity");
     expect_frame_near(fallback.frame, prepared_first.frame, "fallback parity");
     expect_true(prepared_first.timing.render_ms >= 0.0f, "prepared first render timing non-negative");
     expect_true(prepared_first.timing.download_ms >= 0.0f, "prepared first download timing non-negative");

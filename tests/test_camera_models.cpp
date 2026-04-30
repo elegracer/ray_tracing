@@ -2,6 +2,8 @@
 #include "cam_equi62_lut1d.h"
 #include "cam_pinhole32.h"
 #include "realtime/camera_models.h"
+#include "realtime/camera_projection.h"
+#include "realtime/camera_rig.h"
 #include "test_support.h"
 
 #include <array>
@@ -74,8 +76,10 @@ int main() {
     using rt::default_hfov_deg;
     using rt::derive_default_camera_intrinsics;
     using rt::make_equi62_lut1d_params;
+    using rt::project_camera_pixel;
     using rt::project_equi62_lut1d;
     using rt::project_pinhole32;
+    using rt::unproject_camera_pixel;
     using rt::unproject_equi62_lut1d;
     using rt::unproject_pinhole32;
 
@@ -133,6 +137,16 @@ int main() {
     expect_vec3_near(unproject_pinhole32(pinhole, Eigen::Vector2d {200.0, 80.0}),
         reference_pinhole.pixel2world(Eigen::Vector2d {200.0, 80.0}), 1e-9, "pinhole reference off-axis unproject");
 
+    rt::PackedCamera dispatch_pinhole;
+    dispatch_pinhole.model = rt::CameraModelType::pinhole32;
+    dispatch_pinhole.pinhole = pinhole;
+    expect_vec2_near(project_camera_pixel(dispatch_pinhole, Eigen::Vector3d {0.23, -0.17, 1.0}),
+        project_pinhole32(pinhole, Eigen::Vector3d {0.23, -0.17, 1.0}), 1e-12,
+        "camera projection dispatches pinhole project");
+    expect_vec3_near(unproject_camera_pixel(dispatch_pinhole, Eigen::Vector2d {200.0, 80.0}),
+        unproject_pinhole32(pinhole, Eigen::Vector2d {200.0, 80.0}), 1e-12,
+        "camera projection dispatches pinhole unproject");
+
     const Pinhole32Params pinhole_hard{
         300.0, 315.0, 158.0, 121.0,
         0.8, -0.7, 0.25, 0.03, -0.025,
@@ -163,6 +177,16 @@ int main() {
         reference_equi.world2pixel(Eigen::Vector3d {0.21, 0.08, 1.0}), 5e-6, "equi reference off-axis project");
     expect_vec3_near(unproject_equi62_lut1d(equi, Eigen::Vector2d {360.0, 180.0}),
         reference_equi.pixel2world(Eigen::Vector2d {360.0, 180.0}), 5e-6, "equi reference off-axis unproject");
+
+    rt::PackedCamera dispatch_equi;
+    dispatch_equi.model = rt::CameraModelType::equi62_lut1d;
+    dispatch_equi.equi = equi;
+    expect_vec2_near(project_camera_pixel(dispatch_equi, Eigen::Vector3d {0.21, 0.08, 1.0}),
+        project_equi62_lut1d(equi, Eigen::Vector3d {0.21, 0.08, 1.0}), 1e-12,
+        "camera projection dispatches equi project");
+    expect_vec3_near(unproject_camera_pixel(dispatch_equi, Eigen::Vector2d {360.0, 180.0}),
+        unproject_equi62_lut1d(equi, Eigen::Vector2d {360.0, 180.0}), 1e-12,
+        "camera projection dispatches equi unproject");
 
     const Equi62Lut1DParams equi_identity = make_equi62_lut1d_params(640, 480, 280.0, 280.0, 320.0, 240.0,
         std::array<double, 6> {0.0, 0.0, 0.0, 0.0, 0.0, 0.0}, Eigen::Vector2d {0.0, 0.0});

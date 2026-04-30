@@ -72,7 +72,7 @@ int main() {
     scene.add_quad(rt::QuadPrimitive {light,
         rt::legacy_renderer_to_world(Eigen::Vector3d {-1.0, 1.5, -3.0}),
         rt::legacy_renderer_to_world(Eigen::Vector3d {2.0, 0.0, 0.0}),
-        rt::legacy_renderer_to_world(Eigen::Vector3d {0.0, 0.0, -2.0}), false});
+        rt::legacy_renderer_to_world(Eigen::Vector3d {0.0, 0.0, 2.0}), false});
     scene.add_sphere(rt::SpherePrimitive {diffuse, rt::legacy_renderer_to_world(Eigen::Vector3d {-0.8, -0.2, -3.5}), 0.5, false});
     scene.add_sphere(rt::SpherePrimitive {metal, rt::legacy_renderer_to_world(Eigen::Vector3d {0.0, -0.2, -3.5}), 0.5, false});
     scene.add_sphere(rt::SpherePrimitive {glass, rt::legacy_renderer_to_world(Eigen::Vector3d {0.8, -0.2, -3.5}), 0.5, false});
