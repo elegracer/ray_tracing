@@ -18,8 +18,9 @@ struct GpuPreparedScene {
     std::vector<PackedTexture> textures;
     std::vector<Eigen::Vector3f> image_texels;
     std::vector<MaterialSample> materials;
+    std::vector<OpenPbrCoreMaterial> openpbr_materials;
 };
 
 GpuPreparedScene prepare_gpu_scene(const PackedScene& scene);
 
-}  // namespace rt
+} // namespace rt

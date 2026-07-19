@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/openpbr_core.h"
 #include "realtime/camera_rig.h"
 #include "realtime/gpu/frame_types.h"
 
@@ -35,6 +36,7 @@ struct DeviceSceneView {
     PackedTexture* textures = nullptr;
     Eigen::Vector3f* image_texels = nullptr;
     MaterialSample* materials = nullptr;
+    OpenPbrCoreMaterial* openpbr_materials = nullptr;
     int sphere_count = 0;
     int quad_count = 0;
     int triangle_count = 0;
@@ -42,6 +44,7 @@ struct DeviceSceneView {
     int texture_count = 0;
     int image_texel_count = 0;
     int material_count = 0;
+    int openpbr_material_count = 0;
 };
 
 struct DevicePinhole32Params {
@@ -148,6 +151,7 @@ struct MaterialSample {
     float ior = 1.0f;
     float fuzz = 0.0f;
     int type = 0;
+    int openpbr_index = -1;
 };
 
 struct PackedTexture {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/openpbr_core.h"
 #include "traits.h"
 
 #include "common.h"
@@ -150,6 +151,52 @@ private:
         const double r0sq = r0 * r0;
         return r0sq + (1.0 - r0sq) * std::pow(1.0 - cosine, 5);
     }
+};
+
+struct OpenPbrSurfaceMaterial {
+    explicit OpenPbrSurfaceMaterial(const rt::OpenPbrCoreMaterial& parameters)
+        : parameters(parameters) {}
+
+    Vec3d emitted(const Ray&, const HitRecord&, const double, const double, const Vec3d&) const {
+        const rt::OpenPbrVec3 value = rt::emission_openpbr_core(parameters);
+        return {value.x, value.y, value.z};
+    }
+
+    bool scatter(const Ray& ray_in, const HitRecord& hit_rec, ScatterRecord& scatter_rec) const {
+        const Vec3d outward_normal = hit_rec.front_face ? hit_rec.normal : -hit_rec.normal;
+        const rt::OpenPbrFrame frame =
+            rt::make_openpbr_frame(to_openpbr(outward_normal), rt::OpenPbrVec3 {});
+        const rt::OpenPbrSample sample = rt::sample_openpbr_core(parameters, frame,
+            to_openpbr(-ray_in.direction().normalized()), static_cast<float>(random_double()),
+            static_cast<float>(random_double()), static_cast<float>(random_double()));
+        if (sample.valid == 0) {
+            return false;
+        }
+
+        scatter_rec.attenuation = {sample.weight.x, sample.weight.y, sample.weight.z};
+        scatter_rec.pdf = nullptr;
+        scatter_rec.skip_pdf = true;
+        scatter_rec.skip_pdf_ray =
+            Ray(hit_rec.p, Vec3d {sample.wi.x, sample.wi.y, sample.wi.z}, ray_in.time());
+        return true;
+    }
+
+    double scattering_pdf(const Ray& ray_in, const HitRecord& hit_rec, const Ray& scattered) const {
+        const Vec3d outward_normal = hit_rec.front_face ? hit_rec.normal : -hit_rec.normal;
+        const rt::OpenPbrFrame frame =
+            rt::make_openpbr_frame(to_openpbr(outward_normal), rt::OpenPbrVec3 {});
+        return static_cast<double>(
+            rt::pdf_openpbr_core(parameters, frame, to_openpbr(-ray_in.direction().normalized()),
+                to_openpbr(scattered.direction().normalized())));
+    }
+
+private:
+    static rt::OpenPbrVec3 to_openpbr(const Vec3d& value) {
+        return {static_cast<float>(value.x()), static_cast<float>(value.y()),
+            static_cast<float>(value.z())};
+    }
+
+    rt::OpenPbrCoreMaterial parameters;
 };
 
 struct DiffuseLight {

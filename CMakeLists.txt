@@ -606,6 +606,14 @@ target_sources(test_optix_path_trace
 target_link_libraries(test_optix_path_trace PRIVATE realtime_gpu)
 add_test(NAME test_optix_path_trace COMMAND test_optix_path_trace)
 
+add_executable(test_openpbr_render_path)
+target_sources(test_openpbr_render_path
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_openpbr_render_path.cpp
+)
+target_link_libraries(test_openpbr_render_path PRIVATE realtime_gpu)
+add_test(NAME test_openpbr_render_path COMMAND test_openpbr_render_path)
+
 add_executable(test_optix_profiled_render)
 target_sources(test_optix_profiled_render
     PRIVATE

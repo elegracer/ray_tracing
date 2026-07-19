@@ -14,15 +14,18 @@ void expect_vec3f_near(const Eigen::Vector3f& actual, const Eigen::Vector3f& exp
     }
 }
 
-}  // namespace
+} // namespace
 
 int main() {
     rt::SceneDescription scene;
     scene.background = Eigen::Vector3d {0.1, 0.2, 0.3};
 
-    const int red = scene.add_texture(rt::ConstantColorTextureDesc {.color = Eigen::Vector3d {0.8, 0.1, 0.2}});
-    const int blue = scene.add_texture(rt::ConstantColorTextureDesc {.color = Eigen::Vector3d {0.1, 0.2, 0.8}});
-    const int checker = scene.add_texture(rt::CheckerTextureDesc {.scale = 3.5, .even_texture = red, .odd_texture = blue});
+    const int red =
+        scene.add_texture(rt::ConstantColorTextureDesc {.color = Eigen::Vector3d {0.8, 0.1, 0.2}});
+    const int blue =
+        scene.add_texture(rt::ConstantColorTextureDesc {.color = Eigen::Vector3d {0.1, 0.2, 0.8}});
+    const int checker = scene.add_texture(
+        rt::CheckerTextureDesc {.scale = 3.5, .even_texture = red, .odd_texture = blue});
     const int image = scene.add_texture(rt::ImageTextureDesc {.path = "missing-test-texture.png"});
     const int noise = scene.add_texture(rt::NoiseTextureDesc {.scale = 9.0});
 
@@ -31,6 +34,11 @@ int main() {
     const int dielectric = scene.add_material(rt::DielectricMaterial {.ior = 1.33});
     const int light = scene.add_material(rt::DiffuseLightMaterial {.emission_texture = blue});
     const int volume = scene.add_material(rt::IsotropicVolumeMaterial {.albedo_texture = noise});
+    rt::OpenPbrCoreMaterial openpbr_parameters;
+    openpbr_parameters.base_color = {0.25f, 0.5f, 0.75f};
+    openpbr_parameters.specular_weight = 0.0f;
+    const int openpbr =
+        scene.add_material(rt::OpenPbrMaterialDesc {.parameters = openpbr_parameters});
 
     scene.add_sphere(rt::SpherePrimitive {
         lambertian,
@@ -71,27 +79,35 @@ int main() {
     expect_true(prepared.triangles.size() == 1, "triangle count");
     expect_true(prepared.media.size() == 1, "medium count");
     expect_true(prepared.textures.size() == 5, "texture count");
-    expect_true(prepared.materials.size() == 5, "material count");
+    expect_true(prepared.materials.size() == 6, "material count");
     expect_true(prepared.image_texels.empty(), "missing image texture produces no texels");
 
     expect_vec3f_near(prepared.spheres[0].center,
-        rt::legacy_renderer_to_world(Eigen::Vector3d {1.0, 2.0, -3.0}).cast<float>(), 1e-6f, "sphere center");
+        rt::legacy_renderer_to_world(Eigen::Vector3d {1.0, 2.0, -3.0}).cast<float>(), 1e-6f,
+        "sphere center");
     expect_near(prepared.spheres[0].radius, 0.75, 1e-6, "sphere radius");
     expect_true(prepared.spheres[0].material_index == lambertian, "sphere material");
 
-    expect_vec3f_near(prepared.quads[0].origin, Eigen::Vector3f {1.0f, 2.0f, 3.0f}, 1e-6f, "quad origin");
-    expect_vec3f_near(prepared.quads[0].edge_u, Eigen::Vector3f {4.0f, 5.0f, 6.0f}, 1e-6f, "quad edge u");
-    expect_vec3f_near(prepared.quads[0].edge_v, Eigen::Vector3f {7.0f, 8.0f, 9.0f}, 1e-6f, "quad edge v");
+    expect_vec3f_near(prepared.quads[0].origin, Eigen::Vector3f {1.0f, 2.0f, 3.0f}, 1e-6f,
+        "quad origin");
+    expect_vec3f_near(prepared.quads[0].edge_u, Eigen::Vector3f {4.0f, 5.0f, 6.0f}, 1e-6f,
+        "quad edge u");
+    expect_vec3f_near(prepared.quads[0].edge_v, Eigen::Vector3f {7.0f, 8.0f, 9.0f}, 1e-6f,
+        "quad edge v");
     expect_true(prepared.quads[0].material_index == light, "quad material");
 
-    expect_vec3f_near(prepared.triangles[0].p0, Eigen::Vector3f {1.0f, 0.0f, 0.0f}, 1e-6f, "triangle p0");
-    expect_vec3f_near(prepared.triangles[0].p1, Eigen::Vector3f {0.0f, 1.0f, 0.0f}, 1e-6f, "triangle p1");
-    expect_vec3f_near(prepared.triangles[0].p2, Eigen::Vector3f {0.0f, 0.0f, 1.0f}, 1e-6f, "triangle p2");
+    expect_vec3f_near(prepared.triangles[0].p0, Eigen::Vector3f {1.0f, 0.0f, 0.0f}, 1e-6f,
+        "triangle p0");
+    expect_vec3f_near(prepared.triangles[0].p1, Eigen::Vector3f {0.0f, 1.0f, 0.0f}, 1e-6f,
+        "triangle p1");
+    expect_vec3f_near(prepared.triangles[0].p2, Eigen::Vector3f {0.0f, 0.0f, 1.0f}, 1e-6f,
+        "triangle p2");
     expect_true(prepared.triangles[0].material_index == metal, "triangle material");
 
-    expect_vec3f_near(prepared.media[0].local_center_or_min, Eigen::Vector3f {-1.0f, -2.0f, -3.0f}, 1e-6f,
-        "medium min");
-    expect_vec3f_near(prepared.media[0].local_max, Eigen::Vector3f {1.0f, 2.0f, 3.0f}, 1e-6f, "medium max");
+    expect_vec3f_near(prepared.media[0].local_center_or_min, Eigen::Vector3f {-1.0f, -2.0f, -3.0f},
+        1e-6f, "medium min");
+    expect_vec3f_near(prepared.media[0].local_max, Eigen::Vector3f {1.0f, 2.0f, 3.0f}, 1e-6f,
+        "medium max");
     expect_near(prepared.media[0].density, 0.7, 1e-6, "medium density");
     expect_true(prepared.media[0].boundary_type == 1, "medium boundary");
     expect_true(prepared.media[0].material_index == volume, "medium material");
@@ -107,9 +123,17 @@ int main() {
     expect_true(prepared.materials[3].emission_texture == blue, "light texture");
     expect_true(prepared.materials[4].type == 4, "volume type");
     expect_true(prepared.materials[4].albedo_texture == noise, "volume texture");
+    expect_true(prepared.materials[5].type == 5, "OpenPBR type");
+    expect_true(prepared.materials[5].openpbr_index == 0, "OpenPBR sidecar index");
+    expect_true(prepared.openpbr_materials.size() == 1, "OpenPBR sidecar count");
+    expect_near(prepared.openpbr_materials[0].base_color.x, 0.25, 1e-6, "OpenPBR base color");
+    expect_true(openpbr == 5, "OpenPBR material index");
+    expect_true(sizeof(rt::MaterialSample) <= 24,
+        "legacy material samples remain compact after OpenPBR integration");
 
     expect_true(prepared.textures[0].type == 0, "constant texture type");
-    expect_vec3f_near(prepared.textures[0].color, Eigen::Vector3f {0.8f, 0.1f, 0.2f}, 1e-6f, "constant color");
+    expect_vec3f_near(prepared.textures[0].color, Eigen::Vector3f {0.8f, 0.1f, 0.2f}, 1e-6f,
+        "constant color");
     expect_true(prepared.textures[2].type == 1, "checker texture type");
     expect_near(prepared.textures[2].scale, 3.5, 1e-6, "checker scale");
     expect_true(prepared.textures[2].even_texture == red, "checker even");

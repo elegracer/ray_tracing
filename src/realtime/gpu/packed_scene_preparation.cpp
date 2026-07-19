@@ -49,7 +49,8 @@ PackedMedium pack_medium(const HomogeneousMediumPrimitive& medium) {
     };
 }
 
-MaterialSample pack_material(const MaterialDesc& material) {
+MaterialSample pack_material(const MaterialDesc& material,
+    std::vector<OpenPbrCoreMaterial>& openpbr_materials) {
     MaterialSample sample {};
     std::visit(
         [&](const auto& value) {
@@ -70,6 +71,10 @@ MaterialSample pack_material(const MaterialDesc& material) {
             } else if constexpr (std::is_same_v<T, IsotropicVolumeMaterial>) {
                 sample.albedo_texture = value.albedo_texture;
                 sample.type = 4;
+            } else if constexpr (std::is_same_v<T, OpenPbrMaterialDesc>) {
+                sample.openpbr_index = static_cast<int>(openpbr_materials.size());
+                openpbr_materials.push_back(value.parameters);
+                sample.type = 5;
             }
         },
         material);
@@ -79,7 +84,8 @@ MaterialSample pack_material(const MaterialDesc& material) {
 cv::Mat load_texture_image_rgb32f(const std::string& path) {
     cv::Mat bgr = cv::imread(path, cv::IMREAD_COLOR);
     if (bgr.empty()) {
-        const std::array<std::string, 2> fallbacks {std::string("../") + path, std::string("../../") + path};
+        const std::array<std::string, 2> fallbacks {std::string("../") + path,
+            std::string("../../") + path};
         for (const std::string& fallback : fallbacks) {
             bgr = cv::imread(fallback, cv::IMREAD_COLOR);
             if (!bgr.empty()) {
@@ -120,7 +126,8 @@ PackedTexture pack_texture(const TextureDesc& texture, std::vector<Eigen::Vector
                 }
                 packed.image_width = image.cols;
                 packed.image_height = image.rows;
-                image_texels.reserve(image_texels.size() + static_cast<std::size_t>(image.cols * image.rows));
+                image_texels.reserve(
+                    image_texels.size() + static_cast<std::size_t>(image.cols * image.rows));
                 for (int y = 0; y < image.rows; ++y) {
                     for (int x = 0; x < image.cols; ++x) {
                         const cv::Vec3f pixel = image.at<cv::Vec3f>(y, x);
@@ -136,7 +143,7 @@ PackedTexture pack_texture(const TextureDesc& texture, std::vector<Eigen::Vector
     return packed;
 }
 
-}  // namespace
+} // namespace
 
 GpuPreparedScene prepare_gpu_scene(const PackedScene& scene) {
     GpuPreparedScene prepared {};
@@ -164,7 +171,7 @@ GpuPreparedScene prepare_gpu_scene(const PackedScene& scene) {
 
     prepared.materials.reserve(scene.materials.size());
     for (const MaterialDesc& material : scene.materials) {
-        prepared.materials.push_back(pack_material(material));
+        prepared.materials.push_back(pack_material(material, prepared.openpbr_materials));
     }
 
     prepared.textures.reserve(scene.textures.size());
@@ -175,4 +182,4 @@ GpuPreparedScene prepare_gpu_scene(const PackedScene& scene) {
     return prepared;
 }
 
-}  // namespace rt
+} // namespace rt

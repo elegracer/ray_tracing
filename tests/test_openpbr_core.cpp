@@ -87,6 +87,21 @@ void test_scene_contract_mapping() {
     expect_vec_near(material.emission_color, {1.2f, 0.6f, 0.3f}, 1e-6, "emission color");
     expect_near(material.geometry_opacity, 0.75, 1e-6, "opacity");
     expect_true(material.geometry_thin_walled == 1, "thin-walled maps to the core flag");
+
+    authored.connections.push_back(rt::scene::SceneMaterialConnection {
+        .input_name = "base_color",
+        .input_type = rt::scene::SceneMaterialValueType::color3,
+        .texture_path = "/World/Textures/Color",
+    });
+    bool rejected_connection = false;
+    try {
+        (void)rt::scene::compile_openpbr_core_material(authored);
+    } catch (const std::invalid_argument& ex) {
+        rejected_connection =
+            std::string {ex.what()}
+            == "OpenPBR production core does not yet support connected material inputs";
+    }
+    expect_true(rejected_connection, "connected inputs fail instead of being ignored");
 }
 
 void test_frame_normal_and_tangent_semantics() {

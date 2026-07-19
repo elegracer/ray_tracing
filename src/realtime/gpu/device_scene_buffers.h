@@ -5,7 +5,7 @@
 namespace rt {
 
 class DeviceSceneBuffers {
-   public:
+public:
     DeviceSceneBuffers() = default;
     ~DeviceSceneBuffers();
 
@@ -18,7 +18,7 @@ class DeviceSceneBuffers {
     void reset();
     DeviceSceneView view() const;
 
-   private:
+private:
     PackedSphere* spheres_ = nullptr;
     PackedQuad* quads_ = nullptr;
     PackedTriangle* triangles_ = nullptr;
@@ -26,6 +26,7 @@ class DeviceSceneBuffers {
     PackedTexture* textures_ = nullptr;
     Eigen::Vector3f* image_texels_ = nullptr;
     MaterialSample* materials_ = nullptr;
+    OpenPbrCoreMaterial* openpbr_materials_ = nullptr;
     int sphere_count_ = 0;
     int quad_count_ = 0;
     int triangle_count_ = 0;
@@ -33,6 +34,7 @@ class DeviceSceneBuffers {
     int texture_count_ = 0;
     int image_texel_count_ = 0;
     int material_count_ = 0;
+    int openpbr_material_count_ = 0;
 };
 
-}  // namespace rt
+} // namespace rt

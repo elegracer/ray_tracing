@@ -1,7 +1,9 @@
 #include "scene/realtime_scene_adapter.h"
 
+#include "scene/openpbr_core_adapter.h"
 #include "scene/scene_ir_validator.h"
 
+#include <optional>
 #include <stdexcept>
 #include <type_traits>
 #include <vector>
@@ -61,7 +63,8 @@ rt::MaterialDesc adapt_material(const scene::MaterialDesc& material) {
         material);
 }
 
-void add_box_quads(rt::SceneDescription& out, int material_index, const BoxShape& box, const Transform& transform) {
+void add_box_quads(rt::SceneDescription& out, int material_index, const BoxShape& box,
+    const Transform& transform) {
     const Eigen::Vector3d p000 {box.min_corner.x(), box.min_corner.y(), box.min_corner.z()};
     const Eigen::Vector3d p001 {box.min_corner.x(), box.min_corner.y(), box.max_corner.z()};
     const Eigen::Vector3d p010 {box.min_corner.x(), box.max_corner.y(), box.min_corner.z()};
@@ -71,7 +74,8 @@ void add_box_quads(rt::SceneDescription& out, int material_index, const BoxShape
     const Eigen::Vector3d p110 {box.max_corner.x(), box.max_corner.y(), box.min_corner.z()};
     const Eigen::Vector3d p111 {box.max_corner.x(), box.max_corner.y(), box.max_corner.z()};
 
-    const auto add_face = [&](const Eigen::Vector3d& origin, const Eigen::Vector3d& edge_u, const Eigen::Vector3d& edge_v) {
+    const auto add_face = [&](const Eigen::Vector3d& origin, const Eigen::Vector3d& edge_u,
+                              const Eigen::Vector3d& edge_v) {
         out.add_quad(QuadPrimitive {
             .material_index = material_index,
             .origin = transform_point(transform, origin),
@@ -89,9 +93,10 @@ void add_box_quads(rt::SceneDescription& out, int material_index, const BoxShape
     add_face(p000, p100 - p000, p001 - p000);
 }
 
-}  // namespace
+} // namespace
 
-rt::SceneDescription adapt_to_realtime(const SceneIR& scene) {
+rt::SceneDescription adapt_to_realtime_impl(const SceneIR& scene,
+    const std::vector<std::optional<OpenPbrCoreMaterial>>* openpbr_materials) {
     validate_scene_ir(scene);
 
     rt::SceneDescription out;
@@ -99,7 +104,23 @@ rt::SceneDescription adapt_to_realtime(const SceneIR& scene) {
     for (const scene::TextureDesc& texture : scene.textures()) {
         out.add_texture(adapt_texture(texture));
     }
-    for (const scene::MaterialDesc& material : scene.materials()) {
+    for (std::size_t material_index = 0; material_index < scene.materials().size();
+         ++material_index) {
+        const scene::MaterialDesc& material = scene.materials()[material_index];
+        if (openpbr_materials != nullptr && (*openpbr_materials)[material_index]) {
+            if (std::holds_alternative<scene::IsotropicVolumeMaterial>(material)) {
+                throw std::invalid_argument(
+                    "SceneIR v2 surface material cannot replace a compatibility volume");
+            }
+            out.add_material(rt::OpenPbrMaterialDesc {
+                .parameters = *(*openpbr_materials)[material_index],
+            });
+            continue;
+        }
+        if (openpbr_materials != nullptr
+            && !std::holds_alternative<scene::IsotropicVolumeMaterial>(material)) {
+            throw std::invalid_argument("SceneIR v2 compatibility surface must compile to OpenPBR");
+        }
         out.add_material(adapt_material(material));
     }
 
@@ -165,9 +186,11 @@ rt::SceneDescription adapt_to_realtime(const SceneIR& scene) {
                     packed.local_center_or_min = desc.min_corner;
                     packed.local_max = desc.max_corner;
                 } else if constexpr (std::is_same_v<T, QuadShape>) {
-                    throw std::invalid_argument("quad boundaries are unsupported for homogeneous media");
+                    throw std::invalid_argument(
+                        "quad boundaries are unsupported for homogeneous media");
                 } else if constexpr (std::is_same_v<T, TriangleMeshShape>) {
-                    throw std::invalid_argument("triangle mesh boundaries are unsupported for homogeneous media");
+                    throw std::invalid_argument(
+                        "triangle mesh boundaries are unsupported for homogeneous media");
                 } else {
                     static_assert(std::is_same_v<T, void>, "unsupported medium shape");
                 }
@@ -179,4 +202,15 @@ rt::SceneDescription adapt_to_realtime(const SceneIR& scene) {
     return out;
 }
 
-}  // namespace rt::scene
+rt::SceneDescription adapt_to_realtime(const SceneIR& scene) {
+    return adapt_to_realtime_impl(scene, nullptr);
+}
+
+rt::SceneDescription adapt_to_realtime_openpbr(const SceneIR& compatibility_scene,
+    const SceneIRv2& scene_v2) {
+    const auto materials =
+        compile_openpbr_core_material_table(scene_v2, compatibility_scene.materials().size());
+    return adapt_to_realtime_impl(compatibility_scene, &materials);
+}
+
+} // namespace rt::scene

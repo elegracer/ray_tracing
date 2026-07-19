@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-07-19)
 ## Current Position
 
 Phase: 3 of 6 — OpenPBR Core And Physical BSDFs
-Plan: PBR-01 authoring semantics and USD-05 compatibility projection are complete; implement the PBR-02 core evaluator and physical gates before scalable light reuse
+Plan: PBR-01/02 authoring and shared core behavior plus the opt-in constant-material production path are complete; implement PBR-04 connected texture/color execution before PBR-05 compatibility images
 Status: Active milestone, Phase 3 in progress
-Last activity: 2026-07-19 - Added the OpenPBR 1.1.1/MaterialX material and texture contract with all legacy projections
+Last activity: 2026-07-19 - Wired constant SceneIR v2 OpenPBR materials through CPU and GPU rendering with a deterministic cross-backend gate
 
-Progress: [##--------] 20% OpenPBR requirements; PBR-01 complete, PBR-02/04/05 remain and PBR-03 stays gated to Phase 4
+Progress: [####------] 40% OpenPBR requirements; PBR-01/02 complete, PBR-04/05 remain and PBR-03 stays gated to Phase 4
 
 ## v2.0 Phase 1 Evidence
 
@@ -76,6 +76,16 @@ The existing flat `SceneIR` remains the current CPU/GPU execution model. `compil
 
 `SceneOpenPbrSurface` now pins the official OpenPBR 1.1.1 MaterialX nodedef names, types, and defaults across base, specular, transmission, subsurface, fuzz, coat, thin-film, emission, and geometry inputs. Typed connections resolve through validated MaterialX `constant`, `checkerboard`, `image`, and `noise3d` color3 nodedefs with explicit UV, wrap/filter, output, and color-space semantics; scalar/vector displacement remains an explicit companion shader and layered energy conservation is part of the authored contract. The compatibility compiler deterministically maps diffuse, metal, dielectric, emissive, and isotropic-volume materials plus every legacy texture variant, retains raw image-byte behavior explicitly, and leaves the v1 CPU/OptiX execution path unchanged. Focused defaults, projection, rejection, reference, HDR, color-space, and backend-capability tests pass within the full 57/57 suite. This closes USD-05 and PBR-01; PBR-02 evaluator behavior and PBR-05 compatibility images remain open.
 
+## v2.0 Phase 3 Evidence
+
+`OpenPbrCoreMaterial` now crosses the production boundary through explicit `adapt_to_cpu_openpbr` and `adapt_to_realtime_openpbr` entry points. Both consume the same SceneIR v2 compatibility material table; missing or duplicate identities, surface/volume mismatches, connected inputs, displacement, scattering/dispersion, and active Phase-4 lobes fail explicitly rather than rendering with ignored parameters. The legacy adapters and default scene factory remain unchanged.
+
+The CPU material and GPU path tracer call the shared OpenPBR emission, evaluate, and sample/PDF implementation. GPU direct lighting evaluates the OpenPBR BSDF and recognizes OpenPBR emissive geometry. Full parameter blocks live in an opt-in sidecar buffer while the common `MaterialSample` remains at most 24 bytes, preventing every legacy hit from carrying the OpenPBR block.
+
+The deterministic 64x64 reference gate hits and scatters the same SceneIR v2 material on CPU, renders it through `OptixRenderer`, and bounds linear RGB disagreement to `5e-4`; separate scenes prove non-Lambertian direct response and OpenPBR emissive-light participation. The focused production-path gate passes five consecutive runs. The full suite contains 60 tests after this slice.
+
+Two fixed-seed default `smoke` captures used four 640x480 cameras, eight warmup frames, 100 measured frames, realtime profile, and no image writes on RTX 3090. They measured `29.996 ms / 33.34 FPS` and `28.022 ms / 35.69 FPS`, compared with the preceding same-protocol `29.1951/29.7210 ms` records. This is no-regression evidence, not a new uplift claim; one run contained system-noise P99 spikes while the second P99 was `32.309 ms`.
+
 ## Performance Metrics
 
 **Velocity:**
@@ -124,7 +134,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- Implement the first shared CPU/GPU OpenPBR evaluator slice with matched evaluate/sample/PDF behavior for base, specular, transmission, emission, opacity, thin-walled, normal, and tangent inputs, then gate it with finite-radiance, PDF-normalization, energy, and CPU/GPU agreement tests.
+- Evaluate supported SceneIR v2 MaterialX color3 connections in the shared CPU/GPU compiler with explicit source-to-linear color conversion, then add legacy compatibility images and lossy-mapping diagnostics.
 
 ### Blockers/Concerns
 
@@ -135,6 +145,7 @@ Recent decisions affecting current work:
 - Single-run P99 varied materially across repeated captures, so future speed claims need repeated identical runs in addition to the now-recorded workload and environment.
 - CUDA memory telemetry is device-global rather than per-process; concurrent GPU workloads can perturb baseline and peak values.
 - OpenUSD and MaterialX SDK dependencies are not yet present; add them only at the Phase 4 boundary after `SceneIR v2` is stable.
+- Direct-light sampling still uses the existing center/nearest-point heuristic without solid-angle/area PDFs or MIS. OpenPBR surfaces now use the shared BSDF response and emissive materials participate, but unbiased light transport remains a Phase 5 gate before ReSTIR DI.
 - The current `gpt-5.6-*` Codex IDE route still returns HTTP 404 from the built-in web tool. This is not a renderer delivery blocker: bounded public research uses direct read-only HTTP against official primary sources and records the pinned source revision. Do not spend renderer goal turns repairing host search unless the user explicitly reopens that task.
 
 ## Deferred Items
@@ -151,5 +162,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-07-19
-Stopped at: Phase 2 and PBR-01 are closed by the OpenPBR 1.1.1/MaterialX SceneIR v2 contract and all legacy material/texture projections with 57/57 tests; the shared PBR-02 evaluator is next
+Stopped at: PBR-01/02 and the opt-in constant-material production path are closed with shared CPU/GPU sampling, direct lighting, emission, compact sidecar storage, a `5e-4` linear reference bound, 60 tests, and two no-regression benchmark captures; PBR-04 connected texture/color execution is next
 Resume file: .planning/milestones/v2.0-REQUIREMENTS.md

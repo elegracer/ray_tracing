@@ -27,6 +27,7 @@ struct HitInfo {
     float3 emission = make_float3(0.0f, 0.0f, 0.0f);
     float fuzz = 0.0f;
     float ior = 1.0f;
+    int openpbr_index = -1;
     int material_type = 0;
     bool front_face = true;
 };
@@ -99,6 +100,14 @@ __device__ float3 random_unit_vector(std::uint32_t& rng) {
 __device__ float3 vector3f_to_float3(const Eigen::Vector3f& v) {
     const float* ptr = v.data();
     return make_float3(ptr[0], ptr[1], ptr[2]);
+}
+
+__device__ OpenPbrVec3 to_openpbr_vec3(const float3& value) {
+    return {value.x, value.y, value.z};
+}
+
+__device__ float3 from_openpbr_vec3(const OpenPbrVec3& value) {
+    return make_float3(value.x, value.y, value.z);
 }
 
 __device__ float3 packed_medium_world_to_local_point(const PackedMedium& medium,
@@ -478,10 +487,12 @@ __device__ void populate_material(const DeviceSceneView& scene, int material_ind
         hit.material_type = 0;
         hit.ior = 1.0f;
         hit.fuzz = 0.0f;
+        hit.openpbr_index = -1;
         return;
     }
 
     const MaterialSample& material = scene.materials[material_index];
+    hit.openpbr_index = material.openpbr_index;
     hit.material_type = material.type;
     hit.fuzz = material.fuzz;
     hit.ior = material.ior;
@@ -499,6 +510,72 @@ __device__ void populate_material(const DeviceSceneView& scene, int material_ind
     if (hit.material_type != 3) {
         hit.emission = make_float3(0.0f, 0.0f, 0.0f);
     }
+    if (hit.material_type == 5) {
+        if (material.openpbr_index < 0 || material.openpbr_index >= scene.openpbr_material_count
+            || scene.openpbr_materials == nullptr) {
+            hit.material_type = -1;
+            hit.base_color = make_float3(0.0f, 0.0f, 0.0f);
+            hit.emission = make_float3(0.0f, 0.0f, 0.0f);
+            return;
+        }
+        const OpenPbrCoreMaterial& parameters = scene.openpbr_materials[material.openpbr_index];
+        hit.base_color = from_openpbr_vec3(parameters.base_color);
+        hit.emission = from_openpbr_vec3(emission_openpbr_core(parameters));
+    }
+}
+
+__device__ const OpenPbrCoreMaterial* resolve_openpbr_material(const DeviceSceneView& scene,
+    int openpbr_index) {
+    if (openpbr_index < 0 || openpbr_index >= scene.openpbr_material_count
+        || scene.openpbr_materials == nullptr) {
+        return nullptr;
+    }
+    return &scene.openpbr_materials[openpbr_index];
+}
+
+__device__ const OpenPbrCoreMaterial* resolve_openpbr_material(const DeviceSceneView& scene,
+    const MaterialSample& material) {
+    return material.type == 5 ? resolve_openpbr_material(scene, material.openpbr_index) : nullptr;
+}
+
+__device__ bool material_is_emissive(const DeviceSceneView& scene, const MaterialSample& material) {
+    if (material.type == 3) {
+        return true;
+    }
+    const OpenPbrCoreMaterial* parameters = resolve_openpbr_material(scene, material);
+    if (parameters == nullptr) {
+        return false;
+    }
+    const OpenPbrVec3 emission = emission_openpbr_core(*parameters);
+    return emission.x > 0.0f || emission.y > 0.0f || emission.z > 0.0f;
+}
+
+__device__ float3 evaluate_material_emission(const DeviceSceneView& scene,
+    const MaterialSample& material, float tex_u, float tex_v, const float3& position) {
+    if (material.type == 5) {
+        const OpenPbrCoreMaterial* parameters = resolve_openpbr_material(scene, material);
+        return parameters == nullptr ? make_float3(0.0f, 0.0f, 0.0f)
+                                     : from_openpbr_vec3(emission_openpbr_core(*parameters));
+    }
+    return evaluate_texture(scene, material.emission_texture, tex_u, tex_v, position);
+}
+
+__device__ float3 direct_material_response(const DeviceSceneView& scene, const HitInfo& hit,
+    const PathState& state, const float3& light_direction, float legacy_directional_pdf) {
+    if (hit.material_type != 5) {
+        return mul3(hit.base_color, legacy_directional_pdf);
+    }
+    const OpenPbrCoreMaterial* parameters = resolve_openpbr_material(scene, hit.openpbr_index);
+    if (parameters == nullptr) {
+        return make_float3(0.0f, 0.0f, 0.0f);
+    }
+    const OpenPbrFrame frame =
+        make_openpbr_frame(to_openpbr_vec3(hit.geometric_normal), OpenPbrVec3 {});
+    const OpenPbrEvaluation evaluation = evaluate_openpbr_core(*parameters, frame,
+        to_openpbr_vec3(mul3(normalize3(state.ray.direction), -1.0f)),
+        to_openpbr_vec3(light_direction));
+    const float cosine = fabsf(dot3(hit.shading_normal, light_direction));
+    return mul3(from_openpbr_vec3(evaluation.value), cosine);
 }
 
 __device__ bool hit_medium_boundary(const PackedMedium& medium, const Ray& ray, float t_min,
@@ -1069,7 +1146,7 @@ __device__ void accumulate_direct_light(const LaunchParams& params, const HitInf
             continue;
         }
         const MaterialSample& material = params.scene.materials[sphere.material_index];
-        if (material.type != 3) {
+        if (!material_is_emissive(params.scene, material)) {
             continue;
         }
         const float3 light_pos = sample_sphere_light_point(sphere, surface_point);
@@ -1078,7 +1155,7 @@ __device__ void accumulate_direct_light(const LaunchParams& params, const HitInf
         float light_v = 0.0f;
         sphere_uv(normalize3(sub3(light_pos, center)), light_u, light_v);
         const float3 emission =
-            evaluate_texture(params.scene, material.emission_texture, light_u, light_v, light_pos);
+            evaluate_material_emission(params.scene, material, light_u, light_v, light_pos);
         const float3 to_light = sub3(light_pos, surface_point);
         const float dist_sq = fmaxf(length_sq3(to_light), 1e-6f);
         const float dist = sqrtf(dist_sq);
@@ -1095,8 +1172,10 @@ __device__ void accumulate_direct_light(const LaunchParams& params, const HitInf
         if (is_occluded(params.scene, shadow_ray, dist - kRayEpsilon)) {
             continue;
         }
-        const float attenuation = kShadowScale * n_dot_l / dist_sq;
-        direct = add3(direct, mul3(emission, attenuation));
+        const float attenuation = kShadowScale / dist_sq;
+        direct = add3(direct, mul3(mul3(emission, direct_material_response(params.scene, hit, state,
+                                                      light_dir, n_dot_l)),
+                                  attenuation));
     }
 
     for (int i = 0; i < params.scene.quad_count; ++i) {
@@ -1105,7 +1184,7 @@ __device__ void accumulate_direct_light(const LaunchParams& params, const HitInf
             continue;
         }
         const MaterialSample& material = params.scene.materials[quad.material_index];
-        if (material.type != 3) {
+        if (!material_is_emissive(params.scene, material)) {
             continue;
         }
         const float3 origin = vector3f_to_float3(quad.origin);
@@ -1113,7 +1192,7 @@ __device__ void accumulate_direct_light(const LaunchParams& params, const HitInf
         const float3 edge_v = vector3f_to_float3(quad.edge_v);
         const float3 light_pos = add3(origin, mul3(add3(edge_u, edge_v), 0.5f));
         const float3 emission =
-            evaluate_texture(params.scene, material.emission_texture, 0.5f, 0.5f, light_pos);
+            evaluate_material_emission(params.scene, material, 0.5f, 0.5f, light_pos);
         const float3 to_light = sub3(light_pos, surface_point);
         const float dist_sq = fmaxf(length_sq3(to_light), 1e-6f);
         const float dist = sqrtf(dist_sq);
@@ -1134,8 +1213,10 @@ __device__ void accumulate_direct_light(const LaunchParams& params, const HitInf
         if (is_occluded(params.scene, shadow_ray, dist - kRayEpsilon)) {
             continue;
         }
-        const float attenuation = kShadowScale * n_dot_l / dist_sq;
-        direct = add3(direct, mul3(emission, attenuation));
+        const float attenuation = kShadowScale / dist_sq;
+        direct = add3(direct, mul3(mul3(emission, direct_material_response(params.scene, hit, state,
+                                                      light_dir, n_dot_l)),
+                                  attenuation));
     }
 
     for (int i = 0; i < params.scene.triangle_count; ++i) {
@@ -1144,7 +1225,7 @@ __device__ void accumulate_direct_light(const LaunchParams& params, const HitInf
             continue;
         }
         const MaterialSample& material = params.scene.materials[triangle.material_index];
-        if (material.type != 3) {
+        if (!material_is_emissive(params.scene, material)) {
             continue;
         }
         const float3 p0 = vector3f_to_float3(triangle.p0);
@@ -1153,8 +1234,8 @@ __device__ void accumulate_direct_light(const LaunchParams& params, const HitInf
         const float3 edge1 = sub3(p1, p0);
         const float3 edge2 = sub3(p2, p0);
         const float3 light_pos = div3(add3(add3(p0, p1), p2), 3.0f);
-        const float3 emission = evaluate_texture(params.scene, material.emission_texture,
-            1.0f / 3.0f, 1.0f / 3.0f, light_pos);
+        const float3 emission =
+            evaluate_material_emission(params.scene, material, 1.0f / 3.0f, 1.0f / 3.0f, light_pos);
         const float3 to_light = sub3(light_pos, surface_point);
         const float dist_sq = fmaxf(length_sq3(to_light), 1e-6f);
         const float dist = sqrtf(dist_sq);
@@ -1175,14 +1256,16 @@ __device__ void accumulate_direct_light(const LaunchParams& params, const HitInf
         if (is_occluded(params.scene, shadow_ray, dist - kRayEpsilon)) {
             continue;
         }
-        const float attenuation = kShadowScale * n_dot_l / dist_sq;
-        direct = add3(direct, mul3(emission, attenuation));
+        const float attenuation = kShadowScale / dist_sq;
+        direct = add3(direct, mul3(mul3(emission, direct_material_response(params.scene, hit, state,
+                                                      light_dir, n_dot_l)),
+                                  attenuation));
     }
 
-    state.radiance = add3(state.radiance, mul3(state.throughput, mul3(hit.base_color, direct)));
+    state.radiance = add3(state.radiance, mul3(state.throughput, direct));
 }
 
-__device__ void sample_bsdf(const LaunchParams&, const HitInfo& hit, std::uint32_t& rng,
+__device__ void sample_bsdf(const LaunchParams& params, const HitInfo& hit, std::uint32_t& rng,
     PathState& state) {
     if (!state.alive) {
         return;
@@ -1234,6 +1317,29 @@ __device__ void sample_bsdf(const LaunchParams&, const HitInfo& hit, std::uint32
         state.ray.origin = add3(hit.position, mul3(direction, kRayEpsilon));
         state.ray.direction = normalize3(direction);
         state.throughput = mul3(state.throughput, hit.base_color);
+        return;
+    }
+
+    if (hit.material_type == 5) {
+        const OpenPbrCoreMaterial* parameters =
+            resolve_openpbr_material(params.scene, hit.openpbr_index);
+        if (parameters == nullptr) {
+            state.alive = false;
+            return;
+        }
+        const OpenPbrFrame frame =
+            make_openpbr_frame(to_openpbr_vec3(hit.geometric_normal), OpenPbrVec3 {});
+        const OpenPbrSample sample = sample_openpbr_core(*parameters, frame,
+            to_openpbr_vec3(mul3(normalize3(state.ray.direction), -1.0f)), random_float01(rng),
+            random_float01(rng), random_float01(rng));
+        if (sample.valid == 0) {
+            state.alive = false;
+            return;
+        }
+        const float3 direction = from_openpbr_vec3(sample.wi);
+        state.ray.origin = add3(hit.position, mul3(direction, kRayEpsilon));
+        state.ray.direction = normalize3(direction);
+        state.throughput = mul3(state.throughput, from_openpbr_vec3(sample.weight));
         return;
     }
 

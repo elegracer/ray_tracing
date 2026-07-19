@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/openpbr_core.h"
+
 #include <Eigen/Core>
 
 #include <string>
@@ -53,8 +55,12 @@ struct IsotropicVolumeMaterial {
     int albedo_texture = -1;
 };
 
-using MaterialDesc =
-    std::variant<LambertianMaterial, MetalMaterial, DielectricMaterial, DiffuseLightMaterial, IsotropicVolumeMaterial>;
+struct OpenPbrMaterialDesc {
+    OpenPbrCoreMaterial parameters;
+};
+
+using MaterialDesc = std::variant<LambertianMaterial, MetalMaterial, DielectricMaterial,
+    DiffuseLightMaterial, IsotropicVolumeMaterial, OpenPbrMaterialDesc>;
 
 struct SpherePrimitive {
     int material_index;
@@ -107,7 +113,7 @@ struct PackedScene {
 };
 
 class SceneDescription {
-   public:
+public:
     int add_texture(const TextureDesc& texture);
     int add_material(const MaterialDesc& material);
     void add_sphere(const SpherePrimitive& sphere);
@@ -119,7 +125,7 @@ class SceneDescription {
 
     Eigen::Vector3d background = Eigen::Vector3d::Zero();
 
-   private:
+private:
     std::vector<TextureDesc> textures_;
     std::vector<MaterialDesc> materials_;
     std::vector<SpherePrimitive> spheres_;
@@ -128,4 +134,4 @@ class SceneDescription {
     std::vector<HomogeneousMediumPrimitive> media_;
 };
 
-}  // namespace rt
+} // namespace rt

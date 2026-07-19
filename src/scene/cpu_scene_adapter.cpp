@@ -9,11 +9,13 @@
 #include "common/sphere.h"
 #include "common/texture.h"
 #include "common/triangle.h"
+#include "scene/openpbr_core_adapter.h"
 #include "scene/scene_ir_validator.h"
 
 #include <Eigen/Geometry>
 
 #include <cmath>
+#include <optional>
 #include <stdexcept>
 #include <type_traits>
 #include <vector>
@@ -31,10 +33,10 @@ double extract_y_rotation_degrees(const Eigen::Matrix3d& rotation) {
         return 0.0;
     }
 
-    const bool is_supported =
-        std::abs(rotation(0, 1)) <= kTol && std::abs(rotation(1, 0)) <= kTol
-        && std::abs(rotation(1, 2)) <= kTol && std::abs(rotation(2, 1)) <= kTol
-        && std::abs(rotation(1, 1) - 1.0) <= kTol;
+    const bool is_supported = std::abs(rotation(0, 1)) <= kTol && std::abs(rotation(1, 0)) <= kTol
+                              && std::abs(rotation(1, 2)) <= kTol
+                              && std::abs(rotation(2, 1)) <= kTol
+                              && std::abs(rotation(1, 1) - 1.0) <= kTol;
     if (!is_supported) {
         throw std::invalid_argument("unsupported transform rotation for CPU adapter");
     }
@@ -50,7 +52,7 @@ double extract_y_rotation_degrees(const Eigen::Matrix3d& rotation) {
 bool is_identity_transform(const Transform& transform) {
     constexpr double kTol = 1e-9;
     return transform.translation.norm() <= kTol
-        && (transform.rotation - Eigen::Matrix3d::Identity()).cwiseAbs().maxCoeff() <= kTol;
+           && (transform.rotation - Eigen::Matrix3d::Identity()).cwiseAbs().maxCoeff() <= kTol;
 }
 
 pro::proxy<Hittable> apply_transform(pro::proxy<Hittable> object, const Transform& transform) {
@@ -59,30 +61,31 @@ pro::proxy<Hittable> apply_transform(pro::proxy<Hittable> object, const Transfor
         object = pro::make_proxy_shared<Hittable, RotateY>(object, yaw_deg);
     }
     if (transform.translation.norm() > 1e-9) {
-        object = pro::make_proxy_shared<Hittable, Translate>(object, to_vec3(transform.translation));
+        object =
+            pro::make_proxy_shared<Hittable, Translate>(object, to_vec3(transform.translation));
     }
     return object;
 }
 
-pro::proxy<Hittable> make_shape_hittable(const ShapeDesc& shape, const pro::proxy<Material>& material) {
+pro::proxy<Hittable> make_shape_hittable(const ShapeDesc& shape,
+    const pro::proxy<Material>& material) {
     return std::visit(
         [&](const auto& desc) -> pro::proxy<Hittable> {
             using T = std::decay_t<decltype(desc)>;
             if constexpr (std::is_same_v<T, SphereShape>) {
-                return pro::make_proxy_shared<Hittable, Sphere>(to_vec3(desc.center), desc.radius, material);
+                return pro::make_proxy_shared<Hittable, Sphere>(to_vec3(desc.center), desc.radius,
+                    material);
             } else if constexpr (std::is_same_v<T, QuadShape>) {
-                return pro::make_proxy_shared<Hittable, Quad>(
-                    to_vec3(desc.origin), to_vec3(desc.edge_u), to_vec3(desc.edge_v), material);
+                return pro::make_proxy_shared<Hittable, Quad>(to_vec3(desc.origin),
+                    to_vec3(desc.edge_u), to_vec3(desc.edge_v), material);
             } else if constexpr (std::is_same_v<T, BoxShape>) {
                 return box(to_vec3(desc.min_corner), to_vec3(desc.max_corner), material);
             } else if constexpr (std::is_same_v<T, TriangleMeshShape>) {
                 HittableList mesh_world;
                 for (const Eigen::Vector3i& tri : desc.triangles) {
                     mesh_world.add(pro::make_proxy_shared<Hittable, Triangle>(
-                        to_vec3(desc.positions[tri.x()]),
-                        to_vec3(desc.positions[tri.y()]),
-                        to_vec3(desc.positions[tri.z()]),
-                        material));
+                        to_vec3(desc.positions[tri.x()]), to_vec3(desc.positions[tri.y()]),
+                        to_vec3(desc.positions[tri.z()]), material));
                 }
                 return pro::make_proxy_shared<Hittable, HittableList>(mesh_world);
             } else {
@@ -92,9 +95,10 @@ pro::proxy<Hittable> make_shape_hittable(const ShapeDesc& shape, const pro::prox
         shape);
 }
 
-}  // namespace
+} // namespace
 
-CpuSceneAdapterResult adapt_to_cpu(const SceneIR& scene) {
+CpuSceneAdapterResult adapt_to_cpu_impl(const SceneIR& scene,
+    const std::vector<std::optional<OpenPbrCoreMaterial>>* openpbr_materials) {
     validate_scene_ir(scene);
 
     const std::vector<TextureDesc>& texture_descs = scene.textures();
@@ -107,8 +111,10 @@ CpuSceneAdapterResult adapt_to_cpu(const SceneIR& scene) {
                 if constexpr (std::is_same_v<T, ConstantColorTextureDesc>) {
                     return pro::make_proxy_shared<Texture, SolidColor>(to_vec3(desc.color));
                 } else if constexpr (std::is_same_v<T, CheckerTextureDesc>) {
-                    const pro::proxy<Texture>& even = textures[static_cast<std::size_t>(desc.even_texture)];
-                    const pro::proxy<Texture>& odd = textures[static_cast<std::size_t>(desc.odd_texture)];
+                    const pro::proxy<Texture>& even =
+                        textures[static_cast<std::size_t>(desc.even_texture)];
+                    const pro::proxy<Texture>& odd =
+                        textures[static_cast<std::size_t>(desc.odd_texture)];
                     return pro::make_proxy_shared<Texture, CheckerTexture>(desc.scale, even, odd);
                 } else if constexpr (std::is_same_v<T, ImageTextureDesc>) {
                     return pro::make_proxy_shared<Texture, ImageTexture>(desc.path);
@@ -125,27 +131,47 @@ CpuSceneAdapterResult adapt_to_cpu(const SceneIR& scene) {
     const std::vector<MaterialDesc>& material_descs = scene.materials();
     std::vector<pro::proxy<Material>> materials;
     materials.reserve(material_descs.size());
-    for (const MaterialDesc& material_desc : material_descs) {
+    for (std::size_t material_index = 0; material_index < material_descs.size(); ++material_index) {
+        const MaterialDesc& material_desc = material_descs[material_index];
+        if (openpbr_materials != nullptr && (*openpbr_materials)[material_index]) {
+            if (std::holds_alternative<IsotropicVolumeMaterial>(material_desc)) {
+                throw std::invalid_argument(
+                    "SceneIR v2 surface material cannot replace a compatibility volume");
+            }
+            materials.push_back(pro::make_proxy_shared<Material, OpenPbrSurfaceMaterial>(
+                *(*openpbr_materials)[material_index]));
+            continue;
+        }
+        if (openpbr_materials != nullptr
+            && !std::holds_alternative<IsotropicVolumeMaterial>(material_desc)) {
+            throw std::invalid_argument("SceneIR v2 compatibility surface must compile to OpenPBR");
+        }
         const pro::proxy<Material> material = std::visit(
             [&](const auto& desc) -> pro::proxy<Material> {
                 using T = std::decay_t<decltype(desc)>;
                 if constexpr (std::is_same_v<T, DiffuseMaterial>) {
-                    const pro::proxy<Texture>& albedo = textures[static_cast<std::size_t>(desc.albedo_texture)];
+                    const pro::proxy<Texture>& albedo =
+                        textures[static_cast<std::size_t>(desc.albedo_texture)];
                     return pro::make_proxy_shared<Material, Lambertion>(albedo);
                 } else if constexpr (std::is_same_v<T, MetalMaterial>) {
-                    const TextureDesc& texture_desc = texture_descs[static_cast<std::size_t>(desc.albedo_texture)];
+                    const TextureDesc& texture_desc =
+                        texture_descs[static_cast<std::size_t>(desc.albedo_texture)];
                     const auto* constant = std::get_if<ConstantColorTextureDesc>(&texture_desc);
                     if (constant == nullptr) {
-                        throw std::invalid_argument("metal material requires a constant-color texture");
+                        throw std::invalid_argument(
+                            "metal material requires a constant-color texture");
                     }
-                    return pro::make_proxy_shared<Material, Metal>(to_vec3(constant->color), desc.fuzz);
+                    return pro::make_proxy_shared<Material, Metal>(to_vec3(constant->color),
+                        desc.fuzz);
                 } else if constexpr (std::is_same_v<T, DielectricMaterial>) {
                     return pro::make_proxy_shared<Material, Dielectric>(desc.ior);
                 } else if constexpr (std::is_same_v<T, EmissiveMaterial>) {
-                    const pro::proxy<Texture>& emission = textures[static_cast<std::size_t>(desc.emission_texture)];
+                    const pro::proxy<Texture>& emission =
+                        textures[static_cast<std::size_t>(desc.emission_texture)];
                     return pro::make_proxy_shared<Material, DiffuseLight>(emission);
                 } else if constexpr (std::is_same_v<T, IsotropicVolumeMaterial>) {
-                    const pro::proxy<Texture>& albedo = textures[static_cast<std::size_t>(desc.albedo_texture)];
+                    const pro::proxy<Texture>& albedo =
+                        textures[static_cast<std::size_t>(desc.albedo_texture)];
                     return pro::make_proxy_shared<Material, Isotropic>(albedo);
                 } else {
                     static_assert(std::is_same_v<T, void>, "unsupported material type");
@@ -161,14 +187,23 @@ CpuSceneAdapterResult adapt_to_cpu(const SceneIR& scene) {
 
     for (const SurfaceInstance& instance : scene.surface_instances()) {
         const ShapeDesc& shape_desc = shape_descs[static_cast<std::size_t>(instance.shape_index)];
-        const MaterialDesc& material_desc = material_descs[static_cast<std::size_t>(instance.material_index)];
-        const pro::proxy<Material>& material = materials[static_cast<std::size_t>(instance.material_index)];
+        const MaterialDesc& material_desc =
+            material_descs[static_cast<std::size_t>(instance.material_index)];
+        const pro::proxy<Material>& material =
+            materials[static_cast<std::size_t>(instance.material_index)];
 
         pro::proxy<Hittable> object = make_shape_hittable(shape_desc, material);
         object = apply_transform(object, instance.transform);
         world.add(object);
 
-        if (std::holds_alternative<EmissiveMaterial>(material_desc) && is_identity_transform(instance.transform)) {
+        const bool openpbr_emissive =
+            openpbr_materials != nullptr
+            && (*openpbr_materials)[static_cast<std::size_t>(instance.material_index)]
+            && (*openpbr_materials)[static_cast<std::size_t>(instance.material_index)]
+                       ->emission_luminance
+                   > 0.0f;
+        if ((std::holds_alternative<EmissiveMaterial>(material_desc) || openpbr_emissive)
+            && is_identity_transform(instance.transform)) {
             lights.add(object);
         }
     }
@@ -176,13 +211,15 @@ CpuSceneAdapterResult adapt_to_cpu(const SceneIR& scene) {
     const pro::proxy<Material> empty_material = pro::make_proxy_shared<Material, EmptyMaterial>();
     for (const MediumInstance& medium : scene.media()) {
         const ShapeDesc& shape_desc = shape_descs[static_cast<std::size_t>(medium.shape_index)];
-        const MaterialDesc& material_desc = material_descs[static_cast<std::size_t>(medium.material_index)];
+        const MaterialDesc& material_desc =
+            material_descs[static_cast<std::size_t>(medium.material_index)];
         const auto* isotropic = std::get_if<IsotropicVolumeMaterial>(&material_desc);
         if (std::holds_alternative<QuadShape>(shape_desc)) {
             throw std::invalid_argument("quad boundaries are unsupported for homogeneous media");
         }
         if (std::holds_alternative<TriangleMeshShape>(shape_desc)) {
-            throw std::invalid_argument("triangle mesh boundaries are unsupported for homogeneous media");
+            throw std::invalid_argument(
+                "triangle mesh boundaries are unsupported for homogeneous media");
         }
 
         pro::proxy<Hittable> boundary = make_shape_hittable(shape_desc, empty_material);
@@ -190,7 +227,8 @@ CpuSceneAdapterResult adapt_to_cpu(const SceneIR& scene) {
 
         const pro::proxy<Texture>& albedo =
             textures[static_cast<std::size_t>(isotropic->albedo_texture)];
-        world.add(pro::make_proxy_shared<Hittable, ConstantMedium>(boundary, medium.density, albedo));
+        world.add(
+            pro::make_proxy_shared<Hittable, ConstantMedium>(boundary, medium.density, albedo));
     }
 
     CpuSceneAdapterResult result;
@@ -201,4 +239,15 @@ CpuSceneAdapterResult adapt_to_cpu(const SceneIR& scene) {
     return result;
 }
 
-}  // namespace rt::scene
+CpuSceneAdapterResult adapt_to_cpu(const SceneIR& scene) {
+    return adapt_to_cpu_impl(scene, nullptr);
+}
+
+CpuSceneAdapterResult adapt_to_cpu_openpbr(const SceneIR& compatibility_scene,
+    const SceneIRv2& scene_v2) {
+    const auto materials =
+        compile_openpbr_core_material_table(scene_v2, compatibility_scene.materials().size());
+    return adapt_to_cpu_impl(compatibility_scene, &materials);
+}
+
+} // namespace rt::scene
