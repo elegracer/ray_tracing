@@ -73,6 +73,20 @@ endif()
 # options
 option(OPTION_A "..." ON)
 option(ENABLE_GUI_VIEWER "Build the interactive GLFW/OpenGL viewer" ON)
+option(RT_ENABLE_OPENUSD "Build the official OpenUSD stage importer" OFF)
+
+if(RT_ENABLE_OPENUSD)
+    find_package(pxr CONFIG REQUIRED)
+    if(TARGET usd_m)
+        set(RT_OPENUSD_TARGETS usd_m)
+    elseif(TARGET usd AND TARGET usdGeom AND TARGET usdShade AND TARGET usdLux)
+        set(RT_OPENUSD_TARGETS usd usdGeom usdShade usdLux)
+    else()
+        message(FATAL_ERROR
+            "OpenUSD pxr package did not export usd_m or usd/usdGeom/usdShade/usdLux targets")
+    endif()
+    message(STATUS "OpenUSD stage import enabled with pxr ${PXR_VERSION}")
+endif()
 
 if(ENABLE_GUI_VIEWER)
     find_package(imgui CONFIG REQUIRED)
@@ -88,12 +102,35 @@ endif()
 
 enable_testing()
 
+# OpenUSD publishes a C++17 ABI and its generated schema headers are not
+# compatible with libstdc++ constrained-pair checks under C++20/23. Keep the
+# SDK-facing translation unit at the upstream language boundary while the
+# renderer remains C++23.
+add_library(openusd_stage_importer OBJECT
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/openusd_stage_importer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/openusd_stage_importer.h
+)
+set_target_properties(openusd_stage_importer PROPERTIES
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+)
+target_include_directories(openusd_stage_importer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_definitions(openusd_stage_importer PRIVATE
+    RT_HAS_OPENUSD=$<BOOL:${RT_ENABLE_OPENUSD}>
+)
+target_link_libraries(openusd_stage_importer PRIVATE Eigen3::Eigen)
+if(RT_ENABLE_OPENUSD)
+    target_link_libraries(openusd_stage_importer PRIVATE ${RT_OPENUSD_TARGETS})
+endif()
+
 # core library
 configure_file(cmake/version.h.in include/core/version.h)
 
 add_library(core SHARED)
 target_sources(core
     PRIVATE
+        $<TARGET_OBJECTS:openusd_stage_importer>
         ${CMAKE_CURRENT_BINARY_DIR}/include/core/version.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/core.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/core.h
@@ -136,6 +173,7 @@ target_include_directories(core
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${ICECREAM_CPP_INCLUDE_DIRS}
 )
+target_compile_definitions(core PUBLIC RT_HAS_OPENUSD=$<BOOL:${RT_ENABLE_OPENUSD}>)
 target_link_libraries(core
     PUBLIC
         Eigen3::Eigen
@@ -151,6 +189,9 @@ target_link_libraries(core
         yaml-cpp::yaml-cpp
         tinyobjloader::tinyobjloader
 )
+if(RT_ENABLE_OPENUSD)
+    target_link_libraries(core PRIVATE ${RT_OPENUSD_TARGETS})
+endif()
 
 # utils
 add_executable(estimate_halfway)
@@ -395,6 +436,15 @@ target_sources(test_scene_ir_v2
 )
 target_link_libraries(test_scene_ir_v2 PRIVATE core)
 add_test(NAME test_scene_ir_v2 COMMAND test_scene_ir_v2)
+
+add_executable(test_openusd_stage_importer)
+target_sources(test_openusd_stage_importer
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_openusd_stage_importer.cpp
+)
+target_link_libraries(test_openusd_stage_importer PRIVATE core)
+add_test(NAME test_openusd_stage_importer COMMAND test_openusd_stage_importer
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/openusd/composed_stage.usda)
 
 add_executable(test_openpbr_core)
 target_sources(test_openpbr_core
