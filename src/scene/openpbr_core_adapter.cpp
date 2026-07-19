@@ -18,10 +18,9 @@ void require_production_core_support(const SceneOpenPbrSurface& material) {
         throw std::invalid_argument(
             "OpenPBR production core does not yet support MaterialX displacement");
     }
-    if (material.subsurface_weight > 0.0 || material.fuzz_weight > 0.0 || material.coat_weight > 0.0
-        || material.thin_film_weight > 0.0) {
+    if (material.subsurface_weight > 0.0 || material.thin_film_weight > 0.0) {
         throw std::invalid_argument(
-            "OpenPBR production core does not yet support active advanced lobes");
+            "OpenPBR production core does not yet support active subsurface or thin-film lobes");
     }
     if (material.transmission_scatter.squaredNorm() > 0.0
         || material.transmission_scatter_anisotropy != 0.0
@@ -30,9 +29,11 @@ void require_production_core_support(const SceneOpenPbrSurface& material) {
             "OpenPBR production core does not yet support scattering or dispersion");
     }
     if (material.geometry_normal_default_geomprop != "Nworld"
-        || material.geometry_tangent_default_geomprop != "Tworld") {
+        || material.geometry_tangent_default_geomprop != "Tworld"
+        || material.geometry_coat_normal_default_geomprop != "Nworld"
+        || material.geometry_coat_tangent_default_geomprop != "Tworld") {
         throw std::invalid_argument(
-            "OpenPBR production core requires the default geometry normal and tangent inputs");
+            "OpenPBR production core requires the default base and coat normal/tangent inputs");
     }
 }
 
@@ -122,6 +123,16 @@ OpenPbrCompiledMaterial compile_openpbr_core_material(const SceneOpenPbrSurface&
                 .transmission_weight = static_cast<float>(material.transmission_weight),
                 .transmission_color = to_openpbr_vec3(material.transmission_color),
                 .transmission_depth = static_cast<float>(material.transmission_depth),
+                .fuzz_weight = static_cast<float>(material.fuzz_weight),
+                .fuzz_color = to_openpbr_vec3(material.fuzz_color),
+                .fuzz_roughness = static_cast<float>(material.fuzz_roughness),
+                .coat_weight = static_cast<float>(material.coat_weight),
+                .coat_color = to_openpbr_vec3(material.coat_color),
+                .coat_roughness = static_cast<float>(material.coat_roughness),
+                .coat_roughness_anisotropy =
+                    static_cast<float>(material.coat_roughness_anisotropy),
+                .coat_ior = static_cast<float>(material.coat_ior),
+                .coat_darkening = static_cast<float>(material.coat_darkening),
                 .emission_luminance = static_cast<float>(material.emission_luminance),
                 .emission_color = to_openpbr_vec3(material.emission_color),
                 .geometry_opacity = static_cast<float>(material.geometry_opacity),

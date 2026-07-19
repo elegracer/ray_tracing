@@ -37,6 +37,17 @@ struct OpenPbrCoreMaterial {
     OpenPbrVec3 transmission_color {1.0f, 1.0f, 1.0f};
     float transmission_depth = 0.0f;
 
+    float fuzz_weight = 0.0f;
+    OpenPbrVec3 fuzz_color {1.0f, 1.0f, 1.0f};
+    float fuzz_roughness = 0.5f;
+
+    float coat_weight = 0.0f;
+    OpenPbrVec3 coat_color {1.0f, 1.0f, 1.0f};
+    float coat_roughness = 0.0f;
+    float coat_roughness_anisotropy = 0.0f;
+    float coat_ior = 1.6f;
+    float coat_darkening = 1.0f;
+
     float emission_luminance = 0.0f;
     OpenPbrVec3 emission_color {1.0f, 1.0f, 1.0f};
 
@@ -87,6 +98,8 @@ enum class OpenPbrScatterEvent : int {
     glossy_transmission = 3,
     thin_walled_transmission = 4,
     opacity_passthrough = 5,
+    coat_reflection = 6,
+    fuzz_reflection = 7,
 };
 
 struct OpenPbrEvaluation {
@@ -109,6 +122,8 @@ struct OpenPbrLobeProbabilities {
     float diffuse = 0.0f;
     float reflection = 0.0f;
     float transmission = 0.0f;
+    float coat = 0.0f;
+    float fuzz = 0.0f;
 };
 
 RT_OPENPBR_HD RT_OPENPBR_INLINE float openpbr_min(float a, float b) {
@@ -199,6 +214,18 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_clamp_nonnegative(const Open
 
 RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_clamp_unit(const OpenPbrVec3& value) {
     return {openpbr_saturate(value.x), openpbr_saturate(value.y), openpbr_saturate(value.z)};
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_sqrt(const OpenPbrVec3& value) {
+    return {openpbr_safe_sqrt(value.x), openpbr_safe_sqrt(value.y),
+        openpbr_safe_sqrt(value.z)};
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_pow(const OpenPbrVec3& value,
+    float exponent) {
+    return {powf(openpbr_max(value.x, 0.0f), exponent),
+        powf(openpbr_max(value.y, 0.0f), exponent),
+        powf(openpbr_max(value.z, 0.0f), exponent)};
 }
 
 RT_OPENPBR_HD RT_OPENPBR_INLINE float openpbr_srgb_channel_to_linear(float value) {
@@ -348,20 +375,47 @@ struct OpenPbrRoughness {
     float alpha_y = 0.09f;
 };
 
-RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrRoughness openpbr_roughness(
-    const OpenPbrCoreMaterial& material) {
-    const float roughness = openpbr_saturate(material.specular_roughness);
-    const float anisotropy = openpbr_saturate(material.specular_roughness_anisotropy);
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrRoughness openpbr_roughness(float roughness_value,
+    float anisotropy_value) {
+    const float roughness = openpbr_saturate(roughness_value);
+    const float anisotropy = openpbr_saturate(anisotropy_value);
     const float aspect = 1.0f - anisotropy;
     const float scale = sqrtf(2.0f / openpbr_max(aspect * aspect + 1.0f, 1e-8f));
     const float alpha_x = openpbr_max(roughness * roughness * scale, 1e-4f);
     return {alpha_x, openpbr_max(aspect * alpha_x, 1e-4f)};
 }
 
+RT_OPENPBR_HD RT_OPENPBR_INLINE float openpbr_effective_specular_roughness(
+    const OpenPbrCoreMaterial& material) {
+    const float specular = openpbr_saturate(material.specular_roughness);
+    const float coat = openpbr_saturate(material.coat_roughness);
+    const float specular2 = specular * specular;
+    const float coat2 = coat * coat;
+    const float affected = sqrtf(sqrtf(openpbr_min(
+        1.0f, specular2 * specular2 + 2.0f * coat2 * coat2)));
+    const float weight = openpbr_saturate(material.coat_weight);
+    return specular + (affected - specular) * weight;
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrRoughness openpbr_roughness(
+    const OpenPbrCoreMaterial& material) {
+    return openpbr_roughness(openpbr_effective_specular_roughness(material),
+        material.specular_roughness_anisotropy);
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrRoughness openpbr_coat_roughness(
+    const OpenPbrCoreMaterial& material) {
+    return openpbr_roughness(material.coat_roughness, material.coat_roughness_anisotropy);
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE bool openpbr_effectively_smooth(
+    const OpenPbrRoughness& roughness) {
+    return openpbr_max(roughness.alpha_x, roughness.alpha_y) < 1e-3f;
+}
+
 RT_OPENPBR_HD RT_OPENPBR_INLINE bool openpbr_effectively_smooth(
     const OpenPbrCoreMaterial& material) {
-    const OpenPbrRoughness roughness = openpbr_roughness(material);
-    return openpbr_max(roughness.alpha_x, roughness.alpha_y) < 1e-3f;
+    return openpbr_effectively_smooth(openpbr_roughness(material));
 }
 
 RT_OPENPBR_HD RT_OPENPBR_INLINE float openpbr_average_alpha(const OpenPbrRoughness& roughness) {
@@ -497,8 +551,265 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE bool openpbr_refract(const OpenPbrVec3& wo, Open
     return true;
 }
 
-RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrLobeProbabilities openpbr_lobe_probabilities(
+RT_OPENPBR_HD RT_OPENPBR_INLINE float openpbr_coat_fresnel(
+    const OpenPbrCoreMaterial& material, float cosine) {
+    return openpbr_fresnel_dielectric(cosine, openpbr_max(material.coat_ior, 1e-4f));
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE float openpbr_coat_directional_albedo(
+    const OpenPbrCoreMaterial& material, float cosine) {
+    const OpenPbrRoughness roughness = openpbr_coat_roughness(material);
+    if (openpbr_effectively_smooth(roughness)) {
+        return openpbr_coat_fresnel(material, cosine);
+    }
+    const float alpha = openpbr_average_alpha(roughness);
+    const float color0 = openpbr_coat_fresnel(material, 1.0f);
+    const float single_scatter = openpbr_ggx_directional_albedo(cosine, alpha, color0, 1.0f);
+    const float white_single_scatter =
+        openpbr_ggx_directional_albedo(cosine, alpha, 1.0f, 1.0f);
+    const float compensation = 1.0f
+                               + openpbr_coat_fresnel(material, cosine)
+                                     * (1.0f - white_single_scatter)
+                                     / openpbr_max(white_single_scatter, 1e-4f);
+    return openpbr_saturate(single_scatter * compensation);
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_coat_passage(
+    const OpenPbrCoreMaterial& material, float cosine) {
+    const float presence = openpbr_saturate(material.coat_weight);
+    const OpenPbrVec3 tint = openpbr_clamp_unit(material.coat_color);
+    if (presence <= 0.0f || cosine <= 0.0f
+        || (tint.x >= 1.0f && tint.y >= 1.0f && tint.z >= 1.0f)) {
+        return openpbr_make_vec3(1.0f);
+    }
+    const float eta = openpbr_max(material.coat_ior, 1e-4f);
+    const float sin2_transmitted = openpbr_max(0.0f, 1.0f - cosine * cosine) / (eta * eta);
+    const float cos_transmitted = openpbr_safe_sqrt(1.0f - openpbr_min(sin2_transmitted, 1.0f));
+    const float distance_scale = 1.0f / openpbr_max(cos_transmitted, 1e-4f);
+    return openpbr_lerp(openpbr_make_vec3(1.0f),
+        openpbr_pow(openpbr_sqrt(tint), distance_scale), presence);
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_coat_darkening(
     const OpenPbrCoreMaterial& material) {
+    const float presence = openpbr_saturate(material.coat_weight)
+                           * openpbr_saturate(material.coat_darkening);
+    if (presence <= 0.0f) {
+        return openpbr_make_vec3(1.0f);
+    }
+    const float eta = openpbr_max(material.coat_ior, 1e-4f);
+    const float f0 = openpbr_coat_fresnel(material, 1.0f);
+    const float internal_reflection =
+        openpbr_saturate(1.0f - (1.0f - f0) / openpbr_max(eta * eta, 1e-6f));
+    const OpenPbrVec3 dielectric_albedo = openpbr_mul(openpbr_clamp_unit(material.base_color),
+        openpbr_saturate(material.base_weight));
+    const OpenPbrVec3 metal_albedo =
+        openpbr_mul(dielectric_albedo, openpbr_saturate(material.specular_weight));
+    const OpenPbrVec3 base_albedo = openpbr_lerp(dielectric_albedo, metal_albedo,
+        openpbr_saturate(material.base_metalness));
+    const float numerator = 1.0f - internal_reflection;
+    const OpenPbrVec3 darkening {
+        numerator / openpbr_max(1.0f - base_albedo.x * internal_reflection, 1e-5f),
+        numerator / openpbr_max(1.0f - base_albedo.y * internal_reflection, 1e-5f),
+        numerator / openpbr_max(1.0f - base_albedo.z * internal_reflection, 1e-5f),
+    };
+    return openpbr_lerp(openpbr_make_vec3(1.0f), openpbr_clamp_unit(darkening), presence);
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE float openpbr_fuzz_directional_albedo(float cosine,
+    float roughness_value) {
+    const float x = openpbr_saturate(cosine);
+    const float y = openpbr_clamp(roughness_value, 0.01f, 1.0f);
+    const float s = y * (0.0206607f + 1.58491f * y)
+                    / (0.0379424f + y * (1.32227f + y));
+    const float y2 = y * y;
+    const float m = y * (-0.193854f + y * (-1.14885f + y * (1.7932f - 0.95943f * y2)))
+                    / (0.046391f + y);
+    const float o = y * (0.000654023f + (-0.0207818f + 0.119681f * y) * y)
+                    / (1.26264f + y * (-1.92021f + y));
+    const float normalized = (x - m) / openpbr_max(s, 1e-5f);
+    const float gaussian = expf(-0.5f * normalized * normalized)
+                           / (openpbr_max(s, 1e-5f) * sqrtf(2.0f * kOpenPbrPi));
+    return openpbr_saturate(gaussian + o);
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrFrame openpbr_fuzz_frame(const OpenPbrVec3& wo) {
+    const OpenPbrVec3 projected {wo.x, wo.y, 0.0f};
+    const OpenPbrVec3 tangent = openpbr_length_squared(projected) > 1e-12f
+                                    ? openpbr_normalize(projected)
+                                    : OpenPbrVec3 {1.0f, 0.0f, 0.0f};
+    return {tangent, {-tangent.y, tangent.x, 0.0f}, {0.0f, 0.0f, 1.0f}};
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_fuzz_ltc_coefficients(float cosine,
+    float roughness_value) {
+    const float x = openpbr_saturate(cosine);
+    const float y = openpbr_clamp(roughness_value, 0.01f, 1.0f);
+    const float a_inverse = (2.58126f * x + 0.813703f * y) * y
+                            / (1.0f + 0.310327f * x * x + 2.60994f * x * y);
+    const float b_inverse = openpbr_safe_sqrt(1.0f - x) * (y - 1.0f) * y * y * y
+                            / (0.0000254053f + 1.71228f * x - 1.71506f * x * y
+                                + 1.34174f * y * y);
+    return {openpbr_max(a_inverse, 1e-5f), b_inverse,
+        openpbr_fuzz_directional_albedo(x, y)};
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE float openpbr_fuzz_pdf(const OpenPbrCoreMaterial& material,
+    const OpenPbrVec3& wo, const OpenPbrVec3& wi) {
+    if (wo.z <= 0.0f || wi.z <= 0.0f) {
+        return 0.0f;
+    }
+    const OpenPbrFrame frame = openpbr_fuzz_frame(wo);
+    const OpenPbrVec3 aligned = openpbr_to_local(frame, wi);
+    const OpenPbrVec3 coefficients =
+        openpbr_fuzz_ltc_coefficients(wo.z, material.fuzz_roughness);
+    const OpenPbrVec3 transformed {coefficients.x * aligned.x + coefficients.y * aligned.z,
+        coefficients.x * aligned.y, aligned.z};
+    const float length_squared = openpbr_length_squared(transformed);
+    if (length_squared <= 1e-16f || transformed.z <= 0.0f) {
+        return 0.0f;
+    }
+    const float jacobian_scale = coefficients.x / length_squared;
+    return transformed.z * kOpenPbrInvPi * jacobian_scale * jacobian_scale;
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_sample_fuzz(
+    const OpenPbrCoreMaterial& material, const OpenPbrVec3& wo, float u1, float u2) {
+    const float radius = sqrtf(openpbr_saturate(u1));
+    const float phi = 2.0f * kOpenPbrPi * openpbr_saturate(u2);
+    const OpenPbrVec3 cosine_sample {radius * cosf(phi), radius * sinf(phi),
+        openpbr_safe_sqrt(1.0f - radius * radius)};
+    const OpenPbrVec3 coefficients =
+        openpbr_fuzz_ltc_coefficients(wo.z, material.fuzz_roughness);
+    const float inverse_a = 1.0f / coefficients.x;
+    const OpenPbrVec3 aligned = openpbr_normalize(
+        {cosine_sample.x * inverse_a - cosine_sample.z * coefficients.y * inverse_a,
+            cosine_sample.y * inverse_a, cosine_sample.z});
+    return openpbr_normalize(openpbr_to_world(openpbr_fuzz_frame(wo), aligned));
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_fuzz_value(
+    const OpenPbrCoreMaterial& material, const OpenPbrVec3& wo, const OpenPbrVec3& wi) {
+    const float presence = openpbr_saturate(material.fuzz_weight);
+    if (presence <= 0.0f || wo.z <= 0.0f || wi.z <= 0.0f) {
+        return {};
+    }
+    const float reflected = openpbr_fuzz_directional_albedo(wo.z, material.fuzz_roughness);
+    const float density = openpbr_fuzz_pdf(material, wo, wi);
+    return openpbr_mul(openpbr_clamp_unit(material.fuzz_color),
+        presence * reflected * density / openpbr_max(wi.z, 1e-6f));
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE float openpbr_fuzz_base_scale(
+    const OpenPbrCoreMaterial& material, float outgoing_cosine, float incoming_cosine,
+    bool exterior_layers) {
+    if (!exterior_layers) {
+        return 1.0f;
+    }
+    const float presence = openpbr_saturate(material.fuzz_weight);
+    const float outgoing = 1.0f
+                           - presence * openpbr_fuzz_directional_albedo(
+                                            outgoing_cosine, material.fuzz_roughness);
+    const float incoming = incoming_cosine > 0.0f
+                               ? 1.0f
+                                     - presence * openpbr_fuzz_directional_albedo(
+                                                      incoming_cosine, material.fuzz_roughness)
+                               : 1.0f;
+    return openpbr_saturate(outgoing) * openpbr_saturate(incoming);
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_coat_base_scale(
+    const OpenPbrCoreMaterial& material, float outgoing_cosine, float incoming_cosine,
+    bool exterior_layers) {
+    const float presence = openpbr_saturate(material.coat_weight);
+    if (presence <= 0.0f) {
+        return openpbr_make_vec3(1.0f);
+    }
+    if (!exterior_layers) {
+        return incoming_cosine < 0.0f ? openpbr_coat_passage(material, -incoming_cosine)
+                                      : openpbr_make_vec3(1.0f);
+    }
+    const float reflected_out =
+        presence * openpbr_coat_directional_albedo(material, outgoing_cosine);
+    const OpenPbrVec3 outgoing = openpbr_mul(openpbr_coat_passage(material, outgoing_cosine),
+        openpbr_saturate(1.0f - reflected_out));
+    OpenPbrVec3 incoming = openpbr_make_vec3(1.0f);
+    if (incoming_cosine > 0.0f) {
+        const float reflected_in =
+            presence * openpbr_coat_directional_albedo(material, incoming_cosine);
+        incoming = openpbr_mul(openpbr_coat_passage(material, incoming_cosine),
+            openpbr_saturate(1.0f - reflected_in));
+    }
+    return openpbr_mul(openpbr_mul(outgoing, incoming), openpbr_coat_darkening(material));
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_substrate_scale(
+    const OpenPbrCoreMaterial& material, float outgoing_cosine, float incoming_cosine,
+    bool exterior_layers) {
+    return openpbr_mul(openpbr_coat_base_scale(material, outgoing_cosine, incoming_cosine,
+                           exterior_layers),
+        openpbr_fuzz_base_scale(material, outgoing_cosine, incoming_cosine, exterior_layers));
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_coat_reflection_value(
+    const OpenPbrCoreMaterial& material, const OpenPbrVec3& wo, const OpenPbrVec3& wi) {
+    const float presence = openpbr_saturate(material.coat_weight);
+    if (presence <= 0.0f || wo.z <= 0.0f || wi.z <= 0.0f) {
+        return {};
+    }
+    const OpenPbrRoughness roughness = openpbr_coat_roughness(material);
+    if (openpbr_effectively_smooth(roughness)) {
+        return {};
+    }
+    const OpenPbrVec3 sum = openpbr_add(wi, wo);
+    if (openpbr_length_squared(sum) <= 1e-16f) {
+        return {};
+    }
+    OpenPbrVec3 wm = openpbr_normalize(sum);
+    if (wm.z < 0.0f) {
+        wm = openpbr_negate(wm);
+    }
+    const float wo_dot_m = openpbr_dot(wo, wm);
+    if (wo_dot_m <= 0.0f) {
+        return {};
+    }
+    const float distribution = openpbr_ggx_d(roughness, wm);
+    const float masking = openpbr_ggx_g(roughness, wo, wi);
+    const float fresnel = openpbr_coat_fresnel(material, wo_dot_m);
+    const float compensation = openpbr_ggx_energy_compensation(wo.z,
+        openpbr_average_alpha(roughness), openpbr_make_vec3(fresnel)).x;
+    return openpbr_make_vec3(presence * fresnel * compensation * distribution * masking
+                             / openpbr_max(4.0f * wo.z * wi.z, 1e-8f));
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE float openpbr_coat_reflection_pdf(
+    const OpenPbrCoreMaterial& material, const OpenPbrVec3& wo, const OpenPbrVec3& wi) {
+    if (wo.z <= 0.0f || wi.z <= 0.0f) {
+        return 0.0f;
+    }
+    const OpenPbrRoughness roughness = openpbr_coat_roughness(material);
+    if (openpbr_effectively_smooth(roughness)) {
+        return 0.0f;
+    }
+    const OpenPbrVec3 sum = openpbr_add(wi, wo);
+    if (openpbr_length_squared(sum) <= 1e-16f) {
+        return 0.0f;
+    }
+    OpenPbrVec3 wm = openpbr_normalize(sum);
+    if (wm.z < 0.0f) {
+        wm = openpbr_negate(wm);
+    }
+    const float wo_dot_m = openpbr_dot(wo, wm);
+    if (wo_dot_m <= 0.0f) {
+        return 0.0f;
+    }
+    return openpbr_ggx_visible_normal_pdf(roughness, wo, wm)
+           / openpbr_max(4.0f * fabsf(wo_dot_m), 1e-8f);
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrLobeProbabilities openpbr_lobe_probabilities(
+    const OpenPbrCoreMaterial& material, float outgoing_cosine = 1.0f,
+    bool exterior_layers = true) {
     const float metalness = openpbr_saturate(material.base_metalness);
     const float transmission = openpbr_saturate(material.transmission_weight);
     const float base_weight = openpbr_saturate(material.base_weight);
@@ -520,12 +831,29 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrLobeProbabilities openpbr_lobe_probabilit
         (1.0f - metalness) * transmission * (1.0f - dielectric_f0)
         * openpbr_luminance(openpbr_surface_transmission_color(material));
 
-    const float reflection_score = dielectric_reflection_score + metal_reflection_score;
-    const float total = diffuse_score + reflection_score + transmission_score;
+    const float coat_score = exterior_layers
+                                 ? openpbr_saturate(material.coat_weight)
+                                       * openpbr_coat_directional_albedo(material, outgoing_cosine)
+                                 : 0.0f;
+    const float fuzz_score = exterior_layers
+                                 ? openpbr_saturate(material.fuzz_weight)
+                                       * openpbr_fuzz_directional_albedo(
+                                           outgoing_cosine, material.fuzz_roughness)
+                                       * openpbr_luminance(openpbr_clamp_unit(material.fuzz_color))
+                                 : 0.0f;
+    const float substrate_score_scale =
+        openpbr_saturate(1.0f - coat_score) * openpbr_saturate(1.0f - fuzz_score);
+    const float scaled_diffuse_score = diffuse_score * substrate_score_scale;
+    const float reflection_score =
+        (dielectric_reflection_score + metal_reflection_score) * substrate_score_scale;
+    const float scaled_transmission_score = transmission_score * substrate_score_scale;
+    const float total = scaled_diffuse_score + reflection_score + scaled_transmission_score
+                        + coat_score + fuzz_score;
     if (total <= 1e-10f) {
         return {};
     }
-    return {diffuse_score / total, reflection_score / total, transmission_score / total};
+    return {scaled_diffuse_score / total, reflection_score / total,
+        scaled_transmission_score / total, coat_score / total, fuzz_score / total};
 }
 
 RT_OPENPBR_HD RT_OPENPBR_INLINE float openpbr_oren_nayar_directional_albedo(float cosine,
@@ -686,9 +1014,11 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrEvaluation evaluate_openpbr_core(
     }
 
     const float opacity = openpbr_saturate(material.geometry_opacity);
-    const OpenPbrLobeProbabilities probabilities = openpbr_lobe_probabilities(material);
+    const bool exterior_layers = entering;
+    const OpenPbrLobeProbabilities probabilities =
+        openpbr_lobe_probabilities(material, wo.z, exterior_layers);
     const OpenPbrRoughness roughness = openpbr_roughness(material);
-    const bool smooth = openpbr_effectively_smooth(material);
+    const bool smooth = openpbr_effectively_smooth(roughness);
     const bool reflection = wi.z * wo.z > 0.0f;
 
     if (reflection) {
@@ -716,6 +1046,17 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrEvaluation evaluate_openpbr_core(
                                              / openpbr_max(4.0f * fabsf(wo_dot_m), 1e-8f);
                 result.pdf += probabilities.reflection * microfacet_pdf;
             }
+        }
+        result.value = openpbr_mul(result.value,
+            openpbr_substrate_scale(material, wo.z, wi.z, exterior_layers));
+
+        if (exterior_layers) {
+            const OpenPbrVec3 coat = openpbr_mul(openpbr_coat_reflection_value(material, wo, wi),
+                openpbr_fuzz_base_scale(material, wo.z, wi.z, true));
+            result.value = openpbr_add(result.value, coat);
+            result.value = openpbr_add(result.value, openpbr_fuzz_value(material, wo, wi));
+            result.pdf += probabilities.coat * openpbr_coat_reflection_pdf(material, wo, wi);
+            result.pdf += probabilities.fuzz * openpbr_fuzz_pdf(material, wo, wi);
         }
     } else if (!smooth && material.geometry_thin_walled == 0 && probabilities.transmission > 0.0f) {
         const float eta = openpbr_modulated_ior(material);
@@ -751,6 +1092,8 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrEvaluation evaluate_openpbr_core(
                 }
             }
         }
+        result.value = openpbr_mul(result.value,
+            openpbr_substrate_scale(material, wo.z, wi.z, exterior_layers));
     }
 
     result.value = openpbr_mul(result.value, opacity);
@@ -765,9 +1108,19 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE float pdf_openpbr_core(const OpenPbrCoreMaterial
 
 RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 emission_openpbr_core(
     const OpenPbrCoreMaterial& material) {
-    return openpbr_mul(openpbr_clamp_nonnegative(material.emission_color),
+    OpenPbrVec3 result = openpbr_mul(openpbr_clamp_nonnegative(material.emission_color),
         openpbr_max(0.0f, material.emission_luminance)
             * openpbr_saturate(material.geometry_opacity));
+    const float coat_transmission = 1.0f
+                                    - openpbr_saturate(material.coat_weight)
+                                          * openpbr_coat_directional_albedo(material, 1.0f);
+    result = openpbr_mul(result, openpbr_mul(openpbr_coat_passage(material, 1.0f),
+                                      openpbr_saturate(coat_transmission)));
+    const float fuzz_transmission = 1.0f
+                                    - openpbr_saturate(material.fuzz_weight)
+                                          * openpbr_fuzz_directional_albedo(
+                                              1.0f, material.fuzz_roughness);
+    return openpbr_mul(result, openpbr_saturate(fuzz_transmission));
 }
 
 RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_sample_cosine_hemisphere(float u1, float u2) {
@@ -809,22 +1162,64 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrSample sample_openpbr_core(
         return sample;
     }
 
-    const OpenPbrLobeProbabilities probabilities = openpbr_lobe_probabilities(material);
-    if (probabilities.diffuse + probabilities.reflection + probabilities.transmission <= 0.0f) {
+    const bool exterior_layers = entering;
+    const OpenPbrLobeProbabilities probabilities =
+        openpbr_lobe_probabilities(material, wo.z, exterior_layers);
+    if (probabilities.diffuse + probabilities.reflection + probabilities.transmission
+            + probabilities.coat + probabilities.fuzz
+        <= 0.0f) {
         return sample;
     }
     const float surface_choice =
         openpbr_clamp((u_lobe - passthrough_probability) / opacity, 0.0f, 0.99999994f);
     OpenPbrVec3 wi {};
+    const float fuzz_end = probabilities.fuzz;
+    const float coat_end = fuzz_end + probabilities.coat;
+    const float diffuse_end = coat_end + probabilities.diffuse;
+    const float reflection_end = diffuse_end + probabilities.reflection;
 
-    if (surface_choice < probabilities.diffuse) {
+    if (surface_choice < fuzz_end) {
+        wi = openpbr_sample_fuzz(material, wo, u1, u2);
+        if (wi.z <= 1e-7f) {
+            return sample;
+        }
+        sample.event = OpenPbrScatterEvent::fuzz_reflection;
+    } else if (surface_choice < coat_end) {
+        const OpenPbrRoughness coat_roughness = openpbr_coat_roughness(material);
+        if (openpbr_effectively_smooth(coat_roughness)) {
+            wi = {-wo.x, -wo.y, wo.z};
+            OpenPbrVec3 coefficient = openpbr_make_vec3(openpbr_saturate(material.coat_weight)
+                                                        * openpbr_coat_fresnel(material, wo.z)
+                                                        * opacity);
+            coefficient = openpbr_mul(coefficient,
+                openpbr_fuzz_base_scale(material, wo.z, wi.z, exterior_layers));
+            sample.wi = openpbr_normalize(openpbr_to_world(frame, wi));
+            sample.discrete_pdf = opacity * probabilities.coat;
+            if (sample.discrete_pdf <= 0.0f) {
+                return OpenPbrSample {};
+            }
+            sample.weight = openpbr_div(coefficient, sample.discrete_pdf);
+            sample.event = OpenPbrScatterEvent::coat_reflection;
+            sample.delta = 1;
+            sample.valid = 1;
+            return sample;
+        }
+        const OpenPbrVec3 wm = openpbr_sample_visible_normal(coat_roughness, wo, u1, u2);
+        wi = openpbr_reflect(wo, wm);
+        if (wi.z <= 1e-7f) {
+            return sample;
+        }
+        sample.event = OpenPbrScatterEvent::coat_reflection;
+    } else if (surface_choice < diffuse_end) {
         wi = openpbr_sample_cosine_hemisphere(u1, u2);
         sample.event = OpenPbrScatterEvent::diffuse_reflection;
-    } else if (surface_choice < probabilities.diffuse + probabilities.reflection) {
+    } else if (surface_choice < reflection_end) {
         if (openpbr_effectively_smooth(material)) {
             wi = {-wo.x, -wo.y, wo.z};
-            const OpenPbrVec3 coefficient =
+            OpenPbrVec3 coefficient =
                 openpbr_mul(openpbr_reflection_fresnel(material, wo.z, wo.z, entering), opacity);
+            coefficient = openpbr_mul(coefficient,
+                openpbr_substrate_scale(material, wo.z, wi.z, exterior_layers));
             sample.wi = openpbr_normalize(openpbr_to_world(frame, wi));
             sample.discrete_pdf = opacity * probabilities.reflection;
             if (sample.discrete_pdf <= 0.0f) {
@@ -846,9 +1241,11 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrSample sample_openpbr_core(
     } else if (material.geometry_thin_walled != 0) {
         wi = openpbr_negate(wo);
         const float reflection = openpbr_dielectric_fresnel(material, wo.z, true);
-        const OpenPbrVec3 coefficient = openpbr_mul(openpbr_surface_transmission_color(material),
+        OpenPbrVec3 coefficient = openpbr_mul(openpbr_surface_transmission_color(material),
             opacity * (1.0f - openpbr_saturate(material.base_metalness))
                 * openpbr_saturate(material.transmission_weight) * (1.0f - reflection));
+        coefficient = openpbr_mul(coefficient,
+            openpbr_substrate_scale(material, wo.z, wi.z, exterior_layers));
         sample.wi = openpbr_to_world(frame, wi);
         sample.discrete_pdf = opacity * probabilities.transmission;
         if (sample.discrete_pdf <= 0.0f) {
@@ -867,10 +1264,12 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrSample sample_openpbr_core(
             return sample;
         }
         const float fresnel = openpbr_fresnel_dielectric(wo.z, material_eta_path);
-        const OpenPbrVec3 coefficient = openpbr_mul(openpbr_surface_transmission_color(material),
+        OpenPbrVec3 coefficient = openpbr_mul(openpbr_surface_transmission_color(material),
             opacity * (1.0f - openpbr_saturate(material.base_metalness))
                 * openpbr_saturate(material.transmission_weight) * (1.0f - fresnel)
                 / (refracted_eta_path * refracted_eta_path));
+        coefficient = openpbr_mul(coefficient,
+            openpbr_substrate_scale(material, wo.z, wi.z, exterior_layers));
         sample.wi = openpbr_normalize(openpbr_to_world(frame, wi));
         sample.discrete_pdf = opacity * probabilities.transmission;
         if (sample.discrete_pdf <= 0.0f) {
