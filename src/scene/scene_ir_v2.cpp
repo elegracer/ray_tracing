@@ -1562,6 +1562,34 @@ SceneLightIntensityUnit scene_light_intensity_unit(const SceneLight& light) {
                                                                     : SceneLightIntensityUnit::nit;
 }
 
+std::vector<SceneDiagnostic> diagnose_legacy_scene_ir_v2_compatibility(const SceneIRv2& scene) {
+    require_valid_scene_ir_v2(scene);
+    std::vector<SceneDiagnostic> diagnostics;
+    for (const ScenePrim& prim : scene.prims()) {
+        if (prim.kind != ScenePrimKind::material || !prim.compatibility_source_name) {
+            continue;
+        }
+        const std::string& source = *prim.compatibility_source_name;
+        if (source == "metal") {
+            diagnostics.push_back(
+                {SceneDiagnosticSeverity::warning, "compatibility.material.metal_fuzz", prim.path,
+                    "legacy fuzz direction perturbation is approximated by OpenPBR microfacet "
+                    "roughness"});
+        } else if (source == "dielectric") {
+            diagnostics.push_back({SceneDiagnosticSeverity::warning,
+                "compatibility.material.dielectric_transport", prim.path,
+                "legacy Schlick delta selection is replaced by OpenPBR dielectric Fresnel and "
+                "transport"});
+        } else if (source == "emissive") {
+            diagnostics.push_back({SceneDiagnosticSeverity::warning,
+                "compatibility.material.emission_units", prim.path,
+                "legacy numeric emission is preserved with an assumed unit luminance scale "
+                "because no radiometric unit was authored"});
+        }
+    }
+    return diagnostics;
+}
+
 SceneIRv2 compile_legacy_scene_ir_v2(const SceneIR& legacy_scene) {
     SceneStageMetadata metadata;
     metadata.meters_per_unit = 1.0;

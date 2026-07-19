@@ -614,6 +614,14 @@ target_sources(test_openpbr_render_path
 target_link_libraries(test_openpbr_render_path PRIVATE realtime_gpu)
 add_test(NAME test_openpbr_render_path COMMAND test_openpbr_render_path)
 
+add_executable(test_openpbr_legacy_compatibility)
+target_sources(test_openpbr_legacy_compatibility
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_openpbr_legacy_compatibility.cpp
+)
+target_link_libraries(test_openpbr_legacy_compatibility PRIVATE realtime_gpu)
+add_test(NAME test_openpbr_legacy_compatibility COMMAND test_openpbr_legacy_compatibility)
+
 add_executable(test_optix_profiled_render)
 target_sources(test_optix_profiled_render
     PRIVATE

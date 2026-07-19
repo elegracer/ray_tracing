@@ -946,6 +946,42 @@ void test_legacy_compiler() {
         "compiled material identity");
 }
 
+void test_legacy_material_compatibility_diagnostics() {
+    const rt::scene::SceneIRv2 compiled =
+        rt::scene::compile_legacy_scene_ir_v2(legacy_material_texture_scene());
+    const std::vector<rt::scene::SceneDiagnostic> diagnostics =
+        rt::scene::diagnose_legacy_scene_ir_v2_compatibility(compiled);
+    expect_true(diagnostics.size() == 3,
+        "only lossy legacy material translations emit compatibility diagnostics");
+    expect_true(rt::scene::has_scene_diagnostic(diagnostics, "compatibility.material.metal_fuzz"),
+        "metal fuzz approximation is reported");
+    expect_true(
+        rt::scene::has_scene_diagnostic(diagnostics, "compatibility.material.dielectric_transport"),
+        "dielectric transport approximation is reported");
+    expect_true(
+        rt::scene::has_scene_diagnostic(diagnostics, "compatibility.material.emission_units"),
+        "emission unit assumption is reported");
+    const auto expect_diagnostic_path = [&](std::string_view code, std::string_view path) {
+        const auto diagnostic = std::find_if(diagnostics.begin(), diagnostics.end(),
+            [&](const rt::scene::SceneDiagnostic& value) {
+                return value.code == code && value.prim_path == path;
+            });
+        expect_true(diagnostic != diagnostics.end(),
+            "compatibility diagnostic identifies its material prim");
+    };
+    expect_diagnostic_path(
+        "compatibility.material.metal_fuzz", "/World/Materials/Material_0001");
+    expect_diagnostic_path(
+        "compatibility.material.dielectric_transport", "/World/Materials/Material_0002");
+    expect_diagnostic_path(
+        "compatibility.material.emission_units", "/World/Materials/Material_0003");
+    expect_true(std::all_of(diagnostics.begin(), diagnostics.end(),
+                    [](const rt::scene::SceneDiagnostic& diagnostic) {
+                        return diagnostic.severity == rt::scene::SceneDiagnosticSeverity::warning;
+                    }),
+        "compatibility approximations remain warnings rather than invalid-scene errors");
+}
+
 } // namespace
 
 int main() {
@@ -959,5 +995,6 @@ int main() {
     test_contract_rejections();
     test_capability_diagnostics();
     test_legacy_compiler();
+    test_legacy_material_compatibility_diagnostics();
     return 0;
 }

@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-07-19)
 
 **Core value:** Composed scene, camera, light, and material meaning must stay consistent across offline and realtime rendering, while measured changes improve physical correctness and realtime performance together.
-**Current focus:** v2.0 Phase 3 — OpenPBR Core And Physical BSDFs
+**Current focus:** v2.0 Phase 4 — OpenUSD And MaterialX I/O
 
 ## Current Position
 
-Phase: 3 of 6 — OpenPBR Core And Physical BSDFs
-Plan: PBR-01/02/04 authoring, shared core behavior, and connected color execution are complete; implement PBR-05 compatibility images and lossy-mapping diagnostics
-Status: Active milestone, Phase 3 in progress
-Last activity: 2026-07-19 - Wired supported SceneIR v2 MaterialX color3 connections and shared source-to-linear conversion through CPU and GPU OpenPBR rendering
+Phase: 4 of 6 — OpenUSD And MaterialX I/O
+Plan: Add optional official SDK integration, composed-stage import, deterministic supported-subset export, and advanced OpenPBR lobes
+Status: Active milestone, Phase 4 in progress
+Last activity: 2026-07-19 - Closed PBR-05 with documented legacy translators, explicit lossy-mapping diagnostics, and five deterministic OptiX compatibility image comparisons
 
-Progress: [######----] 60% OpenPBR requirements; PBR-01/02/04 complete, PBR-05 remains and PBR-03 stays gated to Phase 4
+Progress: [########--] 80% OpenPBR requirements; PBR-01/02/04/05 complete and PBR-03 remains in Phase 4
 
 ## v2.0 Phase 1 Evidence
 
@@ -86,6 +86,8 @@ The shared host/device color path preserves raw and linear-sRGB values, decodes 
 
 The deterministic 64x64 reference gate now hits and scatters a connected SceneIR v2 material on CPU, renders it through `OptixRenderer`, and bounds linear RGB disagreement to `5e-4`; separate scenes prove non-Lambertian direct response and OpenPBR emissive-light participation. Host/CUDA transfer tests cover source-to-linear parity, and raw/linear/sRGB plus unsupported cases are independently gated. The full suite passes 60/60 after this slice.
 
+PBR-05 records the exact diffuse, metal, dielectric, emissive, and isotropic-volume translations together with stable warning codes for the three lossy assumptions. A fixed-seed OptiX gate renders the legacy and opt-in OpenPBR paths at 64x64, 16 samples per pixel, and four bounces, then compares the depth-masked subject in linear radiance. Six consecutive runs produced identical metrics: diffuse MAE `9.97737e-05`, metal `0.00866489`, dielectric `0.169882`, and exact emissive/volume agreement. Metal and dielectric P99 errors remain within their declared `0.32` and `1.20` bounds. The fully rebuilt suite passes 61/61, closing Phase 3 while leaving the legacy default path unchanged.
+
 Two fixed-seed default `smoke` captures used four 640x480 cameras, eight warmup frames, 100 measured frames, realtime profile, and no image writes on RTX 3090. They measured `29.996 ms / 33.34 FPS` and `28.022 ms / 35.69 FPS`, compared with the preceding same-protocol `29.1951/29.7210 ms` records. This is no-regression evidence, not a new uplift claim; one run contained system-noise P99 spikes while the second P99 was `32.309 ms`.
 
 ## Performance Metrics
@@ -136,7 +138,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- Add PBR-05 legacy diffuse/metal/dielectric/emissive/volume compatibility images and report lossy mappings before considering default-path migration.
+- Add optional official OpenUSD SDK integration and compile composed-stage instances, cameras, supported lights, and resolved material bindings into SceneIR v2 for USD-03.
 
 ### Blockers/Concerns
 
@@ -164,5 +166,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-07-19
-Stopped at: PBR-01/02/04 and the opt-in connected-material production path are closed with shared CPU/GPU sampling, direct lighting, emission, raw/linear/sRGB conversion, compact sidecar storage, a `5e-4` linear reference bound, and 60/60 tests; PBR-05 compatibility images and lossy-mapping diagnostics are next
+Stopped at: Phase 3 and PBR-05 are closed with documented translators, localized lossy-mapping warnings, five deterministic compatibility image comparisons, and 61/61 tests; USD-03 optional OpenUSD SDK integration and composed-stage import are next
 Resume file: .planning/milestones/v2.0-REQUIREMENTS.md

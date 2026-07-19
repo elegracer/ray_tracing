@@ -492,5 +492,6 @@ SceneLightIntensityUnit scene_light_intensity_unit(const SceneLight& light);
 
 SceneIRv2 compile_legacy_scene_ir_v2(const SceneIR& legacy_scene);
 SceneIRv2 compile_legacy_scene_ir_v2(const SceneIR& legacy_scene, SceneStageMetadata metadata);
+std::vector<SceneDiagnostic> diagnose_legacy_scene_ir_v2_compatibility(const SceneIRv2& scene);
 
 } // namespace rt::scene
