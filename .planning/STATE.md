@@ -2,19 +2,19 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-07-18)
+See: .planning/PROJECT.md (updated 2026-07-19)
 
 **Core value:** Composed scene, camera, light, and material meaning must stay consistent across offline and realtime rendering, while measured changes improve physical correctness and realtime performance together.
-**Current focus:** v2.0 Phase 2 — SceneIR v2 And OpenUSD Semantics
+**Current focus:** v2.0 Phase 3 — OpenPBR Core And Physical BSDFs
 
 ## Current Position
 
-Phase: 2 of 6 — SceneIR v2 And OpenUSD Semantics
-Plan: USD-01 and USD-02 contracts plus camera/asset/light compatibility are complete; finish USD-05 texture/material translation before the OpenUSD SDK frontend
-Status: Active milestone, Phase 2 in progress
-Last activity: 2026-07-19 - Added UsdLux-aligned light payloads and projected legacy emissive surfaces as geometry lights
+Phase: 3 of 6 — OpenPBR Core And Physical BSDFs
+Plan: PBR-01 authoring semantics and USD-05 compatibility projection are complete; implement the PBR-02 core evaluator and physical gates before scalable light reuse
+Status: Active milestone, Phase 3 in progress
+Last activity: 2026-07-19 - Added the OpenPBR 1.1.1/MaterialX material and texture contract with all legacy projections
 
-Progress: [#######---] 67% Phase 2 requirements; USD-01 and USD-02 complete, USD-05 remains
+Progress: [##--------] 20% OpenPBR requirements; PBR-01 complete, PBR-02/04/05 remain and PBR-03 stays gated to Phase 4
 
 ## v2.0 Phase 1 Evidence
 
@@ -74,6 +74,8 @@ The existing flat `SceneIR` remains the current CPU/GPU execution model. `compil
 
 `SceneLight` now preserves the common `UsdLuxLightAPI` color, nit-based intensity, stop-based exposure, size normalization, color-temperature, diffuse/specular, and material-sync semantics together with supported sphere/disk/rect/cylinder/distant/dome shape inputs. Validation rejects non-finite radiometry, out-of-range Kelvin values, invalid shape dimensions, incompatible payload ownership, and exposure overflow; capability diagnostics keep common, analytic, dome, geometry-light, normalization, and color-temperature support explicit. The legacy frontend applies a geometry-light payload to every emissive surface with `materialGlowTintsLight`, intensity 1, exposure 0, and normalization disabled, so the existing material emission remains authoritative and the v1 CPU/OptiX path is unchanged. The full build and all 57 CTest cases pass.
 
+`SceneOpenPbrSurface` now pins the official OpenPBR 1.1.1 MaterialX nodedef names, types, and defaults across base, specular, transmission, subsurface, fuzz, coat, thin-film, emission, and geometry inputs. Typed connections resolve through validated MaterialX `constant`, `checkerboard`, `image`, and `noise3d` color3 nodedefs with explicit UV, wrap/filter, output, and color-space semantics; scalar/vector displacement remains an explicit companion shader and layered energy conservation is part of the authored contract. The compatibility compiler deterministically maps diffuse, metal, dielectric, emissive, and isotropic-volume materials plus every legacy texture variant, retains raw image-byte behavior explicitly, and leaves the v1 CPU/OptiX execution path unchanged. Focused defaults, projection, rejection, reference, HDR, color-space, and backend-capability tests pass within the full 57/57 suite. This closes USD-05 and PBR-01; PBR-02 evaluator behavior and PBR-05 compatibility images remain open.
+
 ## Performance Metrics
 
 **Velocity:**
@@ -122,7 +124,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- Finish USD-05 by translating YAML/builtin texture and non-emissive material semantics through the compatibility frontend while preserving the verified v1 execution adapter during migration.
+- Implement the first shared CPU/GPU OpenPBR evaluator slice with matched evaluate/sample/PDF behavior for base, specular, transmission, emission, opacity, thin-walled, normal, and tangent inputs, then gate it with finite-radiance, PDF-normalization, energy, and CPU/GPU agreement tests.
 
 ### Blockers/Concerns
 
@@ -133,7 +135,7 @@ Recent decisions affecting current work:
 - Single-run P99 varied materially across repeated captures, so future speed claims need repeated identical runs in addition to the now-recorded workload and environment.
 - CUDA memory telemetry is device-global rather than per-process; concurrent GPU workloads can perturb baseline and peak values.
 - OpenUSD and MaterialX SDK dependencies are not yet present; add them only at the Phase 4 boundary after `SceneIR v2` is stable.
-- Codex 0.145.0-alpha.18 still routes `gpt-5.6-*` code-mode web calls through a host tool endpoint that returns HTTP 404. The active compatibility route now uses `gpt-5.5`, `web_search = "live"`, and an unfiltered `web` namespace; a clean default-config Codex run emitted a native `web_search` event and resolved the official OpenUSD 25.11 release page. Re-test the 5.6 route before restoring it as the default.
+- The current `gpt-5.6-*` Codex IDE route still returns HTTP 404 from the built-in web tool. This is not a renderer delivery blocker: bounded public research uses direct read-only HTTP against official primary sources and records the pinned source revision. Do not spend renderer goal turns repairing host search unless the user explicitly reopens that task.
 
 ## Deferred Items
 
@@ -149,5 +151,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-07-19
-Stopped at: OpenUSD camera, asset, and UsdLux light semantics plus legacy emissive projection are implemented with 57/57 tests; remaining USD-05 texture/material translation is next
+Stopped at: Phase 2 and PBR-01 are closed by the OpenPBR 1.1.1/MaterialX SceneIR v2 contract and all legacy material/texture projections with 57/57 tests; the shared PBR-02 evaluator is next
 Resume file: .planning/milestones/v2.0-REQUIREMENTS.md

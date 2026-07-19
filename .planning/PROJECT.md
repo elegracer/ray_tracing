@@ -28,6 +28,7 @@ Composed scene, camera, light, and material meaning must stay consistent across 
 - ✓ Automated coverage now anchors camera math to the bundled reference headers and checks CPU/GPU cross-path camera contracts — `v1.0`
 - ✓ Phase 1 now provides truthful critical-path/work metrics, reproducible benchmark provenance, OptiX temporal AOV reconstruction, temporal reset/reference gates, and CUDA/OpenGL viewer presentation with opt-in host readback — `v2.0`
 - ✓ `SceneIR v2` now defines OpenUSD-aligned prim identity, stage units/time metadata, hierarchy, full affine transforms, visibility/purpose inheritance, transform samples, and explicit capability diagnostics; YAML scenes receive a deterministic v2 compatibility projection — `v2.0`
+- ✓ `SceneIR v2` now carries the official OpenPBR 1.1.1 parameter/default contract, MaterialX color3 texture nodes and displacement metadata, typed connected inputs, explicit color spaces, and deterministic projections for every legacy material and texture variant without changing the v1 execution path — `v2.0`
 
 ### Active
 
@@ -75,7 +76,7 @@ The repo already has strong regression coverage across scene loading, camera rig
 | Defer dynamic resolution, explicit intrinsics, distortion tuning, and SE3 extrinsics to follow-up phases | Those capabilities are important but materially larger than the initial dual-model rollout | Deferred past `v1.0` |
 | Compile composed OpenUSD stages into `SceneIR v2` | OpenUSD should own composition and authoring semantics while the renderer owns compact execution data | Active in `v2.0` |
 | Keep legacy `SceneIR` as an execution compatibility model while `SceneIR v2` becomes the semantic contract | An additive deterministic frontend preserves current CPU/GPU behavior while stable prim paths and OpenUSD semantics are validated independently | Active in `v2.0` |
-| Use the official MaterialX OpenPBR node definition as the material contract | Stable names, defaults, connectivity, and reference implementations prevent another bespoke material dialect | Active in `v2.0` |
+| Use the official MaterialX OpenPBR node definition as the material contract | Stable names, defaults, connectivity, and reference implementations prevent another bespoke material dialect | Authoring contract shipped; evaluator active in `v2.0` |
 | Implement OptiX temporal AOV denoising before evaluating NRD | It fits the current OptiX/CUDA stack and removes the measured CPU clamp bottleneck with the lowest integration risk | Active in `v2.0` |
 | Sequence unbiased light sampling and ReSTIR DI before ReSTIR GI/PT or neural caching | Reuse methods depend on correct BSDF/light PDFs, motion, and validation; advanced reuse cannot repair a biased baseline | Active in `v2.0` |
 | Treat wall latency and summed parallel work as different metrics | The current subtraction creates negative overhead and invalid performance conclusions | Active in `v2.0` |
@@ -107,4 +108,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-19 after SceneIR v2 core-contract delivery*
+*Last updated: 2026-07-19 after SceneIR v2 OpenPBR/MaterialX contract delivery*
