@@ -12,9 +12,9 @@ See: .planning/PROJECT.md (updated 2026-07-19)
 Phase: 4 of 6 — OpenUSD And MaterialX I/O
 Plan: Add optional official SDK integration, composed-stage import, deterministic supported-subset export, and advanced OpenPBR lobes
 Status: Active milestone, Phase 4 in progress
-Last activity: 2026-07-19 - Closed USD-03 with optional official OpenUSD v26.05 composed-stage import and SDK OFF/ON gates
+Last activity: 2026-07-19 - Closed USD-04 with deterministic USDA export and semantic round-trip gates
 
-Progress: [########--] 80% OpenUSD requirements; USD-01/02/03/05 complete and USD-04 remains in Phase 4
+Progress: [##########] 100% of scoped OpenUSD requirements complete; connected MaterialX graph import and advanced OpenPBR lobes keep Phase 4 active
 
 ## v2.0 Phase 1 Evidence
 
@@ -96,7 +96,11 @@ USD-03 adds an opt-in `RT_ENABLE_OPENUSD` frontend validated against the officia
 
 The importer opens a composed `UsdStage`, preserves stage metadata, affine transforms, reset stacks, visibility, purpose, and transform samples, and traverses instance proxies without leaking unstable generated prototype paths. Sphere and mesh payloads compile into deterministic renderer-owned geometry prototypes; instance surfaces reuse shared prototypes and resolve inherited bindings through `UsdShadeMaterialBindingAPI::ComputeBoundMaterial`. `UsdGeomCamera`, sphere/disk/rect/cylinder/distant/dome `UsdLux` lights, light texture assets, and constant `ND_open_pbr_surface_surfaceshader` inputs compile into their existing SceneIR v2 payloads. Unsupported prim schemas, surface shader ids, authored inputs, and connected OpenPBR inputs fail explicitly.
 
-The curated fixture composes a referenced layer, two instanceable references, a camera, all six supported light schemas, texture assets, and an inherited OpenPBR material binding. The OpenUSD SDK ON targeted CTest passes against `v26.05`; a clean default SDK OFF rebuild and the full CUDA/OptiX suite pass 62/62. Implementation commit `592c73d` and fixture-gate commit `4126ecc` provide the review boundary. USD-04 deterministic supported-subset export and semantic round trips remain next.
+The curated fixture composes a referenced layer, two instanceable references, a camera, all six supported light schemas, texture assets, and an inherited OpenPBR material binding. The OpenUSD SDK ON targeted CTest passes against `v26.05`; a clean default SDK OFF rebuild and the full CUDA/OptiX suite passed 62/62 at the USD-03 boundary. Implementation commit `592c73d` and fixture-gate commit `4126ecc` provide its review boundary.
+
+USD-04 adds deterministic `.usda` export for the curated SceneIR v2 subset. It authors stage/time metadata, hierarchy and affine samples, instanceable class-backed sphere/mesh prototypes, cameras, all six supported UsdLux schemas, authored light assets, resolved material bindings, and constant OpenPBR surface inputs. Compiler-internal SceneIR prims stay private, and unsupported connected inputs, displacement, volumes, geometry lights, camera calibration extensions, mesh primvars/subsets, and non-USDA destinations fail explicitly.
+
+The round-trip gate exports the composed fixture twice and requires byte-identical output, reimports it and compares stage metadata plus every prim/payload semantically, then requires the canonical re-export to remain byte-identical. The fixture now covers left-handed mesh topology in addition to sphere instances, hierarchy, sampled transforms, camera, six light types, assets, and constant OpenPBR. Official SDK ON and default SDK OFF full builds and CTest both pass 63/63. Implementation commit `65cc2f5` and fixture-gate commit `e853ebf` provide the USD-04 review boundary.
 
 ## Performance Metrics
 
@@ -146,7 +150,6 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- Implement deterministic supported-subset OpenUSD export plus import/export/import semantic round-trip fixtures for USD-04.
 - Compile the supported SceneIR material connections from UsdShade/MaterialX graphs without weakening the current explicit rejection path.
 
 ### Blockers/Concerns
@@ -175,5 +178,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-07-19
-Stopped at: USD-03 is closed with official OpenUSD v26.05 composed-stage import, deterministic renderer prototypes, resolved constant OpenPBR bindings, SDK OFF/ON tests, and 62/62 default CTest; USD-04 deterministic export and round-trip fixtures are next
+Stopped at: USD-04 is closed with deterministic supported-subset USDA export, byte-stable canonical output, full semantic round trips, SDK OFF/ON tests, and 63/63 CTest in both configurations; supported connected UsdShade/MaterialX graph import is next
 Resume file: .planning/milestones/v2.0-REQUIREMENTS.md

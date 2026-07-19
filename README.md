@@ -44,7 +44,7 @@ For correctness-focused `final_room` validation, use:
 `final_room` is intended for correctness-first checks, not the default benchmark path.
 The automated CLI coverage keeps this path lightweight by running a skip-write verification pass separately.
 
-## Optional OpenUSD Stage Import
+## Optional OpenUSD Stage I/O
 
 The default build keeps the official OpenUSD dependency disabled. To compile and validate
 the composed-stage frontend against an OpenUSD installation that exports `pxrConfig.cmake`:
@@ -54,13 +54,21 @@ cmake -S . -B build-openusd -G Ninja \
   -DCMAKE_CXX_COMPILER=clang++ \
   -DRT_ENABLE_OPENUSD=ON \
   -Dpxr_DIR=/path/to/openusd-install
-cmake --build build-openusd --target test_openusd_stage_importer -j
-ctest --test-dir build-openusd -R '^test_openusd_stage_importer$' --output-on-failure
+cmake --build build-openusd \
+  --target test_openusd_stage_importer test_openusd_stage_exporter -j
+ctest --test-dir build-openusd \
+  -R '^test_openusd_stage_(importer|exporter)$' --output-on-failure
 ```
 
 The integration is validated with OpenUSD `v26.05`. The SDK-facing object library stays at
 OpenUSD's C++17 language boundary while the renderer remains C++23. SDK-disabled builds retain
-the legacy YAML/builtin execution path and report the missing import capability explicitly.
+the legacy YAML/builtin execution path and report missing I/O capabilities explicitly.
+
+`import_openusd_stage` compiles a composed stage into SceneIR v2. `export_openusd_stage` writes
+the deterministic supported subset to `.usda`; the round-trip gate checks byte stability and
+semantic equality for metadata, hierarchy, transforms, instances, sphere/mesh geometry, cameras,
+supported lights/assets, resolved material bindings, and constant OpenPBR inputs. Unsupported
+connected graphs and payloads fail explicitly instead of being discarded.
 
 ## GUI Viewer
 
