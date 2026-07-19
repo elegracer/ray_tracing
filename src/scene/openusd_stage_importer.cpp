@@ -119,6 +119,14 @@ bool is_supported_geometry(const pxr::UsdPrim& prim) {
 }
 
 std::string geometry_source_key(const pxr::UsdPrim& prim) {
+    if (prim.IsInstance()) {
+        const pxr::UsdPrim prototype_prim = prim.GetPrototype();
+        if (!prototype_prim) {
+            throw std::invalid_argument("OpenUSD instance does not resolve to a prototype prim: "
+                                        + prim.GetPath().GetString());
+        }
+        return "prototype:" + prototype_prim.GetPath().GetString();
+    }
     if (prim.IsInstanceProxy()) {
         const pxr::UsdPrim prototype_prim = prim.GetPrimInPrototype();
         if (!prototype_prim) {

@@ -106,22 +106,24 @@ enable_testing()
 # compatible with libstdc++ constrained-pair checks under C++20/23. Keep the
 # SDK-facing translation unit at the upstream language boundary while the
 # renderer remains C++23.
-add_library(openusd_stage_importer OBJECT
+add_library(openusd_stage_io OBJECT
     ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/openusd_stage_importer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/openusd_stage_importer.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/openusd_stage_exporter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/openusd_stage_exporter.h
 )
-set_target_properties(openusd_stage_importer PROPERTIES
+set_target_properties(openusd_stage_io PROPERTIES
     CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF
 )
-target_include_directories(openusd_stage_importer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_definitions(openusd_stage_importer PRIVATE
+target_include_directories(openusd_stage_io PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_definitions(openusd_stage_io PRIVATE
     RT_HAS_OPENUSD=$<BOOL:${RT_ENABLE_OPENUSD}>
 )
-target_link_libraries(openusd_stage_importer PRIVATE Eigen3::Eigen)
+target_link_libraries(openusd_stage_io PRIVATE Eigen3::Eigen)
 if(RT_ENABLE_OPENUSD)
-    target_link_libraries(openusd_stage_importer PRIVATE ${RT_OPENUSD_TARGETS})
+    target_link_libraries(openusd_stage_io PRIVATE ${RT_OPENUSD_TARGETS})
 endif()
 
 # core library
@@ -130,7 +132,7 @@ configure_file(cmake/version.h.in include/core/version.h)
 add_library(core SHARED)
 target_sources(core
     PRIVATE
-        $<TARGET_OBJECTS:openusd_stage_importer>
+        $<TARGET_OBJECTS:openusd_stage_io>
         ${CMAKE_CURRENT_BINARY_DIR}/include/core/version.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/core.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/core.h
