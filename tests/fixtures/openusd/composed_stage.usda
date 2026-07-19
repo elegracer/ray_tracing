@@ -1,0 +1,114 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    endTimeCode = 24
+    framesPerSecond = 24
+    metersPerUnit = 1
+    startTimeCode = 1
+    timeCodesPerSecond = 48
+    upAxis = "Z"
+)
+
+def Xform "World" (
+    prepend apiSchemas = ["MaterialBindingAPI"]
+    prepend references = @composed_asset.usda@</Asset>
+)
+{
+    double3 xformOp:translate.timeSamples = {
+        1: (1, 2, 3),
+        24: (4, 5, 6),
+    }
+    uniform token[] xformOpOrder = ["!resetXformStack!", "xformOp:translate"]
+    rel material:binding = </World/Looks/Red>
+
+    def Scope "Local"
+    {
+    }
+
+    def Scope "Looks"
+    {
+        def Material "Red"
+        {
+            token outputs:surface.connect = </World/Looks/Red/OpenPBR.outputs:out>
+
+            def Shader "OpenPBR"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                color3f inputs:base_color = (0.8, 0.2, 0.1)
+                float inputs:base_metalness = 0.25
+                float inputs:specular_roughness = 0.4
+                token outputs:out
+            }
+        }
+    }
+
+    def Camera "RenderCamera"
+    {
+        float focalLength = 35
+        float horizontalAperture = 24
+        float verticalAperture = 18
+        float2 clippingRange = (0.1, 500)
+        float fStop = 2.8
+        float focusDistance = 12
+        double3 xformOp:translate = (3, 4, 5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def SphereLight "SphereKey"
+    {
+        color3f inputs:color = (1, 0.5, 0.25)
+        float inputs:intensity = 8
+        float inputs:exposure = 1
+        bool inputs:normalize = true
+        float inputs:radius = 0.75
+        bool treatAsPoint = true
+        uniform token light:materialSyncMode = "independent"
+    }
+
+    def DiskLight "DiskFill"
+    {
+        float inputs:radius = 1.25
+    }
+
+    def RectLight "RectPanel"
+    {
+        float inputs:width = 2
+        float inputs:height = 3
+        asset inputs:texture:file = @panel.exr@
+    }
+
+    def CylinderLight "Tube"
+    {
+        float inputs:length = 4
+        float inputs:radius = 0.2
+        bool treatAsLine = true
+    }
+
+    def DistantLight "Sun"
+    {
+        float inputs:angle = 0.6
+    }
+
+    def DomeLight "Environment"
+    {
+        asset inputs:texture:file = @environment.exr@
+    }
+
+    def Xform "InstanceA" (
+        instanceable = true
+        prepend references = @composed_asset.usda@</Asset>
+    )
+    {
+        double3 xformOp:translate = (10, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Xform "InstanceB" (
+        instanceable = true
+        prepend references = @composed_asset.usda@</Asset>
+    )
+    {
+        double3 xformOp:translate = (20, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+}
