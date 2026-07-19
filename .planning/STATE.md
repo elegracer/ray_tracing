@@ -12,9 +12,9 @@ See: .planning/PROJECT.md (updated 2026-07-19)
 Phase: 4 of 6 — OpenUSD And MaterialX I/O
 Plan: Add optional official SDK integration, composed-stage import, deterministic supported-subset export, and advanced OpenPBR lobes
 Status: Active milestone, Phase 4 in progress
-Last activity: 2026-07-19 - Closed PBR-05 with documented legacy translators, explicit lossy-mapping diagnostics, and five deterministic OptiX compatibility image comparisons
+Last activity: 2026-07-19 - Closed USD-03 with optional official OpenUSD v26.05 composed-stage import and SDK OFF/ON gates
 
-Progress: [########--] 80% OpenPBR requirements; PBR-01/02/04/05 complete and PBR-03 remains in Phase 4
+Progress: [########--] 80% OpenUSD requirements; USD-01/02/03/05 complete and USD-04 remains in Phase 4
 
 ## v2.0 Phase 1 Evidence
 
@@ -90,6 +90,14 @@ PBR-05 records the exact diffuse, metal, dielectric, emissive, and isotropic-vol
 
 Two fixed-seed default `smoke` captures used four 640x480 cameras, eight warmup frames, 100 measured frames, realtime profile, and no image writes on RTX 3090. They measured `29.996 ms / 33.34 FPS` and `28.022 ms / 35.69 FPS`, compared with the preceding same-protocol `29.1951/29.7210 ms` records. This is no-regression evidence, not a new uplift claim; one run contained system-noise P99 spikes while the second P99 was `32.309 ms`.
 
+## v2.0 Phase 4 Evidence
+
+USD-03 adds an opt-in `RT_ENABLE_OPENUSD` frontend validated against the official OpenUSD `v26.05` monolithic SDK. The SDK-facing translation unit is isolated at OpenUSD's C++17 boundary, while the renderer and all public SceneIR v2 contracts remain C++23. The default SDK-disabled build requires no OpenUSD headers or libraries and fails import with an exact capability message, so YAML/builtin rendering remains the unchanged default.
+
+The importer opens a composed `UsdStage`, preserves stage metadata, affine transforms, reset stacks, visibility, purpose, and transform samples, and traverses instance proxies without leaking unstable generated prototype paths. Sphere and mesh payloads compile into deterministic renderer-owned geometry prototypes; instance surfaces reuse shared prototypes and resolve inherited bindings through `UsdShadeMaterialBindingAPI::ComputeBoundMaterial`. `UsdGeomCamera`, sphere/disk/rect/cylinder/distant/dome `UsdLux` lights, light texture assets, and constant `ND_open_pbr_surface_surfaceshader` inputs compile into their existing SceneIR v2 payloads. Unsupported prim schemas, surface shader ids, authored inputs, and connected OpenPBR inputs fail explicitly.
+
+The curated fixture composes a referenced layer, two instanceable references, a camera, all six supported light schemas, texture assets, and an inherited OpenPBR material binding. The OpenUSD SDK ON targeted CTest passes against `v26.05`; a clean default SDK OFF rebuild and the full CUDA/OptiX suite pass 62/62. Implementation commit `592c73d` and fixture-gate commit `4126ecc` provide the review boundary. USD-04 deterministic supported-subset export and semantic round trips remain next.
+
 ## Performance Metrics
 
 **Velocity:**
@@ -138,7 +146,8 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- Add optional official OpenUSD SDK integration and compile composed-stage instances, cameras, supported lights, and resolved material bindings into SceneIR v2 for USD-03.
+- Implement deterministic supported-subset OpenUSD export plus import/export/import semantic round-trip fixtures for USD-04.
+- Compile the supported SceneIR material connections from UsdShade/MaterialX graphs without weakening the current explicit rejection path.
 
 ### Blockers/Concerns
 
@@ -148,7 +157,7 @@ Recent decisions affecting current work:
 - The first temporal reference fixture covers final_room motion/disocclusion plus exact reset parity; broader multi-scene perceptual coverage remains part of VAL-02 rather than Phase 1 reconstruction closure.
 - Single-run P99 varied materially across repeated captures, so future speed claims need repeated identical runs in addition to the now-recorded workload and environment.
 - CUDA memory telemetry is device-global rather than per-process; concurrent GPU workloads can perturb baseline and peak values.
-- OpenUSD and MaterialX SDK dependencies are not yet present; add them only at the Phase 4 boundary after `SceneIR v2` is stable.
+- OpenUSD is an optional system SDK dependency with verified OFF/ON paths; MaterialX graph parsing remains unwired and connected USD shader inputs stay fail-closed.
 - Direct-light sampling still uses the existing center/nearest-point heuristic without solid-angle/area PDFs or MIS. OpenPBR surfaces now use the shared BSDF response and emissive materials participate, but unbiased light transport remains a Phase 5 gate before ReSTIR DI.
 - The current `gpt-5.6-*` Codex IDE route still returns HTTP 404 from the built-in web tool. This is not a renderer delivery blocker: bounded public research uses direct read-only HTTP against official primary sources and records the pinned source revision. Do not spend renderer goal turns repairing host search unless the user explicitly reopens that task.
 
@@ -166,5 +175,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-07-19
-Stopped at: Phase 3 and PBR-05 are closed with documented translators, localized lossy-mapping warnings, five deterministic compatibility image comparisons, and 61/61 tests; USD-03 optional OpenUSD SDK integration and composed-stage import are next
+Stopped at: USD-03 is closed with official OpenUSD v26.05 composed-stage import, deterministic renderer prototypes, resolved constant OpenPBR bindings, SDK OFF/ON tests, and 62/62 default CTest; USD-04 deterministic export and round-trip fixtures are next
 Resume file: .planning/milestones/v2.0-REQUIREMENTS.md

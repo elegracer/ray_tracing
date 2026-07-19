@@ -44,6 +44,24 @@ For correctness-focused `final_room` validation, use:
 `final_room` is intended for correctness-first checks, not the default benchmark path.
 The automated CLI coverage keeps this path lightweight by running a skip-write verification pass separately.
 
+## Optional OpenUSD Stage Import
+
+The default build keeps the official OpenUSD dependency disabled. To compile and validate
+the composed-stage frontend against an OpenUSD installation that exports `pxrConfig.cmake`:
+
+```bash
+cmake -S . -B build-openusd -G Ninja \
+  -DCMAKE_CXX_COMPILER=clang++ \
+  -DRT_ENABLE_OPENUSD=ON \
+  -Dpxr_DIR=/path/to/openusd-install
+cmake --build build-openusd --target test_openusd_stage_importer -j
+ctest --test-dir build-openusd -R '^test_openusd_stage_importer$' --output-on-failure
+```
+
+The integration is validated with OpenUSD `v26.05`. The SDK-facing object library stays at
+OpenUSD's C++17 language boundary while the renderer remains C++23. SDK-disabled builds retain
+the legacy YAML/builtin execution path and report the missing import capability explicitly.
+
 ## GUI Viewer
 
 Build and run the default interactive viewer with:

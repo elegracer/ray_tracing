@@ -15,7 +15,7 @@ Baseline: `.planning/v2.0-BASELINE.json`
 - [x] **Phase 1: Truthful Benchmarking And GPU Reconstruction** — critical-path/work metrics, native OptiX temporal AOV denoising, self-contained benchmark provenance/artifacts, temporal reference gates, and GPU-resident CUDA/OpenGL viewer presentation are complete.
 - [x] **Phase 2: SceneIR v2 And OpenUSD Semantics** — USD-01 identity/stage/hierarchy/xform, USD-02 geometry/primvar/subset, prototype/instance, camera, asset, UsdLux light, and full USD-05 legacy texture/material compatibility semantics are complete.
 - [x] **Phase 3: OpenPBR Core And Physical BSDFs** — the official OpenPBR 1.1.1 authoring contract and shared CPU/GPU evaluator run through an opt-in SceneIR v2 production path with matched sampling, direct response, emission, four supported MaterialX color3 connections, explicit source-to-linear conversion, compact GPU sidecar storage, deterministic linear reference gates, documented legacy mappings, and five fixed-seed compatibility image comparisons.
-- [ ] **Phase 4: OpenUSD And MaterialX I/O** — optional SDK integration, composed-stage import, resolved bindings, supported deterministic export, and advanced OpenPBR lobes.
+- [ ] **Phase 4: OpenUSD And MaterialX I/O** — USD-03 optional OpenUSD `v26.05` SDK integration, composed-stage instances/cameras/lights/assets, and resolved constant OpenPBR bindings are complete; supported deterministic export, round-trip gates, connected shader import, and advanced OpenPBR lobes remain.
 - [ ] **Phase 5: Scalable Lighting And GPU Scheduling** — explicit light distributions, environment sampling, MIS, ReSTIR DI, persistent scheduling/launch data, and AS update/refit/instancing.
 - [ ] **Phase 6: Quality/Performance Closure And Advanced Reuse** — reference corpus, physical/temporal/image gates, NRD comparison, capability-gated ReSTIR GI/PT and neural cache experiments.
 
@@ -28,4 +28,4 @@ Baseline: `.planning/v2.0-BASELINE.json`
 
 ## Immediate Next Step
 
-Begin USD-03 by adding optional official OpenUSD SDK integration and compiling composed `UsdStage` instances, cameras, supported lights, and resolved material bindings into SceneIR v2. Keep the legacy execution path as the default until real OpenUSD/OpenPBR fixtures, deterministic export, and advanced-lobe gates justify migration.
+Implement USD-04 deterministic supported-subset export and semantic import/export/import round trips for the curated OpenUSD fixture. Keep the legacy execution path as the default, and keep connected shader import plus advanced OpenPBR lobes explicit gates rather than silently dropping authored inputs.
