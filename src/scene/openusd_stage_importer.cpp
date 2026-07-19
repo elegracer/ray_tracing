@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <iomanip>
 #include <map>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -16,12 +18,15 @@
 #if RT_HAS_OPENUSD
 #include <pxr/base/gf/camera.h>
 #include <pxr/base/gf/matrix4d.h>
+#include <pxr/base/gf/vec2d.h>
+#include <pxr/base/gf/vec2f.h>
 #include <pxr/base/gf/vec3d.h>
 #include <pxr/base/gf/vec3f.h>
 #include <pxr/base/tf/token.h>
 #include <pxr/base/vt/types.h>
 #include <pxr/base/vt/value.h>
 #include <pxr/usd/sdf/assetPath.h>
+#include <pxr/usd/sdf/types.h>
 #include <pxr/usd/usd/primDefinition.h>
 #include <pxr/usd/usd/interpolation.h>
 #include <pxr/usd/usd/prim.h>
@@ -45,9 +50,11 @@
 #include <pxr/usd/usdLux/rectLight.h>
 #include <pxr/usd/usdLux/sphereLight.h>
 #include <pxr/usd/usdLux/tokens.h>
+#include <pxr/usd/usdShade/connectableAPI.h>
 #include <pxr/usd/usdShade/input.h>
 #include <pxr/usd/usdShade/material.h>
 #include <pxr/usd/usdShade/materialBindingAPI.h>
+#include <pxr/usd/usdShade/output.h>
 #include <pxr/usd/usdShade/shader.h>
 #include <pxr/usd/usdShade/tokens.h>
 #endif
@@ -68,6 +75,7 @@ namespace {
 constexpr std::string_view kSyntheticRoot = "/__SceneIR";
 constexpr std::string_view kSyntheticPrototypeRoot = "/__SceneIR/Prototypes";
 constexpr std::string_view kSyntheticMaterialRoot = "/__SceneIR/Materials";
+constexpr std::string_view kSyntheticTextureRoot = "/__SceneIR/Textures";
 constexpr std::string_view kDefaultMaterialPath = "/__SceneIR/Materials/Default";
 
 Eigen::Matrix4d to_eigen_transform(const pxr::GfMatrix4d& value) {
@@ -109,6 +117,18 @@ std::string stable_prototype_path(std::string_view anchor_path) {
     }
     std::ostringstream path;
     path << kSyntheticPrototypeRoot << "/P_" << std::hex << std::setw(16) << std::setfill('0')
+         << hash;
+    return path.str();
+}
+
+std::string stable_texture_path(std::string_view source_key) {
+    std::uint64_t hash = 14695981039346656037ULL;
+    for (const unsigned char byte : source_key) {
+        hash ^= byte;
+        hash *= 1099511628211ULL;
+    }
+    std::ostringstream path;
+    path << kSyntheticTextureRoot << "/T_" << std::hex << std::setw(16) << std::setfill('0')
          << hash;
     return path.str();
 }
@@ -300,7 +320,360 @@ Eigen::Vector3d material_color(const pxr::VtValue& value, const std::string& inp
     throw std::invalid_argument("OpenPBR color input requires color3f or color3d: " + input_path);
 }
 
-SceneOpenPbrSurface import_openpbr_surface(const pxr::UsdShadeShader& shader) {
+Eigen::Vector2d material_vector2(const pxr::VtValue& value, const std::string& input_path) {
+    if (value.IsHolding<pxr::GfVec2f>()) {
+        const pxr::GfVec2f& vector = value.UncheckedGet<pxr::GfVec2f>();
+        return {static_cast<double>(vector[0]), static_cast<double>(vector[1])};
+    }
+    if (value.IsHolding<pxr::GfVec2d>()) {
+        const pxr::GfVec2d& vector = value.UncheckedGet<pxr::GfVec2d>();
+        return {vector[0], vector[1]};
+    }
+    throw std::invalid_argument(
+        "MaterialX vector input requires vector2f or vector2d: " + input_path);
+}
+
+std::string material_string(const pxr::VtValue& value, const std::string& input_path) {
+    if (value.IsHolding<std::string>()) {
+        return value.UncheckedGet<std::string>();
+    }
+    throw std::invalid_argument("MaterialX string input requires an Sdf string: " + input_path);
+}
+
+void append_asset_reference(const pxr::UsdAttribute& attribute, const std::string& prim_path,
+    std::vector<SceneAssetReference>& assets) {
+    if (!attribute.HasAuthoredValueOpinion()) {
+        return;
+    }
+    const pxr::SdfAssetPath value =
+        read_attribute<pxr::SdfAssetPath>(attribute, prim_path, "asset path");
+    SceneAssetReference asset;
+    asset.authored_path = value.GetAssetPath();
+    asset.evaluated_path = value.GetAssetPath();
+    asset.resolved_path = value.GetResolvedPath();
+    assets.push_back(std::move(asset));
+}
+
+template<std::size_t N>
+void require_supported_inputs(const pxr::UsdShadeShader& shader,
+    const std::array<std::string_view, N>& supported_names) {
+    for (const pxr::UsdShadeInput& input : shader.GetInputs(true)) {
+        const std::string input_name = input.GetBaseName().GetString();
+        if (std::find(supported_names.begin(), supported_names.end(), input_name)
+            == supported_names.end()) {
+            throw std::invalid_argument("unsupported authored MaterialX input on "
+                                        + shader.GetPath().GetString() + ".inputs:" + input_name);
+        }
+    }
+}
+
+pxr::VtValue read_materialx_input(const pxr::UsdShadeShader& shader, std::string_view name,
+    pxr::VtValue default_value) {
+    const pxr::UsdShadeInput input = shader.GetInput(pxr::TfToken {std::string {name}});
+    if (!input) {
+        return default_value;
+    }
+    pxr::SdfPathVector invalid_sources;
+    const pxr::UsdShadeSourceInfoVector sources = input.GetConnectedSources(&invalid_sources);
+    if (!invalid_sources.empty() || !sources.empty()) {
+        throw std::invalid_argument(
+            "MaterialX constant input may not be connected in the "
+            "supported subset: "
+            + input.GetAttr().GetPath().GetString());
+    }
+    pxr::VtValue value;
+    if (!input.Get(&value, pxr::UsdTimeCode::Default())) {
+        throw std::invalid_argument(
+            "failed to read authored MaterialX input: " + input.GetAttr().GetPath().GetString());
+    }
+    return value;
+}
+
+void require_unset_materialx_input(const pxr::UsdShadeShader& shader, std::string_view name) {
+    const pxr::UsdShadeInput input = shader.GetInput(pxr::TfToken {std::string {name}});
+    if (input) {
+        throw std::invalid_argument("MaterialX input is outside the supported SceneIR subset: "
+                                    + input.GetAttr().GetPath().GetString());
+    }
+}
+
+SceneTextureAddressMode texture_address_mode(std::string_view value,
+    const std::string& input_path) {
+    if (value == "constant") {
+        return SceneTextureAddressMode::constant;
+    }
+    if (value == "clamp") {
+        return SceneTextureAddressMode::clamp;
+    }
+    if (value == "periodic") {
+        return SceneTextureAddressMode::periodic;
+    }
+    if (value == "mirror") {
+        return SceneTextureAddressMode::mirror;
+    }
+    throw std::invalid_argument(
+        "unsupported MaterialX address mode '" + std::string {value} + "' on " + input_path);
+}
+
+SceneTextureFilterType texture_filter_type(std::string_view value, const std::string& input_path) {
+    if (value == "closest") {
+        return SceneTextureFilterType::closest;
+    }
+    if (value == "linear") {
+        return SceneTextureFilterType::linear;
+    }
+    if (value == "cubic") {
+        return SceneTextureFilterType::cubic;
+    }
+    throw std::invalid_argument(
+        "unsupported MaterialX filter type '" + std::string {value} + "' on " + input_path);
+}
+
+SceneColorSpace texture_color_space(const pxr::UsdAttribute& file_attribute,
+    const std::string& input_path) {
+    if (!file_attribute.HasColorSpace()) {
+        throw std::invalid_argument(
+            "MaterialX image input requires explicit colorSpace metadata: " + input_path);
+    }
+    const std::string value = file_attribute.GetColorSpace().GetString();
+    if (value == "raw") {
+        return SceneColorSpace::raw;
+    }
+    if (value == "lin_rec709" || value == "linear_srgb") {
+        return SceneColorSpace::linear_srgb;
+    }
+    if (value == "sRGB" || value == "srgb_texture") {
+        return SceneColorSpace::srgb_texture;
+    }
+    if (value == "acescg") {
+        return SceneColorSpace::acescg;
+    }
+    throw std::invalid_argument(
+        "unsupported MaterialX image color space '" + value + "' on " + input_path);
+}
+
+struct ImportedTexture {
+    std::string source_key;
+    ScenePrim prim;
+};
+
+struct MaterialGraphImport {
+    std::vector<ImportedTexture> textures;
+    std::unordered_map<std::string, std::string> texture_path_by_source;
+    std::unordered_map<std::string, std::string> source_by_texture_path;
+    std::unordered_set<std::string> active_sources;
+};
+
+std::string register_texture_source(std::string source_key, ScenePrim prim,
+    MaterialGraphImport& graph) {
+    const auto existing = graph.texture_path_by_source.find(source_key);
+    if (existing != graph.texture_path_by_source.end()) {
+        return existing->second;
+    }
+    prim.path = stable_texture_path(source_key);
+    const auto collision = graph.source_by_texture_path.emplace(prim.path, source_key);
+    if (!collision.second && collision.first->second != source_key) {
+        throw std::invalid_argument("stable SceneIR texture hash collision for " + source_key);
+    }
+    const std::string path = prim.path;
+    graph.texture_path_by_source.emplace(source_key, path);
+    graph.textures.push_back({std::move(source_key), std::move(prim)});
+    return path;
+}
+
+std::optional<pxr::UsdShadeShader> connected_texture_shader(const pxr::UsdShadeInput& input) {
+    pxr::SdfPathVector invalid_sources;
+    const pxr::UsdShadeSourceInfoVector sources = input.GetConnectedSources(&invalid_sources);
+    const std::string input_path = input.GetAttr().GetPath().GetString();
+    if (!invalid_sources.empty()) {
+        throw std::invalid_argument("invalid UsdShade connection source on " + input_path);
+    }
+    if (sources.empty()) {
+        return std::nullopt;
+    }
+    if (sources.size() != 1) {
+        throw std::invalid_argument(
+            "multiple UsdShade connection sources are unsupported on " + input_path);
+    }
+    const pxr::UsdShadeConnectionSourceInfo& source = sources.front();
+    if (source.sourceType != pxr::UsdShadeAttributeType::Output
+        || source.sourceName != pxr::TfToken {"out"}
+        || (source.typeName != pxr::SdfValueTypeNames->Color3f
+            && source.typeName != pxr::SdfValueTypeNames->Color3d)) {
+        throw std::invalid_argument(
+            "connected MaterialX input requires one color3 outputs:out source: " + input_path);
+    }
+    const pxr::UsdShadeShader shader {source.source.GetPrim()};
+    if (!shader) {
+        throw std::invalid_argument(
+            "connected MaterialX source must be a UsdShadeShader: " + input_path);
+    }
+    if (input.GetAttr().HasAuthoredValueOpinion()) {
+        throw std::invalid_argument(
+            "connected MaterialX input fallback values are unsupported: " + input_path);
+    }
+    return shader;
+}
+
+std::string import_texture_shader(const pxr::UsdShadeShader& shader, MaterialGraphImport& graph);
+
+std::string import_checker_color(const pxr::UsdShadeShader& shader, std::string_view input_name,
+    const Eigen::Vector3d& default_value, MaterialGraphImport& graph) {
+    const pxr::UsdShadeInput input = shader.GetInput(pxr::TfToken {std::string {input_name}});
+    if (input) {
+        if (const std::optional<pxr::UsdShadeShader> source = connected_texture_shader(input)) {
+            return import_texture_shader(*source, graph);
+        }
+    }
+
+    Eigen::Vector3d value = default_value;
+    if (input) {
+        pxr::VtValue authored;
+        if (!input.Get(&authored, pxr::UsdTimeCode::Default())) {
+            throw std::invalid_argument(
+                "failed to read checkerboard color: " + input.GetAttr().GetPath().GetString());
+        }
+        value = material_color(authored, input.GetAttr().GetPath().GetString());
+    }
+    ScenePrim constant;
+    constant.kind = ScenePrimKind::texture;
+    constant.texture = SceneTexture {
+        .node = SceneTextureNode::constant_color,
+        .node_definition = "ND_constant_color3",
+        .color_space = SceneColorSpace::linear_srgb,
+        .value = value,
+    };
+    return register_texture_source(shader.GetPath().GetString()
+                                       + ".inputs:" + std::string {input_name},
+        std::move(constant), graph);
+}
+
+std::string import_texture_shader(const pxr::UsdShadeShader& shader, MaterialGraphImport& graph) {
+    const std::string source_key = shader.GetPath().GetString();
+    if (graph.active_sources.find(source_key) != graph.active_sources.end()) {
+        throw std::invalid_argument("cyclic MaterialX texture graph at " + source_key);
+    }
+    const auto existing = graph.texture_path_by_source.find(source_key);
+    if (existing != graph.texture_path_by_source.end()) {
+        return existing->second;
+    }
+    graph.active_sources.insert(source_key);
+
+    const pxr::TfToken shader_id =
+        read_attribute<pxr::TfToken>(shader.GetIdAttr(), source_key, "shader info:id");
+    ScenePrim prim;
+    prim.kind = ScenePrimKind::texture;
+    SceneTexture texture;
+    texture.color_space = SceneColorSpace::linear_srgb;
+
+    if (shader_id == pxr::TfToken {"ND_constant_color3"}) {
+        require_supported_inputs(shader, std::array<std::string_view, 1> {"value"});
+        texture.node = SceneTextureNode::constant_color;
+        texture.node_definition = "ND_constant_color3";
+        texture.value = material_color(
+            read_materialx_input(shader, "value", pxr::VtValue {pxr::GfVec3f {0.0F, 0.0F, 0.0F}}),
+            source_key + ".inputs:value");
+    } else if (shader_id == pxr::TfToken {"ND_image_color3"}) {
+        require_supported_inputs(shader,
+            std::array<std::string_view, 10> {"file", "layer", "default", "texcoord",
+                "uaddressmode", "vaddressmode", "filtertype", "framerange", "frameoffset",
+                "frameendaction"});
+        require_unset_materialx_input(shader, "layer");
+        require_unset_materialx_input(shader, "texcoord");
+        require_unset_materialx_input(shader, "framerange");
+        require_unset_materialx_input(shader, "frameoffset");
+        require_unset_materialx_input(shader, "frameendaction");
+
+        const pxr::UsdShadeInput file = shader.GetInput(pxr::TfToken {"file"});
+        if (!file) {
+            throw std::invalid_argument("MaterialX image requires inputs:file on " + source_key);
+        }
+        if (connected_texture_shader(file)) {
+            throw std::invalid_argument(
+                "MaterialX image file input may not be connected: " + source_key);
+        }
+        prim.asset_references.clear();
+        append_asset_reference(file.GetAttr(), source_key, prim.asset_references);
+        if (prim.asset_references.size() != 1) {
+            throw std::invalid_argument(
+                "MaterialX image requires one authored asset on " + source_key);
+        }
+
+        texture.node = SceneTextureNode::image;
+        texture.node_definition = "ND_image_color3";
+        texture.color_space =
+            texture_color_space(file.GetAttr(), file.GetAttr().GetPath().GetString());
+        texture.value = material_color(
+            read_materialx_input(shader, "default", pxr::VtValue {pxr::GfVec3f {0.0F, 0.0F, 0.0F}}),
+            source_key + ".inputs:default");
+        const std::string u_address = material_string(
+            read_materialx_input(shader, "uaddressmode", pxr::VtValue {std::string {"periodic"}}),
+            source_key + ".inputs:uaddressmode");
+        const std::string v_address = material_string(
+            read_materialx_input(shader, "vaddressmode", pxr::VtValue {std::string {"periodic"}}),
+            source_key + ".inputs:vaddressmode");
+        const std::string filter = material_string(
+            read_materialx_input(shader, "filtertype", pxr::VtValue {std::string {"linear"}}),
+            source_key + ".inputs:filtertype");
+        texture.u_address_mode =
+            texture_address_mode(u_address, source_key + ".inputs:uaddressmode");
+        texture.v_address_mode =
+            texture_address_mode(v_address, source_key + ".inputs:vaddressmode");
+        texture.filter_type = texture_filter_type(filter, source_key + ".inputs:filtertype");
+    } else if (shader_id == pxr::TfToken {"ND_checkerboard_color3"}) {
+        require_supported_inputs(shader, std::array<std::string_view, 5> {"color1", "color2",
+                                             "uvtiling", "uvoffset", "texcoord"});
+        require_unset_materialx_input(shader, "texcoord");
+        const Eigen::Vector2d uv_tiling = material_vector2(
+            read_materialx_input(shader, "uvtiling", pxr::VtValue {pxr::GfVec2f {8.0F, 8.0F}}),
+            source_key + ".inputs:uvtiling");
+        const Eigen::Vector2d uv_offset = material_vector2(
+            read_materialx_input(shader, "uvoffset", pxr::VtValue {pxr::GfVec2f {0.0F, 0.0F}}),
+            source_key + ".inputs:uvoffset");
+        if (std::abs(uv_tiling.x() - uv_tiling.y()) > 1e-12 || !uv_offset.isZero(1e-12)) {
+            throw std::invalid_argument(
+                "SceneIR checkerboard requires uniform UV tiling and zero "
+                "offset on "
+                + source_key);
+        }
+        texture.node = SceneTextureNode::checkerboard;
+        texture.node_definition = "ND_checkerboard_color3";
+        texture.scale = uv_tiling.x();
+        texture.even_texture_path =
+            import_checker_color(shader, "color1", Eigen::Vector3d::Ones(), graph);
+        texture.odd_texture_path =
+            import_checker_color(shader, "color2", Eigen::Vector3d::Zero(), graph);
+    } else if (shader_id == pxr::TfToken {"ND_noise3d_color3"}) {
+        require_supported_inputs(shader,
+            std::array<std::string_view, 3> {"amplitude", "pivot", "position"});
+        require_unset_materialx_input(shader, "position");
+        const Eigen::Vector3d amplitude =
+            material_color(read_materialx_input(shader, "amplitude",
+                               pxr::VtValue {pxr::GfVec3f {1.0F, 1.0F, 1.0F}}),
+                source_key + ".inputs:amplitude");
+        const double pivot =
+            material_scalar(read_materialx_input(shader, "pivot", pxr::VtValue {0.0F}),
+                source_key + ".inputs:pivot");
+        if (!amplitude.isApprox(Eigen::Vector3d::Ones(), 1e-12) || pivot != 0.0) {
+            throw std::invalid_argument(
+                "SceneIR noise3d supports only default amplitude and pivot on " + source_key);
+        }
+        texture.node = SceneTextureNode::noise3d;
+        texture.node_definition = "ND_noise3d_color3";
+    } else {
+        throw std::invalid_argument(
+            "connected OpenPBR inputs use unsupported connected MaterialX "
+            "shader '"
+            + shader_id.GetString() + "' on " + source_key);
+    }
+
+    prim.texture = std::move(texture);
+    graph.active_sources.erase(source_key);
+    return register_texture_source(source_key, std::move(prim), graph);
+}
+
+SceneOpenPbrSurface import_openpbr_surface(const pxr::UsdShadeShader& shader,
+    MaterialGraphImport& graph) {
     const std::string shader_path = shader.GetPath().GetString();
     const pxr::TfToken shader_id =
         read_attribute<pxr::TfToken>(shader.GetIdAttr(), shader_path, "shader info:id");
@@ -358,9 +731,17 @@ SceneOpenPbrSurface import_openpbr_surface(const pxr::UsdShadeShader& shader) {
     for (const pxr::UsdShadeInput& input : shader.GetInputs(true)) {
         const std::string input_name = input.GetBaseName().GetString();
         const std::string input_path = shader_path + ".inputs:" + input_name;
-        if (input.HasConnectedSource()) {
-            throw std::invalid_argument(
-                "connected OpenPBR inputs are not in the USD-03 supported subset: " + input_path);
+        const std::optional<pxr::UsdShadeShader> connected = connected_texture_shader(input);
+        if (connected) {
+            const auto color_input = std::find_if(color_inputs.begin(), color_inputs.end(),
+                [&](const auto& entry) { return entry.first == input_name; });
+            if (color_input == color_inputs.end()) {
+                throw std::invalid_argument(
+                    "connected OpenPBR input requires a supported color3 parameter: " + input_path);
+            }
+            surface.connections.push_back({input_name, SceneMaterialValueType::color3,
+                import_texture_shader(*connected, graph), SceneTextureChannel::rgb});
+            continue;
         }
         pxr::VtValue value;
         if (!input.Get(&value, pxr::UsdTimeCode::Default())) {
@@ -397,10 +778,15 @@ SceneOpenPbrSurface import_openpbr_surface(const pxr::UsdShadeShader& shader) {
                 "unsupported authored OpenPBR input in USD-03: " + input_path);
         }
     }
+    std::sort(surface.connections.begin(), surface.connections.end(),
+        [](const SceneMaterialConnection& left, const SceneMaterialConnection& right) {
+            return left.input_name != right.input_name ? left.input_name < right.input_name
+                                                       : left.texture_path < right.texture_path;
+        });
     return surface;
 }
 
-SceneMaterial import_material(const pxr::UsdShadeMaterial& material) {
+SceneMaterial import_material(const pxr::UsdShadeMaterial& material, MaterialGraphImport& graph) {
     pxr::TfToken source_name;
     pxr::UsdShadeAttributeType source_type;
     const pxr::UsdShadeShader shader = material.ComputeSurfaceSource(
@@ -410,7 +796,7 @@ SceneMaterial import_material(const pxr::UsdShadeMaterial& material) {
         throw std::invalid_argument("OpenUSD material has no resolved universal surface source: "
                                     + material.GetPath().GetString());
     }
-    return import_openpbr_surface(shader);
+    return import_openpbr_surface(shader, graph);
 }
 
 SceneCamera import_camera(const pxr::UsdGeomCamera& camera) {
@@ -444,20 +830,6 @@ SceneLightMaterialSyncMode light_material_sync_mode(const pxr::TfToken& value,
     }
     throw std::invalid_argument(
         "unsupported UsdLux materialSyncMode '" + value.GetString() + "' on " + prim_path);
-}
-
-void append_asset_reference(const pxr::UsdAttribute& attribute, const std::string& prim_path,
-    std::vector<SceneAssetReference>& assets) {
-    if (!attribute.HasAuthoredValueOpinion()) {
-        return;
-    }
-    const pxr::SdfAssetPath value =
-        read_attribute<pxr::SdfAssetPath>(attribute, prim_path, "asset path");
-    SceneAssetReference asset;
-    asset.authored_path = value.GetAssetPath();
-    asset.evaluated_path = value.GetAssetPath();
-    asset.resolved_path = value.GetResolvedPath();
-    assets.push_back(std::move(asset));
 }
 
 SceneLight import_light(const pxr::UsdPrim& usd_prim, std::vector<SceneAssetReference>& assets) {
@@ -555,6 +927,7 @@ struct ImportContext {
     std::unordered_set<std::string> added_paths;
     std::unordered_map<std::string, std::string> prototype_path_by_source;
     std::unordered_set<std::string> created_prototypes;
+    std::unordered_map<std::string, std::string> texture_source_by_path;
     pxr::UsdShadeMaterialBindingAPI::BindingsCache bindings_cache;
     pxr::UsdShadeMaterialBindingAPI::CollectionQueryCache collection_query_cache;
 
@@ -564,11 +937,23 @@ struct ImportContext {
         }
         scene.add_prim(std::move(prim));
     }
+
+    void add_texture(ImportedTexture imported) {
+        const auto source = texture_source_by_path.emplace(imported.prim.path, imported.source_key);
+        if (!source.second) {
+            if (source.first->second != imported.source_key) {
+                throw std::invalid_argument(
+                    "stable SceneIR texture hash collision for " + imported.source_key);
+            }
+            return;
+        }
+        add(std::move(imported.prim));
+    }
 };
 
 void add_synthetic_roots(ImportContext& context, const pxr::UsdStageRefPtr& stage) {
-    for (const std::string_view path :
-        {kSyntheticRoot, kSyntheticPrototypeRoot, kSyntheticMaterialRoot, kDefaultMaterialPath}) {
+    for (const std::string_view path : {kSyntheticRoot, kSyntheticPrototypeRoot,
+             kSyntheticMaterialRoot, kSyntheticTextureRoot, kDefaultMaterialPath}) {
         if (stage->GetPrimAtPath(pxr::SdfPath {std::string {path}})) {
             throw std::invalid_argument(
                 "OpenUSD stage uses reserved SceneIR compiler path: " + std::string {path});
@@ -576,7 +961,7 @@ void add_synthetic_roots(ImportContext& context, const pxr::UsdStageRefPtr& stag
     }
 
     for (const std::string_view path :
-        {kSyntheticRoot, kSyntheticPrototypeRoot, kSyntheticMaterialRoot}) {
+        {kSyntheticRoot, kSyntheticPrototypeRoot, kSyntheticMaterialRoot, kSyntheticTextureRoot}) {
         ScenePrim scope;
         scope.path = std::string {path};
         context.add(std::move(scope));
@@ -646,7 +1031,11 @@ void import_prim(const pxr::UsdPrim& usd_prim, ImportContext& context) {
 
     if (const pxr::UsdShadeMaterial material {usd_prim}) {
         prim.kind = ScenePrimKind::material;
-        prim.material = import_material(material);
+        MaterialGraphImport graph;
+        prim.material = import_material(material, graph);
+        for (ImportedTexture& texture : graph.textures) {
+            context.add_texture(std::move(texture));
+        }
     } else if (const pxr::UsdGeomCamera camera {usd_prim}) {
         prim.kind = ScenePrimKind::camera;
         prim.camera = import_camera(camera);

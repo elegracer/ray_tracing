@@ -18,8 +18,9 @@ def Xform "World"
 
         def Shader "Color"
         {
-            uniform token info:id = "ND_constant_color3"
-            color3f inputs:value = (0.2, 0.4, 0.8)
+            uniform token info:id = "ND_multiply_color3"
+            color3f inputs:in1 = (0.2, 0.4, 0.8)
+            color3f inputs:in2 = (0.5, 0.5, 0.5)
             color3f outputs:out
         }
     }
