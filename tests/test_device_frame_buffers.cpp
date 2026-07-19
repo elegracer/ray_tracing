@@ -8,8 +8,11 @@ int main() {
     const rt::DeviceFrameBuffers first_frame = buffers.frame();
     expect_true(first_frame.beauty != nullptr, "frame beauty allocated");
     expect_true(first_frame.normal != nullptr, "frame normal allocated");
+    expect_true(first_frame.denoiser_normal != nullptr, "frame denoiser normal allocated");
     expect_true(first_frame.albedo != nullptr, "frame albedo allocated");
     expect_true(first_frame.depth != nullptr, "frame depth allocated");
+    expect_true(first_frame.flow != nullptr, "frame flow allocated");
+    expect_true(first_frame.flow_trustworthiness != nullptr, "frame flow trust allocated");
     expect_true(buffers.frame_width() == 4, "frame width");
     expect_true(buffers.frame_height() == 3, "frame height");
 
@@ -34,6 +37,19 @@ int main() {
     buffers.apply_history_state(state);
     expect_true(buffers.history_state().history_length == 5, "history length applied");
     expect_near(buffers.history_state().prev_origin[0], 1.0, 1e-12, "prev origin applied");
+
+    const rt::DeviceFrameBuffers populated_history = buffers.history();
+    buffers.resize_history(2, 2);
+    expect_true(buffers.history().beauty == populated_history.beauty,
+        "same history size reuses allocation");
+    expect_true(buffers.history_state().history_length == 5, "same history size preserves state");
+
+    buffers.resize_history(3, 2);
+    expect_true(buffers.history().beauty != nullptr, "resized history beauty allocated");
+    expect_true(buffers.history_width() == 3, "resized history width");
+    expect_true(buffers.history_height() == 2, "resized history height");
+    expect_true(buffers.history_state().history_length == 0,
+        "resized history clears stale launch state");
 
     buffers.reset_history();
     expect_true(buffers.history().beauty == nullptr, "history reset clears beauty");

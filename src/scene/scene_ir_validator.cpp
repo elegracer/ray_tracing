@@ -2,6 +2,7 @@
 
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -56,6 +57,37 @@ void validate_triangle_mesh(const TriangleMeshShape& mesh) {
             }
         }
     }
+
+    const auto validate_attribute = [&](std::string_view label, const auto& values,
+                                        const std::vector<Eigen::Vector3i>& indices) {
+        if (indices.empty()) {
+            if (!values.empty() && values.size() != mesh.positions.size()) {
+                throw std::invalid_argument(
+                    "triangle mesh " + std::string {label} + " count must match positions without indices");
+            }
+            return;
+        }
+        if (values.empty()) {
+            throw std::invalid_argument(
+                "triangle mesh " + std::string {label} + " indices require values");
+        }
+        if (indices.size() != mesh.triangles.size()) {
+            throw std::invalid_argument(
+                "triangle mesh " + std::string {label} + " index count mismatch");
+        }
+        for (const Eigen::Vector3i& triangle_indices : indices) {
+            for (int corner = 0; corner < 3; ++corner) {
+                if (triangle_indices[corner] < 0
+                    || triangle_indices[corner] >= static_cast<int>(values.size())) {
+                    throw std::out_of_range(
+                        "triangle mesh " + std::string {label} + " index out of range");
+                }
+            }
+        }
+    };
+    validate_attribute("normal", mesh.normals, mesh.normal_indices);
+    validate_attribute("tangent", mesh.tangents, mesh.tangent_indices);
+    validate_attribute("texcoord", mesh.texcoords, mesh.texcoord_indices);
 }
 
 void validate_shapes(const std::vector<ShapeDesc>& shapes) {

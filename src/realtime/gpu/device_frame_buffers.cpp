@@ -8,8 +8,8 @@ namespace {
 
 void throw_cuda_error(cudaError_t error, const char* expr) {
     if (error != cudaSuccess) {
-        throw std::runtime_error(std::string("CUDA runtime failure at ") + expr + ": "
-            + cudaGetErrorString(error));
+        throw std::runtime_error(
+            std::string("CUDA runtime failure at ") + expr + ": " + cudaGetErrorString(error));
     }
 }
 
@@ -24,19 +24,30 @@ void free_device_ptr(void* ptr) {
 void free_frame_buffers(DeviceFrameBuffers& frame) {
     free_device_ptr(frame.beauty);
     free_device_ptr(frame.normal);
+    free_device_ptr(frame.denoiser_normal);
     free_device_ptr(frame.albedo);
     free_device_ptr(frame.depth);
+    free_device_ptr(frame.flow);
+    free_device_ptr(frame.flow_trustworthiness);
     frame = DeviceFrameBuffers {};
 }
 
 void allocate_frame_buffers(DeviceFrameBuffers& frame, std::size_t pixel_count) {
-    RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&frame.beauty), pixel_count * sizeof(float4)));
-    RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&frame.normal), pixel_count * sizeof(float4)));
-    RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&frame.albedo), pixel_count * sizeof(float4)));
+    RT_CUDA_CHECK(
+        cudaMalloc(reinterpret_cast<void**>(&frame.beauty), pixel_count * sizeof(float4)));
+    RT_CUDA_CHECK(
+        cudaMalloc(reinterpret_cast<void**>(&frame.normal), pixel_count * sizeof(float4)));
+    RT_CUDA_CHECK(
+        cudaMalloc(reinterpret_cast<void**>(&frame.denoiser_normal), pixel_count * sizeof(float4)));
+    RT_CUDA_CHECK(
+        cudaMalloc(reinterpret_cast<void**>(&frame.albedo), pixel_count * sizeof(float4)));
     RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&frame.depth), pixel_count * sizeof(float)));
+    RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&frame.flow), pixel_count * sizeof(float2)));
+    RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&frame.flow_trustworthiness),
+        pixel_count * sizeof(float)));
 }
 
-}  // namespace
+} // namespace
 
 DeviceFrameBufferSet::~DeviceFrameBufferSet() {
     reset_history();
@@ -48,7 +59,8 @@ void DeviceFrameBufferSet::resize_frame(int width, int height) {
         return;
     }
     reset_frame();
-    allocate_frame_buffers(frame_, static_cast<std::size_t>(width) * static_cast<std::size_t>(height));
+    allocate_frame_buffers(frame_,
+        static_cast<std::size_t>(width) * static_cast<std::size_t>(height));
     frame_width_ = width;
     frame_height_ = height;
 }
@@ -76,7 +88,8 @@ void DeviceFrameBufferSet::resize_history(int width, int height) {
         return;
     }
     reset_history();
-    allocate_frame_buffers(history_, static_cast<std::size_t>(width) * static_cast<std::size_t>(height));
+    allocate_frame_buffers(history_,
+        static_cast<std::size_t>(width) * static_cast<std::size_t>(height));
     history_width_ = width;
     history_height_ = height;
 }
@@ -130,12 +143,12 @@ void DeviceFrameBufferSet::reset_accumulation() {
 void DeviceFrameBufferSet::copy_frame_to_history(cudaStream_t stream) {
     const std::size_t pixel_count =
         static_cast<std::size_t>(history_width_) * static_cast<std::size_t>(history_height_);
-    RT_CUDA_CHECK(cudaMemcpyAsync(
-        history_.beauty, frame_.beauty, pixel_count * sizeof(float4), cudaMemcpyDeviceToDevice, stream));
-    RT_CUDA_CHECK(cudaMemcpyAsync(
-        history_.normal, frame_.normal, pixel_count * sizeof(float4), cudaMemcpyDeviceToDevice, stream));
-    RT_CUDA_CHECK(cudaMemcpyAsync(
-        history_.depth, frame_.depth, pixel_count * sizeof(float), cudaMemcpyDeviceToDevice, stream));
+    RT_CUDA_CHECK(cudaMemcpyAsync(history_.beauty, frame_.beauty, pixel_count * sizeof(float4),
+        cudaMemcpyDeviceToDevice, stream));
+    RT_CUDA_CHECK(cudaMemcpyAsync(history_.normal, frame_.normal, pixel_count * sizeof(float4),
+        cudaMemcpyDeviceToDevice, stream));
+    RT_CUDA_CHECK(cudaMemcpyAsync(history_.depth, frame_.depth, pixel_count * sizeof(float),
+        cudaMemcpyDeviceToDevice, stream));
 }
 
-}  // namespace rt
+} // namespace rt

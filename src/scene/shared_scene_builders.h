@@ -2,6 +2,7 @@
 
 #include "realtime/viewer/body_pose.h"
 #include "scene/camera_spec.h"
+#include "scene/scene_ir_v2.h"
 #include "scene/shared_scene_ir.h"
 
 #include <string_view>
@@ -53,6 +54,7 @@ const RealtimeViewPreset* find_realtime_view_preset(std::string_view scene_id);
 Eigen::Vector3d scene_background(std::string_view scene_id);
 
 SceneIR build_scene(std::string_view scene_id);
+SceneIRv2 build_scene_v2(std::string_view scene_id);
 
 const std::vector<SceneDefinition>& builtin_scene_definitions();
 const SceneDefinition* find_builtin_scene_definition(std::string_view scene_id);

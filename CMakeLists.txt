@@ -62,6 +62,14 @@ find_path(OPTIX_INCLUDE_DIR optix.h
     REQUIRED
 )
 
+if(CMAKE_CONFIGURATION_TYPES)
+    set(RT_BUILD_CONFIGURATION "$<CONFIG>")
+elseif(CMAKE_BUILD_TYPE)
+    set(RT_BUILD_CONFIGURATION "${CMAKE_BUILD_TYPE}")
+else()
+    set(RT_BUILD_CONFIGURATION "single-config-default")
+endif()
+
 # options
 option(OPTION_A "..." ON)
 option(ENABLE_GUI_VIEWER "Build the interactive GLFW/OpenGL viewer" ON)
@@ -98,6 +106,8 @@ target_sources(core
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/realtime_scene_adapter.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/scene_file_catalog.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/scene_definition.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/scene_ir_v2.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/scene_ir_v2.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/scene_ir_validator.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/scene_ir_validator.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/yaml_scene_loader.cpp
@@ -161,6 +171,14 @@ target_sources(derive_default_camera_intrinsics PRIVATE ${CMAKE_CURRENT_SOURCE_D
 target_link_libraries(derive_default_camera_intrinsics PRIVATE core)
 
 if(ENABLE_GUI_VIEWER)
+    add_library(viewer_cuda_gl STATIC
+        src/realtime/viewer/cuda_gl_presenter.cu
+        src/realtime/viewer/cuda_gl_presenter.h
+    )
+    target_include_directories(viewer_cuda_gl PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_definitions(viewer_cuda_gl PRIVATE GL_GLEXT_PROTOTYPES)
+    target_link_libraries(viewer_cuda_gl PUBLIC realtime_gpu CUDA::cudart OpenGL::GL)
+
     add_executable(render_realtime_viewer)
     target_sources(render_realtime_viewer
         PRIVATE
@@ -171,7 +189,12 @@ if(ENABLE_GUI_VIEWER)
             src/realtime/viewer/viewer_quality_controller.cpp
             src/realtime/viewer/viewer_render_session.cpp
     )
-    target_link_libraries(render_realtime_viewer PRIVATE realtime_gpu core imgui::imgui ${GLFW_TARGET} OpenGL::GL)
+    target_link_libraries(render_realtime_viewer PRIVATE viewer_cuda_gl realtime_gpu core imgui::imgui ${GLFW_TARGET} OpenGL::GL)
+
+    add_executable(test_cuda_gl_presenter tests/test_cuda_gl_presenter.cpp)
+    target_link_libraries(test_cuda_gl_presenter PRIVATE viewer_cuda_gl ${GLFW_TARGET} OpenGL::GL)
+    add_test(NAME test_cuda_gl_presenter COMMAND test_cuda_gl_presenter)
+    set_tests_properties(test_cuda_gl_presenter PROPERTIES SKIP_RETURN_CODE 77)
 endif()
 
 add_executable(sphere_importance)
@@ -362,6 +385,14 @@ target_sources(test_scene_ir_validator
 target_link_libraries(test_scene_ir_validator PRIVATE core)
 add_test(NAME test_scene_ir_validator COMMAND test_scene_ir_validator)
 
+add_executable(test_scene_ir_v2)
+target_sources(test_scene_ir_v2
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_scene_ir_v2.cpp
+)
+target_link_libraries(test_scene_ir_v2 PRIVATE core)
+add_test(NAME test_scene_ir_v2 COMMAND test_scene_ir_v2)
+
 add_executable(test_shared_scene_builders)
 target_sources(test_shared_scene_builders
     PRIVATE
@@ -437,6 +468,7 @@ add_library(realtime_gpu STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/cuda_event_timer.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/device_frame_buffers.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/device_frame_buffers.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/device_radiance_frame_view.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/device_scene_buffers.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/device_scene_buffers.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/direction_debug_renderer.cpp
@@ -561,6 +593,15 @@ target_sources(test_optix_profiled_render
 target_link_libraries(test_optix_profiled_render PRIVATE realtime_gpu)
 add_test(NAME test_optix_profiled_render COMMAND test_optix_profiled_render)
 
+add_executable(test_optix_temporal_reference)
+target_sources(test_optix_temporal_reference
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_optix_temporal_reference.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/viewer/four_camera_rig.cpp
+)
+target_link_libraries(test_optix_temporal_reference PRIVATE realtime_gpu core)
+add_test(NAME test_optix_temporal_reference COMMAND test_optix_temporal_reference)
+
 add_executable(test_optix_prepared_scene)
 target_sources(test_optix_prepared_scene
     PRIVATE
@@ -601,12 +642,34 @@ target_sources(realtime_gpu
 )
 
 add_executable(render_realtime)
-target_sources(render_realtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/utils/render_realtime.cpp)
+set(RENDER_REALTIME_PROVENANCE_HEADER
+    ${CMAKE_CURRENT_BINARY_DIR}/include/realtime/build_provenance.h
+)
+add_custom_target(render_realtime_build_provenance
+    COMMAND ${CMAKE_COMMAND}
+        -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+        -DOUTPUT_FILE=${RENDER_REALTIME_PROVENANCE_HEADER}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateBuildProvenance.cmake
+    BYPRODUCTS ${RENDER_REALTIME_PROVENANCE_HEADER}
+    COMMENT "Refreshing render_realtime source provenance"
+    VERBATIM
+)
+target_sources(render_realtime PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/utils/render_realtime.cpp
+    ${RENDER_REALTIME_PROVENANCE_HEADER}
+)
+add_dependencies(render_realtime render_realtime_build_provenance)
 target_link_libraries(render_realtime PRIVATE realtime_gpu core)
+target_compile_definitions(render_realtime PRIVATE
+    RT_BUILD_CONFIGURATION="${RT_BUILD_CONFIGURATION}"
+    RT_CXX_COMPILER="${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}"
+)
 add_test(NAME test_render_realtime_cli
     COMMAND $<TARGET_FILE:render_realtime>
         --camera-count 1
         --frames 1
+        --warmup-frames 1
+        --seed 7
         --profile realtime
         --output-dir ${CMAKE_CURRENT_BINARY_DIR}/test/render_realtime-cli
 )

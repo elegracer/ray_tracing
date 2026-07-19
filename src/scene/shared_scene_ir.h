@@ -19,6 +19,7 @@ struct CheckerTextureDesc {
 };
 
 struct ImageTextureDesc {
+    std::string authored_path;
     std::string path;
 };
 
@@ -72,6 +73,12 @@ struct BoxShape {
 struct TriangleMeshShape {
     std::vector<Eigen::Vector3d> positions;
     std::vector<Eigen::Vector3i> triangles;
+    std::vector<Eigen::Vector3d> normals;
+    std::vector<Eigen::Vector3i> normal_indices;
+    std::vector<Eigen::Vector3d> tangents;
+    std::vector<Eigen::Vector3i> tangent_indices;
+    std::vector<Eigen::Vector2d> texcoords;
+    std::vector<Eigen::Vector3i> texcoord_indices;
 };
 
 using ShapeDesc = std::variant<SphereShape, QuadShape, BoxShape, TriangleMeshShape>;

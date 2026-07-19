@@ -1,5 +1,6 @@
 #pragma once
 
+#include "scene/scene_ir_v2.h"
 #include "scene/shared_scene_builders.h"
 #include "scene/shared_scene_ir.h"
 
@@ -27,9 +28,12 @@ struct SceneDefinitionCpuRenderPreset {
 struct SceneDefinition {
     SceneDefinitionMetadata metadata {};
     SceneIR scene_ir {};
+    SceneIRv2 scene_ir_v2 {};
     std::vector<SceneDefinitionCpuRenderPreset> cpu_presets;
     std::optional<RealtimeViewPreset> realtime_preset;
     std::vector<std::string> dependencies;
 };
 
-}  // namespace rt::scene
+SceneIRv2 compile_scene_definition_v2(const SceneDefinition& definition);
+
+} // namespace rt::scene

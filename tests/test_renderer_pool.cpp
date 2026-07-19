@@ -15,26 +15,24 @@ static_assert(!std::is_move_assignable_v<rt::RendererPool>);
 
 namespace {
 
-void expect_vector_near(const std::vector<float>& actual, const std::vector<float>& expected, double tol,
-    const std::string& label) {
+void expect_vector_near(const std::vector<float>& actual, const std::vector<float>& expected,
+    double tol, const std::string& label) {
     expect_true(actual.size() == expected.size(), label + " size");
     for (std::size_t i = 0; i < actual.size(); ++i) {
         expect_near(actual[i], expected[i], tol, label + " value[" + std::to_string(i) + "]");
     }
 }
 
-template <typename Fn>
+template<typename Fn>
 void expect_throws(Fn&& fn, const std::string& label) {
     bool threw = false;
     try {
         fn();
-    } catch (...) {
-        threw = true;
-    }
+    } catch (...) { threw = true; }
     expect_true(threw, label);
 }
 
-template <typename Fn>
+template<typename Fn>
 void expect_throws_with_message(Fn&& fn, const std::string& message, const std::string& label) {
     bool threw = false;
     bool matched = false;
@@ -43,18 +41,19 @@ void expect_throws_with_message(Fn&& fn, const std::string& message, const std::
     } catch (const std::exception& ex) {
         threw = true;
         matched = std::string(ex.what()).find(message) != std::string::npos;
-    } catch (...) {
-        threw = true;
-    }
+    } catch (...) { threw = true; }
     expect_true(threw, label + " threw");
     expect_true(matched, label + " message");
 }
 
 rt::SceneDescription make_scene() {
     rt::SceneDescription scene;
-    const int diffuse = scene.add_material(rt::LambertianMaterial {Eigen::Vector3d {0.75, 0.25, 0.2}});
-    const int light = scene.add_material(rt::DiffuseLightMaterial {Eigen::Vector3d {10.0, 10.0, 10.0}});
-    scene.add_sphere(rt::SpherePrimitive {diffuse, rt::legacy_renderer_to_world(Eigen::Vector3d {0.0, 0.0, -1.0}), 0.5, false});
+    const int diffuse =
+        scene.add_material(rt::LambertianMaterial {Eigen::Vector3d {0.75, 0.25, 0.2}});
+    const int light =
+        scene.add_material(rt::DiffuseLightMaterial {Eigen::Vector3d {10.0, 10.0, 10.0}});
+    scene.add_sphere(rt::SpherePrimitive {diffuse,
+        rt::legacy_renderer_to_world(Eigen::Vector3d {0.0, 0.0, -1.0}), 0.5, false});
     scene.add_quad(rt::QuadPrimitive {
         light,
         rt::legacy_renderer_to_world(Eigen::Vector3d {-0.75, 1.25, -1.5}),
@@ -76,7 +75,7 @@ rt::CameraRig make_rig(int camera_count) {
     return rig;
 }
 
-}  // namespace
+} // namespace
 
 int main() {
     const rt::PackedScene packed_scene = make_scene().pack();
@@ -88,28 +87,53 @@ int main() {
 
     rt::RendererPool single_pool(1);
     single_pool.prepare_scene(packed_scene);
-    const std::vector<rt::CameraRenderResult> single_result = single_pool.render_frame(packed_rig, profile, 1);
+    const std::vector<rt::CameraRenderResult> single_result =
+        single_pool.render_frame(packed_rig, profile, 1);
 
     expect_true(single_result.size() == 1, "single-camera pooled count");
     expect_true(single_result[0].camera_index == 0, "single-camera pooled ordering");
     {
         rt::OptixRenderer baseline;
         baseline.prepare_scene(packed_scene);
-        const rt::ProfiledRadianceFrame expected = baseline.render_prepared_radiance(packed_rig, profile, 0);
-        expect_vector_near(
-            single_result[0].profiled.frame.beauty_rgba, expected.frame.beauty_rgba, 1e-6, "single-camera beauty parity");
-        expect_vector_near(
-            single_result[0].profiled.frame.normal_rgba, expected.frame.normal_rgba, 1e-6, "single-camera normal parity");
-        expect_vector_near(
-            single_result[0].profiled.frame.albedo_rgba, expected.frame.albedo_rgba, 1e-6, "single-camera albedo parity");
-        expect_vector_near(single_result[0].profiled.frame.depth, expected.frame.depth, 1e-6, "single-camera depth parity");
-        expect_near(single_result[0].profiled.frame.average_luminance, expected.frame.average_luminance, 1e-9,
-            "single-camera luminance parity");
+        const rt::ProfiledRadianceFrame expected =
+            baseline.render_prepared_radiance(packed_rig, profile, 0);
+        expect_vector_near(single_result[0].profiled.frame.beauty_rgba, expected.frame.beauty_rgba,
+            1e-6, "single-camera beauty parity");
+        expect_vector_near(single_result[0].profiled.frame.normal_rgba, expected.frame.normal_rgba,
+            1e-6, "single-camera normal parity");
+        expect_vector_near(single_result[0].profiled.frame.albedo_rgba, expected.frame.albedo_rgba,
+            1e-6, "single-camera albedo parity");
+        expect_vector_near(single_result[0].profiled.frame.depth, expected.frame.depth, 1e-6,
+            "single-camera depth parity");
+        expect_near(single_result[0].profiled.frame.average_luminance,
+            expected.frame.average_luminance, 1e-9, "single-camera luminance parity");
     }
+
+    rt::RendererPool device_pool(1);
+    device_pool.prepare_scene(packed_scene);
+    const std::vector<rt::CameraDeviceRenderResult> device_result =
+        device_pool.render_device_frame(packed_rig, profile, 1);
+    expect_true(device_result.size() == 1, "device pooled count");
+    expect_true(device_result[0].camera_index == 0, "device pooled ordering");
+    expect_true(device_result[0].profiled.frame.beauty_rgba != nullptr,
+        "device pooled beauty pointer");
+    expect_true(device_result[0].profiled.frame.width == 32, "device pooled width");
+    expect_true(device_result[0].profiled.frame.height == 32, "device pooled height");
+    expect_true(device_result[0].profiled.frame.stream != nullptr, "device pooled stream");
+    expect_near(device_result[0].profiled.timing.download_ms, 0.0, 0.0,
+        "device pooled path skips host download");
+    cudaPointerAttributes device_attributes {};
+    expect_true(
+        cudaPointerGetAttributes(&device_attributes, device_result[0].profiled.frame.beauty_rgba)
+            == cudaSuccess,
+        "device pooled pointer attributes");
+    expect_true(device_attributes.type == cudaMemoryTypeDevice,
+        "device pooled beauty remains device resident");
 
     rt::RendererPool four_pool(4);
     four_pool.prepare_scene(packed_scene);
-    const std::vector<rt::CameraRenderResult> four_result = four_pool.render_frame(packed_rig, profile, 4);
+    const std::vector<rt::CameraRenderResult> four_result =
+        four_pool.render_frame(packed_rig, profile, 4);
 
     expect_true(four_result.size() == 4, "four-camera pooled count");
     for (int i = 0; i < 4; ++i) {
@@ -117,22 +141,30 @@ int main() {
         expect_true(four_result[idx].camera_index == i, "four-camera pooled ordering");
         rt::OptixRenderer baseline;
         baseline.prepare_scene(packed_scene);
-        const rt::ProfiledRadianceFrame expected = baseline.render_prepared_radiance(packed_rig, profile, i);
+        const rt::ProfiledRadianceFrame expected =
+            baseline.render_prepared_radiance(packed_rig, profile, i);
 
-        expect_vector_near(
-            four_result[idx].profiled.frame.beauty_rgba, expected.frame.beauty_rgba, 1e-6, "four-camera beauty parity " + std::to_string(i));
-        expect_vector_near(
-            four_result[idx].profiled.frame.normal_rgba, expected.frame.normal_rgba, 1e-6, "four-camera normal parity " + std::to_string(i));
-        expect_vector_near(
-            four_result[idx].profiled.frame.albedo_rgba, expected.frame.albedo_rgba, 1e-6, "four-camera albedo parity " + std::to_string(i));
-        expect_vector_near(
-            four_result[idx].profiled.frame.depth, expected.frame.depth, 1e-6, "four-camera depth parity " + std::to_string(i));
-        expect_near(four_result[idx].profiled.frame.average_luminance, expected.frame.average_luminance, 1e-9,
+        expect_vector_near(four_result[idx].profiled.frame.beauty_rgba, expected.frame.beauty_rgba,
+            1e-6, "four-camera beauty parity " + std::to_string(i));
+        expect_vector_near(four_result[idx].profiled.frame.normal_rgba, expected.frame.normal_rgba,
+            1e-6, "four-camera normal parity " + std::to_string(i));
+        expect_vector_near(four_result[idx].profiled.frame.albedo_rgba, expected.frame.albedo_rgba,
+            1e-6, "four-camera albedo parity " + std::to_string(i));
+        expect_vector_near(four_result[idx].profiled.frame.depth, expected.frame.depth, 1e-6,
+            "four-camera depth parity " + std::to_string(i));
+        expect_near(four_result[idx].profiled.frame.average_luminance,
+            expected.frame.average_luminance, 1e-9,
             "four-camera luminance parity " + std::to_string(i));
     }
 
-    expect_throws([&]() { four_pool.render_frame(packed_rig, profile, 0); }, "reject active_cameras below range");
-    expect_throws([&]() { four_pool.render_frame(packed_rig, profile, 5); }, "reject active_cameras above range");
+    expect_throws([&]() { four_pool.render_frame(packed_rig, profile, 0); },
+        "reject active_cameras below range");
+    expect_throws([&]() { four_pool.render_frame(packed_rig, profile, 5); },
+        "reject active_cameras above range");
+    expect_throws([&]() { four_pool.render_device_frame(packed_rig, profile, 0); },
+        "reject device active_cameras below range");
+    expect_throws([&]() { four_pool.render_device_frame(packed_rig, profile, 5); },
+        "reject device active_cameras above range");
 
     rt::PackedCameraRig mismatched_rig = make_rig(1).pack();
     expect_throws_with_message([&]() { four_pool.render_frame(mismatched_rig, profile, 2); },

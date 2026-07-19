@@ -4,6 +4,7 @@
 #include "realtime/scene_catalog.h"
 #include "realtime/gpu/renderer_pool.h"
 #include "realtime/viewer/body_pose.h"
+#include "realtime/viewer/cuda_gl_presenter.h"
 #include "realtime/viewer/default_viewer_scene.h"
 #include "realtime/viewer/four_camera_rig.h"
 #include "realtime/viewer/move_speed.h"
@@ -23,6 +24,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -82,51 +84,50 @@ void emit_line_segment(float x0, float y0, float x1, float y1, float x_offset) {
 
 void emit_glyph(char glyph, float x_offset) {
     switch (glyph) {
-    case 'c':
-        emit_line_segment(1.0f, 0.0f, 0.0f, 0.0f, x_offset);
-        emit_line_segment(0.0f, 0.0f, 0.0f, kLabelGlyphHeight, x_offset);
-        emit_line_segment(0.0f, kLabelGlyphHeight, 1.0f, kLabelGlyphHeight, x_offset);
-        break;
-    case 'a':
-        emit_line_segment(0.0f, kLabelGlyphHeight, 0.0f, 0.55f, x_offset);
-        emit_line_segment(0.0f, 0.55f, 0.25f, 0.0f, x_offset);
-        emit_line_segment(0.25f, 0.0f, 0.75f, 0.0f, x_offset);
-        emit_line_segment(0.75f, 0.0f, 1.0f, 0.55f, x_offset);
-        emit_line_segment(1.0f, 0.55f, 1.0f, kLabelGlyphHeight, x_offset);
-        emit_line_segment(0.0f, 0.85f, 1.0f, 0.85f, x_offset);
-        break;
-    case 'm':
-        emit_line_segment(0.0f, kLabelGlyphHeight, 0.0f, 0.0f, x_offset);
-        emit_line_segment(0.0f, 0.0f, 0.5f, 0.7f, x_offset);
-        emit_line_segment(0.5f, 0.7f, 1.0f, 0.0f, x_offset);
-        emit_line_segment(1.0f, 0.0f, 1.0f, kLabelGlyphHeight, x_offset);
-        break;
-    case '0':
-        emit_line_segment(0.0f, 0.0f, 1.0f, 0.0f, x_offset);
-        emit_line_segment(1.0f, 0.0f, 1.0f, kLabelGlyphHeight, x_offset);
-        emit_line_segment(1.0f, kLabelGlyphHeight, 0.0f, kLabelGlyphHeight, x_offset);
-        emit_line_segment(0.0f, kLabelGlyphHeight, 0.0f, 0.0f, x_offset);
-        break;
-    case '1':
-        emit_line_segment(0.5f, 0.0f, 0.5f, kLabelGlyphHeight, x_offset);
-        emit_line_segment(0.2f, 0.3f, 0.5f, 0.0f, x_offset);
-        emit_line_segment(0.2f, kLabelGlyphHeight, 0.8f, kLabelGlyphHeight, x_offset);
-        break;
-    case '2':
-        emit_line_segment(0.0f, 0.0f, 1.0f, 0.0f, x_offset);
-        emit_line_segment(1.0f, 0.0f, 1.0f, 0.8f, x_offset);
-        emit_line_segment(1.0f, 0.8f, 0.0f, 0.8f, x_offset);
-        emit_line_segment(0.0f, 0.8f, 0.0f, kLabelGlyphHeight, x_offset);
-        emit_line_segment(0.0f, kLabelGlyphHeight, 1.0f, kLabelGlyphHeight, x_offset);
-        break;
-    case '3':
-        emit_line_segment(0.0f, 0.0f, 1.0f, 0.0f, x_offset);
-        emit_line_segment(1.0f, 0.0f, 1.0f, kLabelGlyphHeight, x_offset);
-        emit_line_segment(0.0f, 0.8f, 1.0f, 0.8f, x_offset);
-        emit_line_segment(0.0f, kLabelGlyphHeight, 1.0f, kLabelGlyphHeight, x_offset);
-        break;
-    default:
-        break;
+        case 'c':
+            emit_line_segment(1.0f, 0.0f, 0.0f, 0.0f, x_offset);
+            emit_line_segment(0.0f, 0.0f, 0.0f, kLabelGlyphHeight, x_offset);
+            emit_line_segment(0.0f, kLabelGlyphHeight, 1.0f, kLabelGlyphHeight, x_offset);
+            break;
+        case 'a':
+            emit_line_segment(0.0f, kLabelGlyphHeight, 0.0f, 0.55f, x_offset);
+            emit_line_segment(0.0f, 0.55f, 0.25f, 0.0f, x_offset);
+            emit_line_segment(0.25f, 0.0f, 0.75f, 0.0f, x_offset);
+            emit_line_segment(0.75f, 0.0f, 1.0f, 0.55f, x_offset);
+            emit_line_segment(1.0f, 0.55f, 1.0f, kLabelGlyphHeight, x_offset);
+            emit_line_segment(0.0f, 0.85f, 1.0f, 0.85f, x_offset);
+            break;
+        case 'm':
+            emit_line_segment(0.0f, kLabelGlyphHeight, 0.0f, 0.0f, x_offset);
+            emit_line_segment(0.0f, 0.0f, 0.5f, 0.7f, x_offset);
+            emit_line_segment(0.5f, 0.7f, 1.0f, 0.0f, x_offset);
+            emit_line_segment(1.0f, 0.0f, 1.0f, kLabelGlyphHeight, x_offset);
+            break;
+        case '0':
+            emit_line_segment(0.0f, 0.0f, 1.0f, 0.0f, x_offset);
+            emit_line_segment(1.0f, 0.0f, 1.0f, kLabelGlyphHeight, x_offset);
+            emit_line_segment(1.0f, kLabelGlyphHeight, 0.0f, kLabelGlyphHeight, x_offset);
+            emit_line_segment(0.0f, kLabelGlyphHeight, 0.0f, 0.0f, x_offset);
+            break;
+        case '1':
+            emit_line_segment(0.5f, 0.0f, 0.5f, kLabelGlyphHeight, x_offset);
+            emit_line_segment(0.2f, 0.3f, 0.5f, 0.0f, x_offset);
+            emit_line_segment(0.2f, kLabelGlyphHeight, 0.8f, kLabelGlyphHeight, x_offset);
+            break;
+        case '2':
+            emit_line_segment(0.0f, 0.0f, 1.0f, 0.0f, x_offset);
+            emit_line_segment(1.0f, 0.0f, 1.0f, 0.8f, x_offset);
+            emit_line_segment(1.0f, 0.8f, 0.0f, 0.8f, x_offset);
+            emit_line_segment(0.0f, 0.8f, 0.0f, kLabelGlyphHeight, x_offset);
+            emit_line_segment(0.0f, kLabelGlyphHeight, 1.0f, kLabelGlyphHeight, x_offset);
+            break;
+        case '3':
+            emit_line_segment(0.0f, 0.0f, 1.0f, 0.0f, x_offset);
+            emit_line_segment(1.0f, 0.0f, 1.0f, kLabelGlyphHeight, x_offset);
+            emit_line_segment(0.0f, 0.8f, 1.0f, 0.8f, x_offset);
+            emit_line_segment(0.0f, kLabelGlyphHeight, 1.0f, kLabelGlyphHeight, x_offset);
+            break;
+        default: break;
     }
 }
 
@@ -149,7 +150,8 @@ GLuint build_camera_label_lists() {
     return list_base;
 }
 
-void draw_camera_label(GLuint label_list, float x, float y, float width, float height, LabelCorner corner) {
+void draw_camera_label(GLuint label_list, float x, float y, float width, float height,
+    LabelCorner corner) {
     const float unit_scale = std::max(14.0f, std::min(width, height) * 0.05f);
     const float text_width = label_text_width() * unit_scale;
     const float text_height = kLabelGlyphHeight * unit_scale;
@@ -160,22 +162,22 @@ void draw_camera_label(GLuint label_list, float x, float y, float width, float h
     float box_left = x + 0.5f * (width - box_width);
     float box_top = y + 0.5f * (height - box_height);
     switch (corner) {
-    case LabelCorner::top_left:
-        box_left = x + inset;
-        box_top = y + inset;
-        break;
-    case LabelCorner::top_right:
-        box_left = x + width - inset - box_width;
-        box_top = y + inset;
-        break;
-    case LabelCorner::bottom_left:
-        box_left = x + inset;
-        box_top = y + height - inset - box_height;
-        break;
-    case LabelCorner::bottom_right:
-        box_left = x + width - inset - box_width;
-        box_top = y + height - inset - box_height;
-        break;
+        case LabelCorner::top_left:
+            box_left = x + inset;
+            box_top = y + inset;
+            break;
+        case LabelCorner::top_right:
+            box_left = x + width - inset - box_width;
+            box_top = y + inset;
+            break;
+        case LabelCorner::bottom_left:
+            box_left = x + inset;
+            box_top = y + height - inset - box_height;
+            break;
+        case LabelCorner::bottom_right:
+            box_left = x + width - inset - box_width;
+            box_top = y + height - inset - box_height;
+            break;
     }
 
     glColor4f(0.0f, 0.0f, 0.0f, 0.55f);
@@ -200,8 +202,7 @@ enum class UploadStatus {
     incomplete_frame,
 };
 
-UploadStatus upload_texture(GLuint texture,
-    const rt::viewer::ResolvedBeautyFrameView& frame,
+UploadStatus upload_texture(GLuint texture, const rt::viewer::ResolvedBeautyFrameView& frame,
     std::vector<std::uint8_t>& scratch) {
     if (frame.width != kViewWidth || frame.height != kViewHeight) {
         return UploadStatus::resolution_mismatch;
@@ -224,7 +225,8 @@ UploadStatus upload_texture(GLuint texture,
 
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glBindTexture(GL_TEXTURE_2D, texture);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, kViewWidth, kViewHeight, GL_RGBA, GL_UNSIGNED_BYTE, scratch.data());
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, kViewWidth, kViewHeight, GL_RGBA, GL_UNSIGNED_BYTE,
+        scratch.data());
     return UploadStatus::ok;
 }
 
@@ -260,16 +262,15 @@ void set_ui_interaction(GLFWwindow* window, bool enabled, double& cursor_x, doub
 
 const char* quality_mode_label(rt::viewer::ViewerQualityMode mode) {
     switch (mode) {
-    case rt::viewer::ViewerQualityMode::preview:
-        return "preview";
-    case rt::viewer::ViewerQualityMode::converge:
-        return "converge";
+        case rt::viewer::ViewerQualityMode::preview: return "preview";
+        case rt::viewer::ViewerQualityMode::converge: return "converge";
     }
     return "unknown";
 }
 
 void handle_scroll_event(GLFWwindow* window, double xoffset, double yoffset) {
-    if (auto* state = static_cast<ScrollWheelState*>(glfwGetWindowUserPointer(window)); state != nullptr) {
+    if (auto* state = static_cast<ScrollWheelState*>(glfwGetWindowUserPointer(window));
+        state != nullptr) {
         state->pending_yoffset += yoffset;
         if (state->chained_callback != nullptr) {
             state->chained_callback(window, xoffset, yoffset);
@@ -277,15 +278,33 @@ void handle_scroll_event(GLFWwindow* window, double xoffset, double yoffset) {
     }
 }
 
-}  // namespace
+} // namespace
 
 int main(int argc, char* argv[]) {
     std::string scene_name = "final_room";
+    bool host_readback = false;
+    bool hidden_window = false;
+    int frame_limit = 0;
     argparse::ArgumentParser program("render_realtime_viewer");
     program.add_argument("--scene")
         .help("startup realtime scene id")
         .default_value(scene_name)
         .store_into(scene_name);
+    program.add_argument("--host-readback")
+        .help("use the diagnostic CPU readback/upload presentation path")
+        .default_value(false)
+        .implicit_value(true)
+        .store_into(host_readback);
+    program.add_argument("--hidden")
+        .help("create a hidden viewer window for automated validation")
+        .default_value(false)
+        .implicit_value(true)
+        .store_into(hidden_window);
+    program.add_argument("--frame-limit")
+        .help("exit after this many displayed frames; zero runs until closed")
+        .scan<'i', int>()
+        .default_value(frame_limit)
+        .store_into(frame_limit);
 
     try {
         program.parse_args(argc, argv);
@@ -299,6 +318,14 @@ int main(int argc, char* argv[]) {
         fmt::print(stderr, "--scene must reference a registered realtime scene\n");
         return 1;
     }
+    if (frame_limit < 0) {
+        fmt::print(stderr, "--frame-limit must be >= 0\n");
+        return 1;
+    }
+
+    if (!host_readback) {
+        rt::viewer::configure_cuda_gl_interop_environment();
+    }
 
     if (!glfwInit()) {
         fmt::print(stderr, "glfwInit failed\n");
@@ -307,6 +334,9 @@ int main(int argc, char* argv[]) {
 
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
+    if (hidden_window) {
+        glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+    }
     GLFWwindow* window =
         glfwCreateWindow(kWindowWidth, kWindowHeight, "render_realtime_viewer", nullptr, nullptr);
     if (!window) {
@@ -316,7 +346,7 @@ int main(int argc, char* argv[]) {
     }
 
     glfwMakeContextCurrent(window);
-    glfwSwapInterval(1);
+    glfwSwapInterval(hidden_window ? 0 : 1);
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -330,9 +360,9 @@ int main(int argc, char* argv[]) {
     glfwSetWindowUserPointer(window, &scroll_state);
     scroll_state.chained_callback = glfwSetScrollCallback(window, handle_scroll_event);
 
-    std::array<GLuint, 4> textures{};
-    std::array<std::vector<std::uint8_t>, 4> texture_scratch{};
-    std::array<bool, 4> warned_texture_mismatch{};
+    std::array<GLuint, 4> textures {};
+    std::array<std::vector<std::uint8_t>, 4> texture_scratch {};
+    std::array<bool, 4> warned_texture_mismatch {};
     const GLuint label_list_base = build_camera_label_lists();
     glGenTextures(static_cast<GLsizei>(textures.size()), textures.data());
     for (GLuint texture : textures) {
@@ -347,11 +377,11 @@ int main(int argc, char* argv[]) {
 
     rt::viewer::SceneSwitchController scene_controller(scene_name);
     rt::viewer::BodyPose pose = rt::default_spawn_pose_for_scene(scene_name);
-    rt::viewer::ViewerFrameConvention frame_convention = rt::viewer_frame_convention_for_scene(scene_name);
+    rt::viewer::ViewerFrameConvention frame_convention =
+        rt::viewer_frame_convention_for_scene(scene_name);
     rt::viewer::MoveSpeedState move_speed(rt::default_move_speed_for_scene(scene_name));
     rt::PackedScene packed_scene = rt::make_realtime_scene(scene_name).pack();
-    rt::viewer::ViewerRenderSession render_session(
-        rt::viewer::default_viewer_preview_profile(),
+    rt::viewer::ViewerRenderSession render_session(rt::viewer::default_viewer_preview_profile(),
         rt::viewer::default_viewer_converge_profile());
     rt::viewer::ViewerQualityMode quality_mode = rt::viewer::ViewerQualityMode::preview;
     std::string viewer_error_message;
@@ -362,6 +392,13 @@ int main(int argc, char* argv[]) {
 
     rt::RendererPool pool(4);
     pool.prepare_scene(packed_scene);
+    std::array<std::unique_ptr<rt::viewer::CudaGlTexturePresenter>, 4> gpu_presenters {};
+    if (!host_readback) {
+        for (std::size_t i = 0; i < gpu_presenters.size(); ++i) {
+            gpu_presenters[i] = std::make_unique<rt::viewer::CudaGlTexturePresenter>(textures[i],
+                kViewWidth, kViewHeight);
+        }
+    }
 
     double last_time = glfwGetTime();
     double last_cursor_x = 0.0;
@@ -370,6 +407,8 @@ int main(int argc, char* argv[]) {
 
     glDisable(GL_DEPTH_TEST);
     glEnable(GL_TEXTURE_2D);
+
+    int displayed_frames = 0;
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
@@ -411,8 +450,7 @@ int main(int argc, char* argv[]) {
                 glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS,
                 glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS,
                 glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS,
-                glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS,
-                move_speed.current_speed() * dt,
+                glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS, move_speed.current_speed() * dt,
                 frame_convention);
         }
         scroll_state.pending_yoffset = 0.0;
@@ -421,12 +459,15 @@ int main(int argc, char* argv[]) {
         const rt::viewer::SceneSwitchResult switch_result = scene_controller.resolve_pending();
         if (switch_result.applied) {
             try {
-                rt::PackedScene next_scene = rt::make_realtime_scene(scene_controller.current_scene_id()).pack();
+                rt::PackedScene next_scene =
+                    rt::make_realtime_scene(scene_controller.current_scene_id()).pack();
                 pool.prepare_scene(next_scene);
                 packed_scene = std::move(next_scene);
                 pose = rt::default_spawn_pose_for_scene(scene_controller.current_scene_id());
-                frame_convention = rt::viewer_frame_convention_for_scene(scene_controller.current_scene_id());
-                move_speed.reset(rt::default_move_speed_for_scene(scene_controller.current_scene_id()));
+                frame_convention =
+                    rt::viewer_frame_convention_for_scene(scene_controller.current_scene_id());
+                move_speed.reset(
+                    rt::default_move_speed_for_scene(scene_controller.current_scene_id()));
                 render_session.reset_all();
                 viewer_error_message.clear();
                 set_ui_interaction(window, ui_interaction_enabled, last_cursor_x, last_cursor_y);
@@ -442,12 +483,15 @@ int main(int argc, char* argv[]) {
         }
         if (request_scene_reload) {
             try {
-                rt::PackedScene reloaded_scene = rt::make_realtime_scene(scene_controller.current_scene_id()).pack();
+                rt::PackedScene reloaded_scene =
+                    rt::make_realtime_scene(scene_controller.current_scene_id()).pack();
                 pool.prepare_scene(reloaded_scene);
                 packed_scene = std::move(reloaded_scene);
                 pose = rt::default_spawn_pose_for_scene(scene_controller.current_scene_id());
-                frame_convention = rt::viewer_frame_convention_for_scene(scene_controller.current_scene_id());
-                move_speed.reset(rt::default_move_speed_for_scene(scene_controller.current_scene_id()));
+                frame_convention =
+                    rt::viewer_frame_convention_for_scene(scene_controller.current_scene_id());
+                move_speed.reset(
+                    rt::default_move_speed_for_scene(scene_controller.current_scene_id()));
                 render_session.reset_all();
                 viewer_error_message.clear();
                 reload_catalog_snapshot.reset();
@@ -463,51 +507,80 @@ int main(int argc, char* argv[]) {
         }
 
         const rt::PackedCameraRig rig =
-            rt::viewer::make_default_viewer_rig(pose, kViewWidth, kViewHeight, frame_convention).pack();
-        const rt::viewer::ViewerRenderBatch render_batch = render_session.render_frame(
-            scene_controller.current_scene_id(),
-            pose,
-            [&]() { pool.reset_accumulation(); },
-            [&](const rt::RenderProfile& profile) {
-                std::vector<rt::viewer::ViewerRawFrame> raw_frames;
-                const std::vector<rt::CameraRenderResult> results =
-                    pool.render_frame(rig, profile, static_cast<int>(textures.size()));
-                raw_frames.reserve(results.size());
-                for (const rt::CameraRenderResult& result : results) {
-                    raw_frames.push_back(rt::viewer::ViewerRawFrame {
-                        .camera_index = result.camera_index,
-                        .frame = result.profiled.frame,
-                    });
+            rt::viewer::make_default_viewer_rig(pose, kViewWidth, kViewHeight, frame_convention)
+                .pack();
+        if (host_readback) {
+            const rt::viewer::ViewerRenderBatch render_batch = render_session.render_frame(
+                scene_controller.current_scene_id(), pose, [&]() { pool.reset_accumulation(); },
+                [&](const rt::RenderProfile& profile) {
+                    std::vector<rt::viewer::ViewerRawFrame> raw_frames;
+                    const std::vector<rt::CameraRenderResult> results =
+                        pool.render_frame(rig, profile, static_cast<int>(textures.size()));
+                    raw_frames.reserve(results.size());
+                    for (const rt::CameraRenderResult& result : results) {
+                        raw_frames.push_back(rt::viewer::ViewerRawFrame {
+                            .camera_index = result.camera_index,
+                            .frame = result.profiled.frame,
+                        });
+                    }
+                    return raw_frames;
+                });
+            quality_mode = render_batch.mode;
+            for (const auto& frame : render_batch.frames) {
+                const int idx = frame.camera_index;
+                if (idx < 0 || idx >= static_cast<int>(textures.size())) {
+                    continue;
                 }
-                return raw_frames;
-            });
-        quality_mode = render_batch.mode;
-        for (const auto& frame : render_batch.frames) {
-            const int idx = frame.camera_index;
-            if (idx < 0 || idx >= static_cast<int>(textures.size())) {
-                continue;
-            }
-            const UploadStatus upload_status = upload_texture(
-                textures[static_cast<std::size_t>(idx)],
-                frame.display_frame,
-                texture_scratch[static_cast<std::size_t>(idx)]);
-            if (upload_status == UploadStatus::ok) {
-                warned_texture_mismatch[static_cast<std::size_t>(idx)] = false;
-                continue;
-            }
+                const UploadStatus upload_status =
+                    upload_texture(textures[static_cast<std::size_t>(idx)], frame.display_frame,
+                        texture_scratch[static_cast<std::size_t>(idx)]);
+                if (upload_status == UploadStatus::ok) {
+                    warned_texture_mismatch[static_cast<std::size_t>(idx)] = false;
+                    continue;
+                }
 
-            if (!warned_texture_mismatch[static_cast<std::size_t>(idx)]) {
-                if (upload_status == UploadStatus::resolution_mismatch) {
-                    fmt::print(stderr,
-                        "viewer frame size mismatch for camera {}: got {}x{}, expected {}x{}\n",
-                        idx, frame.display_frame.width, frame.display_frame.height, kViewWidth, kViewHeight);
-                } else {
-                    fmt::print(stderr,
-                        "viewer frame buffer too small for camera {}: got {}, need at least {}\n",
-                        idx, frame.display_frame.beauty_rgba.size(),
-                        static_cast<std::size_t>(kViewWidth * kViewHeight * 4));
+                if (!warned_texture_mismatch[static_cast<std::size_t>(idx)]) {
+                    if (upload_status == UploadStatus::resolution_mismatch) {
+                        fmt::print(stderr,
+                            "viewer frame size mismatch for camera {}: got {}x{}, expected {}x{}\n",
+                            idx, frame.display_frame.width, frame.display_frame.height, kViewWidth,
+                            kViewHeight);
+                    } else {
+                        fmt::print(stderr,
+                            "viewer frame buffer too small for camera {}: got {}, need at least "
+                            "{}\n",
+                            idx, frame.display_frame.beauty_rgba.size(),
+                            static_cast<std::size_t>(kViewWidth * kViewHeight * 4));
+                    }
+                    warned_texture_mismatch[static_cast<std::size_t>(idx)] = true;
                 }
-                warned_texture_mismatch[static_cast<std::size_t>(idx)] = true;
+            }
+        } else {
+            const rt::viewer::ViewerRenderPlan plan =
+                render_session.begin_frame(scene_controller.current_scene_id(), pose);
+            if (plan.reset_accumulation) {
+                pool.reset_accumulation();
+            }
+            quality_mode = plan.mode;
+            const std::vector<rt::CameraDeviceRenderResult> results =
+                pool.render_device_frame(rig, plan.profile, static_cast<int>(textures.size()));
+            for (const rt::CameraDeviceRenderResult& result : results) {
+                const int idx = result.camera_index;
+                if (idx < 0 || idx >= static_cast<int>(gpu_presenters.size())) {
+                    continue;
+                }
+                const auto status =
+                    gpu_presenters[static_cast<std::size_t>(idx)]->present(result.profiled.frame);
+                if (status == rt::viewer::CudaGlPresentStatus::ok) {
+                    warned_texture_mismatch[static_cast<std::size_t>(idx)] = false;
+                    continue;
+                }
+                if (!warned_texture_mismatch[static_cast<std::size_t>(idx)]) {
+                    fmt::print(stderr,
+                        "viewer GPU presentation rejected camera {} device frame {}x{}\n", idx,
+                        result.profiled.frame.width, result.profiled.frame.height);
+                    warned_texture_mismatch[static_cast<std::size_t>(idx)] = true;
+                }
             }
         }
 
@@ -519,14 +592,16 @@ int main(int argc, char* argv[]) {
         const float panel_height = 0.5f * static_cast<float>(framebuffer_height);
         glMatrixMode(GL_PROJECTION);
         glLoadIdentity();
-        glOrtho(0.0, static_cast<double>(framebuffer_width), static_cast<double>(framebuffer_height), 0.0, -1.0, 1.0);
+        glOrtho(0.0, static_cast<double>(framebuffer_width),
+            static_cast<double>(framebuffer_height), 0.0, -1.0, 1.0);
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
 
         for (const ViewerPanel& panel : kViewerPanels) {
             const float x = static_cast<float>(panel.column) * panel_width;
             const float y = static_cast<float>(panel.row) * panel_height;
-            draw_textured_quad(textures[static_cast<std::size_t>(panel.camera_index)], x, y, panel_width, panel_height);
+            draw_textured_quad(textures[static_cast<std::size_t>(panel.camera_index)], x, y,
+                panel_width, panel_height);
         }
 
         if (label_list_base != 0) {
@@ -537,11 +612,12 @@ int main(int argc, char* argv[]) {
             for (const ViewerPanel& panel : kViewerPanels) {
                 const float x = static_cast<float>(panel.column) * panel_width;
                 const float y = static_cast<float>(panel.row) * panel_height;
-                const LabelCorner corner = panel.row == 0
-                    ? (panel.column == 0 ? LabelCorner::bottom_right : LabelCorner::bottom_left)
-                    : (panel.column == 0 ? LabelCorner::top_right : LabelCorner::top_left);
-                draw_camera_label(label_list_base + static_cast<GLuint>(panel.camera_index), x, y, panel_width,
-                    panel_height, corner);
+                const LabelCorner corner =
+                    panel.row == 0
+                        ? (panel.column == 0 ? LabelCorner::bottom_right : LabelCorner::bottom_left)
+                        : (panel.column == 0 ? LabelCorner::top_right : LabelCorner::top_left);
+                draw_camera_label(label_list_base + static_cast<GLuint>(panel.camera_index), x, y,
+                    panel_width, panel_height, corner);
             }
             glDisable(GL_BLEND);
             glEnable(GL_TEXTURE_2D);
@@ -554,13 +630,15 @@ int main(int argc, char* argv[]) {
         ImGui::Begin("Viewer");
         ImGui::Text("Scene: %s", scene_label(scene_controller.current_scene_id()).c_str());
         ImGui::Text("Quality: %s", quality_mode_label(quality_mode));
+        ImGui::Text("Presentation: %s", host_readback ? "host readback" : "CUDA/OpenGL");
         ImGui::Text("Move speed: %.3f", move_speed.current_speed());
         ImGui::Text("cam0 history: GPU");
         ImGui::Text("Tab toggles UI cursor");
         ImGui::Text("Controls: WASD + QE move, mouse look, wheel changes speed");
         if (ImGui::Button("Reload Current Scene")) {
             rt::scene::SceneFileCatalog catalog_snapshot = rt::scene::global_scene_file_catalog();
-            const rt::viewer::SceneCatalogUpdateResult reload_result = scene_controller.reload_current_scene();
+            const rt::viewer::SceneCatalogUpdateResult reload_result =
+                scene_controller.reload_current_scene();
             if (reload_result.ok) {
                 reload_catalog_snapshot = std::move(catalog_snapshot);
                 request_scene_reload = reload_result.reload_active_scene;
@@ -585,10 +663,11 @@ int main(int argc, char* argv[]) {
             }
         }
         const std::string preview_label = scene_label(scene_controller.current_scene_id());
-        ImGui::SetNextWindowSizeConstraints(
-            ImVec2(kSceneComboWidth, 0.0f), ImVec2(kSceneComboWidth, kSceneComboHeight));
+        ImGui::SetNextWindowSizeConstraints(ImVec2(kSceneComboWidth, 0.0f),
+            ImVec2(kSceneComboWidth, kSceneComboHeight));
         ImGui::SetNextItemWidth(kSceneComboWidth);
-        if (ImGui::BeginCombo("Switch Scene", preview_label.c_str(), ImGuiComboFlags_HeightLargest)) {
+        if (ImGui::BeginCombo("Switch Scene", preview_label.c_str(),
+                ImGuiComboFlags_HeightLargest)) {
             for (const rt::SceneCatalogEntry& entry : rt::scene_catalog()) {
                 const bool supported = entry.supports_realtime;
                 const bool selected = entry.id == scene_controller.current_scene_id();
@@ -609,9 +688,11 @@ int main(int argc, char* argv[]) {
             ImGui::EndCombo();
         }
         if (!scene_controller.last_error().empty()) {
-            ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f), "%s", scene_controller.last_error().c_str());
+            ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f), "%s",
+                scene_controller.last_error().c_str());
         } else if (!viewer_error_message.empty()) {
-            ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f), "%s", viewer_error_message.c_str());
+            ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f), "%s",
+                viewer_error_message.c_str());
         }
         ImGui::End();
 
@@ -619,8 +700,15 @@ int main(int argc, char* argv[]) {
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         glfwSwapBuffers(window);
+        ++displayed_frames;
+        if (frame_limit > 0 && displayed_frames >= frame_limit) {
+            glfwSetWindowShouldClose(window, GLFW_TRUE);
+        }
     }
 
+    for (auto& presenter : gpu_presenters) {
+        presenter.reset();
+    }
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();

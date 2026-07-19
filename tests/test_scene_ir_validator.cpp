@@ -64,6 +64,24 @@ int main() {
         "triangle mesh vertex index out of range",
         "triangle vertex index");
 
+    rt::scene::SceneIR bad_normal_index = valid_scene();
+    const int attributed_mesh = bad_normal_index.add_shape(rt::scene::TriangleMeshShape {
+        .positions = {
+            {0.0, 0.0, 0.0},
+            {1.0, 0.0, 0.0},
+            {0.0, 1.0, 0.0},
+        },
+        .triangles = {{0, 1, 2}},
+        .normals = {{0.0, 0.0, 1.0}},
+        .normal_indices = {{0, 0, 1}},
+    });
+    bad_normal_index.add_instance(
+        rt::scene::SurfaceInstance {.shape_index = attributed_mesh, .material_index = 0});
+    expect_throws_with_message<std::out_of_range>(
+        [&]() { rt::scene::validate_scene_ir(bad_normal_index); },
+        "triangle mesh normal index out of range",
+        "triangle normal index");
+
     rt::scene::SceneIR bad_medium = valid_scene();
     bad_medium.add_medium(rt::scene::MediumInstance {
         .shape_index = 0,

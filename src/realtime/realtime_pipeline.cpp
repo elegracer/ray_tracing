@@ -26,7 +26,8 @@ PackedScene make_smoke_scene() {
         legacy_renderer_to_world(Eigen::Vector3d {0.0, 0.0, 2.0}),
         false,
     });
-    scene.add_sphere(SpherePrimitive {smoke, legacy_renderer_to_world(Eigen::Vector3d {0.0, 0.0, -4.0}), 0.7, false});
+    scene.add_sphere(SpherePrimitive {smoke,
+        legacy_renderer_to_world(Eigen::Vector3d {0.0, 0.0, -4.0}), 0.7, false});
     return scene.pack();
 }
 
@@ -39,31 +40,33 @@ PackedCameraRig make_smoke_rig(int active_cameras, double pose_jump_translation)
 
     for (int i = 0; i < active_cameras; ++i) {
         Sophus::SE3d T_bc {};
-        T_bc.translation() = Eigen::Vector3d {0.06 * (static_cast<double>(i) - center) + pose_jump_translation, 0.0, 0.0};
+        T_bc.translation() = Eigen::Vector3d {
+            0.06 * (static_cast<double>(i) - center) + pose_jump_translation, 0.0, 0.0};
         rig.add_pinhole(intrinsics, T_bc, kWidth, kHeight);
     }
 
     return rig.pack();
 }
 
-}  // namespace
+} // namespace
 
-RealtimeFrameSet RealtimePipeline::render_profiled_smoke_frame(
-    int active_cameras, const RenderProfile& profile) {
+RealtimeFrameSet RealtimePipeline::render_profiled_smoke_frame(int active_cameras,
+    const RenderProfile& profile) {
     return render_profiled_smoke_frame_impl(active_cameras, profile, false);
 }
 
-RealtimeFrameSet RealtimePipeline::render_profiled_smoke_frame_with_pose_jump(
-    int active_cameras, const RenderProfile& profile) {
+RealtimeFrameSet RealtimePipeline::render_profiled_smoke_frame_with_pose_jump(int active_cameras,
+    const RenderProfile& profile) {
     return render_profiled_smoke_frame_impl(active_cameras, profile, true);
 }
 
-RealtimeFrameSet RealtimePipeline::render_profiled_smoke_frame_impl(
-    int active_cameras, const RenderProfile& profile, bool pose_jump) {
+RealtimeFrameSet RealtimePipeline::render_profiled_smoke_frame_impl(int active_cameras,
+    const RenderProfile& profile, bool pose_jump) {
     validate_active_cameras(active_cameras);
 
     const PackedScene scene = make_smoke_scene();
-    const double pose_jump_translation = pose_jump ? profile.accumulation_reset_translation * 2.0 : 0.0;
+    const double pose_jump_translation =
+        pose_jump ? profile.accumulation_reset_translation * 2.0 : 0.0;
     const PackedCameraRig rig = make_smoke_rig(active_cameras, pose_jump_translation);
 
     RealtimeFrameSet out {};
@@ -75,15 +78,23 @@ RealtimeFrameSet RealtimePipeline::render_profiled_smoke_frame_impl(
         }
         history_lengths_[idx] += 1;
 
+        if (renderers_[idx] == nullptr) {
+            renderers_[idx] = std::make_unique<OptixRenderer>();
+        }
+        if (!scene_prepared_[idx]) {
+            renderers_[idx]->prepare_scene(scene);
+            scene_prepared_[idx] = true;
+        }
+        if (pose_jump) {
+            renderers_[idx]->reset_accumulation();
+        }
+
         RealtimeFrame frame {};
         frame.history_length = history_lengths_[idx];
-        frame.radiance = renderer_.render_radiance(scene, rig, profile, i);
-        if (profile.enable_denoise) {
-            denoiser_.run(frame.radiance);
-        }
+        frame.radiance = renderers_[idx]->render_prepared_radiance(rig, profile, i).frame;
         out.frames[idx] = frame;
     }
     return out;
 }
 
-}  // namespace rt
+} // namespace rt

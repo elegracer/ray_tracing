@@ -39,12 +39,24 @@ void test_obj_importer_creates_triangle_mesh_and_material() {
         "v 0 0 0\n"
         "v 1 0 0\n"
         "v 0 1 0\n"
-        "f 1 2 3\n");
+        "vt 0 0\n"
+        "vt 1 0\n"
+        "vt 0 1\n"
+        "vn 0 0 1\n"
+        "f 1/1/1 2/2/1 3/3/1\n");
     write_text_file(mtl_file, "newmtl matte\nKd 0.8 0.7 0.6\n");
 
     const rt::scene::ObjImportResult imported = rt::scene::import_obj_mtl(obj_file);
     expect_true(imported.scene_ir.shapes().size() == 1, "mesh shape count");
     expect_true(std::holds_alternative<rt::scene::TriangleMeshShape>(imported.scene_ir.shapes().front()), "mesh type");
+    const auto& mesh =
+        std::get<rt::scene::TriangleMeshShape>(imported.scene_ir.shapes().front());
+    expect_true(mesh.normals.size() == 1, "obj normal values preserved");
+    expect_true(mesh.normal_indices == std::vector<Eigen::Vector3i>({{0, 0, 0}}),
+        "obj normal indices preserved");
+    expect_true(mesh.texcoords.size() == 3, "obj texcoord values preserved");
+    expect_true(mesh.texcoord_indices == std::vector<Eigen::Vector3i>({{0, 1, 2}}),
+        "obj texcoord indices preserved");
     expect_true(imported.scene_ir.materials().size() == 1, "material count");
     expect_true(imported.scene_ir.surface_instances().size() == 1, "instance count");
     expect_true(imported.dependencies.size() == 2, "dependency count");
@@ -70,11 +82,15 @@ void test_obj_importer_rebases_map_kd_relative_to_mtl() {
 
     const rt::scene::ObjImportResult imported = rt::scene::import_obj_mtl(obj_file);
     expect_true(imported.scene_ir.textures().size() == 1, "texture count");
-    expect_true(std::holds_alternative<rt::scene::ImageTextureDesc>(imported.scene_ir.textures().front()), "image texture");
+    expect_true(
+        std::holds_alternative<rt::scene::ImageTextureDesc>(imported.scene_ir.textures().front()),
+        "image texture");
     const auto& image = std::get<rt::scene::ImageTextureDesc>(imported.scene_ir.textures().front());
+    expect_true(image.authored_path == "textures/albedo.png", "map_Kd authored path");
     expect_true(image.path == texture_file.lexically_normal().string(), "map_Kd rebased from mtl");
     expect_true(imported.dependencies.size() == 3, "dependency count with texture");
-    expect_true(imported.dependencies[2] == texture_file.lexically_normal().string(), "texture dependency");
+    expect_true(imported.dependencies[2] == texture_file.lexically_normal().string(),
+        "texture dependency");
 }
 
 void test_obj_importer_errors_are_prefixed_with_obj_path() {

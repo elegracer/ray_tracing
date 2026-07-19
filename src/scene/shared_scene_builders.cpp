@@ -755,6 +755,8 @@ const std::vector<SceneDefinition>& builtin_scene_definitions() {
                 definition.realtime_preset = preset->preset;
             }
 
+            definition.scene_ir_v2 = compile_scene_definition_v2(definition);
+
             out.push_back(std::move(definition));
         }
         return out;
@@ -817,6 +819,14 @@ SceneIR build_scene(std::string_view scene_id) {
         throw std::invalid_argument("unknown shared scene id");
     }
     return definition->scene_ir;
+}
+
+SceneIRv2 build_scene_v2(std::string_view scene_id) {
+    const SceneDefinition* definition = global_scene_file_catalog().find_scene(scene_id);
+    if (definition == nullptr) {
+        throw std::invalid_argument("unknown shared scene id");
+    }
+    return definition->scene_ir_v2;
 }
 
 }  // namespace rt::scene

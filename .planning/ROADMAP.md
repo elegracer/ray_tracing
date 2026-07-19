@@ -6,7 +6,26 @@
 
 ## Active Milestone
 
-No active milestone is defined.
+### v2.0 — Physically Grounded Realtime USD Renderer
 
-Next step:
-- Run `$gsd-new-milestone` to define the next requirement set and roadmap.
+Requirements: `.planning/milestones/v2.0-REQUIREMENTS.md`
+Research: `.planning/v2.0-REALTIME-MODERNIZATION-RESEARCH.md`
+Baseline: `.planning/v2.0-BASELINE.json`
+
+- [x] **Phase 1: Truthful Benchmarking And GPU Reconstruction** — critical-path/work metrics, native OptiX temporal AOV denoising, self-contained benchmark provenance/artifacts, temporal reference gates, and GPU-resident CUDA/OpenGL viewer presentation are complete.
+- [ ] **Phase 2: SceneIR v2 And OpenUSD Semantics** — USD-01 identity/stage/hierarchy/xform, USD-02 geometry/primvar/subset, prototype/instance, camera, asset, and UsdLux light semantics are complete; full USD-05 texture/material translation remains.
+- [ ] **Phase 3: OpenPBR Core And Physical BSDFs** — official parameter contract, texture connections/color spaces, matched evaluate/sample/PDF behavior, and legacy material migration.
+- [ ] **Phase 4: OpenUSD And MaterialX I/O** — optional SDK integration, composed-stage import, resolved bindings, supported deterministic export, and advanced OpenPBR lobes.
+- [ ] **Phase 5: Scalable Lighting And GPU Scheduling** — explicit light distributions, environment sampling, MIS, ReSTIR DI, persistent scheduling/launch data, and AS update/refit/instancing.
+- [ ] **Phase 6: Quality/Performance Closure And Advanced Reuse** — reference corpus, physical/temporal/image gates, NRD comparison, capability-gated ReSTIR GI/PT and neural cache experiments.
+
+## Ordering Rules
+
+- Phase 1 was the entry gate because the original denoise and timing data were not trustworthy; its validated outputs now gate later optimization claims.
+- Phase 2 fixes scene semantics before the USD SDK frontend, so YAML and USD compile into one tested contract.
+- Phase 3 establishes correct BSDF probabilities before ReSTIR can reuse samples safely.
+- Phase 6 techniques remain experimental until the preceding acceptance gates are green.
+
+## Immediate Next Step
+
+Finish the YAML/builtin texture and non-emissive material compatibility translation into SceneIR v2 without changing the verified v1 execution path, then stabilize that contract before adding the OpenUSD SDK frontend.

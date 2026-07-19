@@ -28,6 +28,12 @@ struct ViewerRenderBatch {
     std::vector<ViewerDisplayFrame> frames;
 };
 
+struct ViewerRenderPlan {
+    ViewerQualityMode mode = ViewerQualityMode::preview;
+    RenderProfile profile;
+    bool reset_accumulation = false;
+};
+
 using ResetAccumulationFn = std::function<void()>;
 using RenderViewerFramesFn = std::function<std::vector<ViewerRawFrame>(const RenderProfile&)>;
 
@@ -35,6 +41,7 @@ class ViewerRenderSession {
 public:
     ViewerRenderSession(RenderProfile preview_profile, RenderProfile converge_profile);
 
+    ViewerRenderPlan begin_frame(std::string_view scene_id, const BodyPose& pose);
     ViewerRenderBatch render_frame(std::string_view scene_id, const BodyPose& pose,
         const ResetAccumulationFn& reset_accumulation, const RenderViewerFramesFn& render_frames);
     void reset_all();
@@ -43,4 +50,4 @@ private:
     ViewerQualityController quality_controller_;
 };
 
-}  // namespace rt::viewer
+} // namespace rt::viewer

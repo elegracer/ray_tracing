@@ -1,0 +1,406 @@
+{
+  "schema_version": 3,
+  "captured_at": "2026-07-18T22:34:39+08:00",
+  "source_commit": "eda7c5bd37f46a0ba75c7c5141b585360a72a695",
+  "environment": {
+    "os": "Linux x86_64",
+    "gpu": "NVIDIA GeForce RTX 3090",
+    "compute_capability": "8.6",
+    "gpu_memory_mib": 24576,
+    "driver": "595.71.05",
+    "cuda": "13.0.88",
+    "optix": "9.1.0",
+    "cmake": "3.28.3"
+  },
+  "correctness": {
+    "build_command": "cmake --build build-clang-vcpkg-settings -j8",
+    "build_result": "pass",
+    "test_command": "ctest --test-dir build-clang-vcpkg-settings --output-on-failure -j8",
+    "tests_passed": 54,
+    "tests_failed": 0,
+    "wall_time_seconds": 18.0
+  },
+  "workload": {
+    "command_template": "./bin/render_realtime --scene smoke --camera-count 4 --frames 100 --profile <profile> --skip-image-write --output-dir <output>",
+    "scene": "smoke",
+    "resolution": [640, 480],
+    "camera_count": 4,
+    "measured_frames": 100,
+    "steady_frames": 99,
+    "discarded_warmup_frames": 1,
+    "image_write_enabled": false
+  },
+  "profiles": [
+    {
+      "name": "realtime",
+      "samples_per_pixel": 1,
+      "max_bounces": 2,
+      "denoise_enabled": true,
+      "avg_frame_ms": 42.8487,
+      "p95_frame_ms": 45.7864,
+      "fps": 23.3380,
+      "summed_render_ms": 5.5832,
+      "summed_denoise_ms": 53.9362,
+      "summed_download_ms": 8.5928,
+      "derived_host_overhead_ms": -25.2636
+    },
+    {
+      "name": "balanced",
+      "samples_per_pixel": 2,
+      "max_bounces": 4,
+      "denoise_enabled": true,
+      "avg_frame_ms": 43.3536,
+      "p95_frame_ms": 46.7808,
+      "fps": 23.0661,
+      "summed_render_ms": 6.2412,
+      "summed_denoise_ms": 54.5155,
+      "summed_download_ms": 8.5832,
+      "derived_host_overhead_ms": -25.9863
+    },
+    {
+      "name": "quality",
+      "samples_per_pixel": 4,
+      "max_bounces": 8,
+      "denoise_enabled": false,
+      "avg_frame_ms": 28.9618,
+      "p95_frame_ms": 32.6876,
+      "fps": 34.5282,
+      "summed_render_ms": 7.9122,
+      "summed_denoise_ms": 0.0,
+      "summed_download_ms": 7.8349,
+      "derived_host_overhead_ms": 13.2147
+    }
+  ],
+  "baseline_measurement_defects": [
+    "The enabled denoiser is a CPU clamp loop, not an OptiX denoiser.",
+    "Per-camera work is summed even though cameras execute concurrently, so stage totals are not critical-path latency.",
+    "Subtracting summed parallel work from wall time produces invalid negative host-overhead values.",
+    "The benchmark has no built-in warmup flag; this record discards frame zero during post-processing."
+  ],
+  "phase1_gpu_reconstruction": {
+    "captured_at": "2026-07-18T23:00:00+08:00",
+    "implementation": [
+      "OptiX 9.1 temporal AOV denoising runs on each renderer CUDA stream before host download.",
+      "GPU guides include beauty, albedo, camera-space normal, depth-derived flow, flow trustworthiness, previous beauty, and internal temporal guide layers.",
+      "Raw accumulation history remains separate from denoised presentation output.",
+      "Frame reports separate wall-clock pipeline latency, per-stage critical-path estimates, and summed parallel work."
+    ],
+    "validation": {
+      "build_result": "pass",
+      "tests_passed": 54,
+      "tests_failed": 0,
+      "image_probe": "final_room 640x480 RGB PNG inspected; geometry, lighting, shadows, and non-black radiance present"
+    },
+    "workload": {
+      "scene": "smoke",
+      "resolution": [640, 480],
+      "camera_count": 4,
+      "steady_frames": 99,
+      "discarded_warmup_frames": 1,
+      "image_write_enabled": false
+    },
+    "profiles": [
+      {
+        "name": "realtime",
+        "avg_frame_ms": 29.9772,
+        "p95_frame_ms": 35.0905,
+        "fps": 33.3587,
+        "avg_pipeline_ms": 29.9685,
+        "render_critical_ms": 1.6996,
+        "denoise_critical_ms": 7.3764,
+        "download_critical_ms": 3.6452,
+        "render_work_ms": 4.4044,
+        "denoise_work_ms": 27.0912,
+        "download_work_ms": 8.4305,
+        "host_overhead_ms": 0.0087,
+        "fps_change_percent": 42.9
+      },
+      {
+        "name": "balanced",
+        "avg_frame_ms": 29.7147,
+        "p95_frame_ms": 33.2548,
+        "fps": 33.6533,
+        "avg_pipeline_ms": 29.7055,
+        "render_critical_ms": 2.1280,
+        "denoise_critical_ms": 7.2446,
+        "download_critical_ms": 3.4131,
+        "render_work_ms": 5.5368,
+        "denoise_work_ms": 25.7720,
+        "download_work_ms": 7.8455,
+        "host_overhead_ms": 0.0092,
+        "fps_change_percent": 45.9
+      },
+      {
+        "name": "quality",
+        "avg_frame_ms": 26.6274,
+        "p95_frame_ms": 29.6015,
+        "fps": 37.5553,
+        "avg_pipeline_ms": 26.6177,
+        "render_critical_ms": 2.8554,
+        "denoise_critical_ms": 0.0,
+        "download_critical_ms": 3.0057,
+        "render_work_ms": 7.5026,
+        "denoise_work_ms": 0.0,
+        "download_work_ms": 7.4104,
+        "host_overhead_ms": 0.0097,
+        "fps_change_percent": 8.8
+      }
+    ],
+    "remaining_gaps": [
+      "Built-in warmup, P99, GPU-memory, and environment provenance remained at this checkpoint and are closed by phase1_benchmark_provenance.",
+      "Viewer presentation still requires host readback instead of CUDA/OpenGL interop.",
+      "Motion, disocclusion, resize, camera-jump, and scene-change gates are closed by phase1_temporal_reference_gates."
+    ]
+  },
+  "phase1_benchmark_provenance": {
+    "captured_at_utc_range": [
+      "2026-07-18T15:57:30Z",
+      "2026-07-18T15:57:59Z"
+    ],
+    "implementation": [
+      "render_realtime renders an explicit unmeasured warmup interval before measured frames and records both the initial seed and each measured sample stream.",
+      "Every aggregate emits avg, P50, P95, P99, and max using the same nearest-rank estimator.",
+      "A build-time generator records source revision, dirty state, binary-relevant source scope and its SHA256 state fingerprint, plus project/compiler/build provenance, Linux architecture, NVIDIA driver, CUDA driver/runtime, OptiX, GPU identity, and compute capability.",
+      "CUDA device-global memory samples record baseline, post-prepare, peak, final, and peak-minus-baseline byte counts outside measured frame timing.",
+      "benchmark_manifest.json records raw CSV/summary sizes and FNV-1a 64 digests after pre-validating every input artifact."
+    ],
+    "validation": {
+      "build_command": "cmake --build build-clang-vcpkg-settings -j2",
+      "build_result": "pass",
+      "test_command": "ctest --test-dir build-clang-vcpkg-settings --output-on-failure",
+      "tests_passed": 54,
+      "tests_failed": 0,
+      "wall_time_seconds": 42.35,
+      "artifact_gate": "Three summaries parsed with jq; each has 100 measured frames, 400 per-camera records, 101 CSV lines including the header, ordered sample streams 20260726..20260825, non-empty provenance, P99 >= P95, non-zero GPU memory, and two non-empty manifested artifacts.",
+      "digest_test_vector": "FNV-1a 64('hello') = a430d84680aabd0b"
+    },
+    "workload": {
+      "command_template": "./bin/render_realtime --scene smoke --camera-count 4 --warmup-frames 8 --frames 100 --seed 20260718 --profile <profile> --skip-image-write --output-dir <output>",
+      "scene": "smoke",
+      "resolution": [640, 480],
+      "camera_count": 4,
+      "warmup_frames": 8,
+      "measured_frames": 100,
+      "random_seed": 20260718,
+      "measurement_sample_stream_start": 20260726,
+      "rng_algorithm": "hashed_pixel_sample_stream_v1",
+      "image_write_enabled": false
+    },
+    "provenance": {
+      "project_version": "0.0.1.0",
+      "source_revision": "eda7c5bd37f46a0ba75c7c5141b585360a72a695",
+      "source_dirty": true,
+      "source_scope": "CMakeLists.txt,cmake,src,utils",
+      "source_state_sha256": "3cf1d1473df5ecffe8cca3abe9fbe53a97c2efc8f40b81d06538db94fba4e842",
+      "build_configuration": "single-config-default",
+      "cxx_compiler": "Clang 18.1.3",
+      "operating_system": "Linux 7.0.0-28-generic",
+      "architecture": "x86_64",
+      "gpu": "NVIDIA GeForce RTX 3090",
+      "compute_capability": "8.6",
+      "nvidia_driver": "595.71.05",
+      "cuda_driver_api": "13.2",
+      "cuda_runtime": "13.0",
+      "optix": "9.1.0",
+      "gpu_memory_scope": "cuda_device_global",
+      "gpu_memory_total_bytes": 25298141184
+    },
+    "profiles": [
+      {
+        "name": "realtime",
+        "samples_per_pixel": 1,
+        "max_bounces": 2,
+        "denoise_enabled": true,
+        "avg_frame_ms": 31.0712,
+        "p50_frame_ms": 30.6497,
+        "p95_frame_ms": 34.8491,
+        "p99_frame_ms": 36.8067,
+        "max_frame_ms": 42.2592,
+        "fps": 32.1841,
+        "avg_pipeline_ms": 31.0610,
+        "avg_render_critical_ms": 1.5418,
+        "avg_denoise_critical_ms": 7.2927,
+        "avg_download_critical_ms": 4.3870,
+        "avg_render_work_ms": 4.2086,
+        "avg_denoise_work_ms": 27.4068,
+        "avg_download_work_ms": 10.1597,
+        "avg_host_overhead_ms": 0.0102,
+        "peak_gpu_memory_bytes": 1099825152,
+        "peak_gpu_memory_delta_bytes": 807403520,
+        "csv_fnv1a64": "d929ab248e4a5e5b",
+        "summary_fnv1a64": "a5a5706d7652b921"
+      },
+      {
+        "name": "balanced",
+        "samples_per_pixel": 2,
+        "max_bounces": 4,
+        "denoise_enabled": true,
+        "avg_frame_ms": 31.3196,
+        "p50_frame_ms": 31.4011,
+        "p95_frame_ms": 35.9828,
+        "p99_frame_ms": 37.2362,
+        "max_frame_ms": 37.6240,
+        "fps": 31.9289,
+        "avg_pipeline_ms": 31.3079,
+        "avg_render_critical_ms": 1.7617,
+        "avg_denoise_critical_ms": 7.3199,
+        "avg_download_critical_ms": 4.2923,
+        "avg_render_work_ms": 4.9298,
+        "avg_denoise_work_ms": 27.4628,
+        "avg_download_work_ms": 9.9786,
+        "avg_host_overhead_ms": 0.0117,
+        "peak_gpu_memory_bytes": 1099825152,
+        "peak_gpu_memory_delta_bytes": 807403520,
+        "csv_fnv1a64": "a41427024232dd15",
+        "summary_fnv1a64": "da2d3466ddfa846e"
+      },
+      {
+        "name": "quality",
+        "samples_per_pixel": 4,
+        "max_bounces": 8,
+        "denoise_enabled": false,
+        "avg_frame_ms": 27.4086,
+        "p50_frame_ms": 27.4561,
+        "p95_frame_ms": 30.7860,
+        "p99_frame_ms": 32.3865,
+        "max_frame_ms": 34.5924,
+        "fps": 36.4849,
+        "avg_pipeline_ms": 27.3966,
+        "avg_render_critical_ms": 3.1974,
+        "avg_denoise_critical_ms": 0.0,
+        "avg_download_critical_ms": 3.2740,
+        "avg_render_work_ms": 8.0209,
+        "avg_denoise_work_ms": 0.0,
+        "avg_download_work_ms": 8.1346,
+        "avg_host_overhead_ms": 0.0120,
+        "peak_gpu_memory_bytes": 630063104,
+        "peak_gpu_memory_delta_bytes": 337641472,
+        "csv_fnv1a64": "e9126f4b029c9602",
+        "summary_fnv1a64": "39ebb9205d4ca395"
+      }
+    ],
+    "interpretation": [
+      "This checkpoint validates the measurement protocol and artifact completeness; it does not claim a new performance uplift over phase1_gpu_reconstruction because the seed, warmup policy, source tree, and run-time thermal/clock state differ.",
+      "Single-run P99 variation remains material, especially for balanced and quality; future performance claims require repeated runs under identical quality and workload conditions."
+    ],
+    "remaining_phase1_gaps": [
+      "Viewer reconstruction and presentation still require host readback instead of CUDA/OpenGL interop."
+    ]
+  },
+  "phase1_temporal_reference_gates": {
+    "captured_at_utc_range": [
+      "2026-07-18T16:31:51Z",
+      "2026-07-18T16:32:10Z"
+    ],
+    "implementation": [
+      "History storage is resized and reset before launch parameters capture buffers, history length, and previous-camera state.",
+      "Reprojection validates the current world point against its expected distance from the previous camera instead of comparing depths measured from different camera origins.",
+      "A GPU reference test covers smooth motion, a world-space disocclusion mask, resize, explicit camera-jump reset, and scene change; ViewerRenderSession separately proves that a threshold-exceeding pose jump requests reset before render."
+    ],
+    "reference_fixture": {
+      "scene": "final_room",
+      "resolution": [
+        64,
+        48
+      ],
+      "history_frames": 4,
+      "temporal_profile": "realtime",
+      "reference_samples_per_pixel": 32,
+      "camera_translation": 0.03,
+      "disoccluded_pixels": 40,
+      "motion_temporal_mae": 0.153471,
+      "motion_cold_start_mae": 0.154568,
+      "disocclusion_temporal_mae": 0.161560,
+      "disocclusion_cold_start_mae": 0.166292,
+      "reset_parity_tolerance": 0.000001,
+      "reset_cases": [
+        "resize",
+        "camera_jump",
+        "scene_change"
+      ]
+    },
+    "validation": {
+      "build_command": "cmake --build build-clang-vcpkg-settings -j2",
+      "build_result": "pass",
+      "test_command": "ctest --test-dir build-clang-vcpkg-settings --output-on-failure",
+      "tests_passed": 55,
+      "tests_failed": 0,
+      "wall_time_seconds": 42.03,
+      "focused_test": "test_optix_temporal_reference",
+      "focused_test_wall_time_seconds": 0.82
+    },
+    "performance_guard": {
+      "workload": "smoke / 640x480 / 4 cameras / 8 warmup / 100 measured / seed 20260718 / realtime / skip image write",
+      "source_state_sha256": "670c5ce80412513e9251f6b15fc0ef458d141fc2e454ebc9c72622fd79bccf9c",
+      "prior_protocol_avg_frame_ms": 31.0712,
+      "prior_protocol_p99_frame_ms": 36.8067,
+      "runs": [
+        {
+          "avg_frame_ms": 29.1951,
+          "p50_frame_ms": 28.8895,
+          "p95_frame_ms": 33.0931,
+          "p99_frame_ms": 34.9069,
+          "max_frame_ms": 34.9834,
+          "fps": 34.2523,
+          "denoise_critical_ms": 7.1981,
+          "csv_fnv1a64": "dea9f76e88500a49",
+          "summary_fnv1a64": "1456a376a6db2b0f"
+        },
+        {
+          "avg_frame_ms": 29.7210,
+          "p50_frame_ms": 29.2840,
+          "p95_frame_ms": 33.5333,
+          "p99_frame_ms": 34.4544,
+          "max_frame_ms": 35.4640,
+          "fps": 33.6462,
+          "denoise_critical_ms": 7.2671,
+          "csv_fnv1a64": "c71ca951860626d9",
+          "summary_fnv1a64": "99a026f5a825d05e"
+        }
+      ],
+      "interpretation": "Repeated identical runs show no material performance regression; they are not used to claim a new uplift."
+    },
+    "remaining_phase1_gaps": []
+  },
+  "phase1_gpu_viewer_interop": {
+    "captured_at_utc": "2026-07-18T16:51:25Z",
+    "implementation": [
+      "OptixRenderer exports the final raw or denoised beauty image as a lifetime-bounded CUDA device view.",
+      "The viewer tone-maps into CUDA-registered OpenGL pixel buffers and uploads textures without host frame materialization.",
+      "Host beauty/AOV download and CPU texture upload remain available only through the explicit --host-readback viewer option.",
+      "Hybrid Intel/NVIDIA Linux sessions select NVIDIA GLX render-offload before GLFW initialization unless the environment already specifies a route."
+    ],
+    "validation": {
+      "build_command": "cmake --build build -j4",
+      "build_result": "pass",
+      "test_command": "ctest --test-dir build --output-on-failure -j1",
+      "tests_passed": 56,
+      "tests_failed": 0,
+      "wall_time_seconds": 12.68,
+      "interop_pixel_test": "test_cuda_gl_presenter",
+      "device_view_contract_test": "test_renderer_pool",
+      "gpu_viewer_smoke": "bin/render_realtime_viewer --scene smoke --hidden --frame-limit 3",
+      "host_fallback_smoke": "bin/render_realtime_viewer --scene smoke --hidden --frame-limit 3 --host-readback"
+    },
+    "product_path_comparison": {
+      "workload": "final_room / 640x480 / 4 cameras / identical preview-converge policy / hidden window / vsync off / 120 displayed frames",
+      "measurement_scope": "process elapsed time includes initialization and is not a kernel microbenchmark",
+      "runs": [
+        {
+          "gpu_interop_elapsed_seconds": 2.71,
+          "gpu_interop_max_rss_kib": 408472,
+          "host_readback_elapsed_seconds": 9.28,
+          "host_readback_max_rss_kib": 633020,
+          "elapsed_speedup_ratio": 3.42
+        },
+        {
+          "gpu_interop_elapsed_seconds": 2.60,
+          "gpu_interop_max_rss_kib": 408876,
+          "host_readback_elapsed_seconds": 9.32,
+          "host_readback_max_rss_kib": 632596,
+          "elapsed_speedup_ratio": 3.58
+        }
+      ]
+    }
+  }
+}

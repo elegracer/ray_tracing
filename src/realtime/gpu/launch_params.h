@@ -20,8 +20,11 @@ struct MaterialSample;
 struct DeviceFrameBuffers {
     float4* beauty = nullptr;
     float4* normal = nullptr;
+    float4* denoiser_normal = nullptr;
     float4* albedo = nullptr;
     float* depth = nullptr;
+    float2* flow = nullptr;
+    float* flow_trustworthiness = nullptr;
 };
 
 struct DeviceSceneView {
@@ -158,4 +161,4 @@ struct PackedTexture {
     Eigen::Vector3f color = Eigen::Vector3f::Zero();
 };
 
-}  // namespace rt
+} // namespace rt

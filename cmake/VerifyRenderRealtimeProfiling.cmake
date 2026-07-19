@@ -12,6 +12,8 @@ execute_process(
     COMMAND "${RENDER_REALTIME_EXE}"
         --camera-count 1
         --frames 2
+        --warmup-frames 1
+        --seed 7
         --profile realtime
         --output-dir "${OUTPUT_DIR}"
     RESULT_VARIABLE run_result
@@ -25,8 +27,26 @@ endif()
 if(NOT run_stdout MATCHES "download_ms=")
     message(FATAL_ERROR "stdout missing download_ms field:\n${run_stdout}")
 endif()
+if(NOT run_stdout MATCHES "pipeline_ms=")
+    message(FATAL_ERROR "stdout missing pipeline_ms field:\n${run_stdout}")
+endif()
 if(NOT run_stdout MATCHES "host_overhead_ms=")
     message(FATAL_ERROR "stdout missing host_overhead_ms field:\n${run_stdout}")
+endif()
+if(NOT run_stdout MATCHES "warmup=0 sample_stream=7")
+    message(FATAL_ERROR "stdout missing deterministic warmup record:\n${run_stdout}")
+endif()
+if(NOT run_stdout MATCHES "summary profile=realtime warmup_frames=1 frames=2 seed=7")
+    message(FATAL_ERROR "stdout missing benchmark workload provenance:\n${run_stdout}")
+endif()
+if(NOT run_stdout MATCHES "p99_frame_ms=")
+    message(FATAL_ERROR "stdout missing p99 timing:\n${run_stdout}")
+endif()
+if(NOT run_stdout MATCHES "peak_gpu_memory_mib=")
+    message(FATAL_ERROR "stdout missing GPU memory high-water mark:\n${run_stdout}")
+endif()
+if(run_stdout MATCHES "host_overhead_ms=-")
+    message(FATAL_ERROR "stdout contains a negative host residual:\n${run_stdout}")
 endif()
 file(GLOB smoke_pngs "${OUTPUT_DIR}/*.png")
 list(LENGTH smoke_pngs smoke_png_count)
@@ -36,21 +56,34 @@ endif()
 
 set(csv_path "${OUTPUT_DIR}/benchmark_frames.csv")
 set(json_path "${OUTPUT_DIR}/benchmark_summary.json")
+set(manifest_path "${OUTPUT_DIR}/benchmark_manifest.json")
 if(NOT EXISTS "${csv_path}")
     message(FATAL_ERROR "missing ${csv_path}")
 endif()
 if(NOT EXISTS "${json_path}")
     message(FATAL_ERROR "missing ${json_path}")
 endif()
+if(NOT EXISTS "${manifest_path}")
+    message(FATAL_ERROR "missing ${manifest_path}")
+endif()
 
 file(READ "${csv_path}" csv_text)
-if(NOT csv_text MATCHES "frame_index,camera_count,profile,width,height,samples_per_pixel,max_bounces,denoise_enabled")
+if(NOT csv_text MATCHES "frame_index,sample_stream,camera_count,profile,width,height,samples_per_pixel,max_bounces,denoise_enabled")
     message(FATAL_ERROR "csv header is incomplete:\n${csv_text}")
+endif()
+if(NOT csv_text MATCHES "0,8,1,realtime,640,480")
+    message(FATAL_ERROR "csv missing deterministic first measured sample stream:\n${csv_text}")
 endif()
 
 file(READ "${json_path}" json_text)
 if(NOT json_text MATCHES "\"download_ms\"")
     message(FATAL_ERROR "json missing download timing:\n${json_text}")
+endif()
+if(NOT json_text MATCHES "\"pipeline_ms\"")
+    message(FATAL_ERROR "json missing pipeline timing:\n${json_text}")
+endif()
+if(NOT json_text MATCHES "\"render_work_ms\"")
+    message(FATAL_ERROR "json missing summed render work timing:\n${json_text}")
 endif()
 if(NOT json_text MATCHES "\"frames\"")
     message(FATAL_ERROR "json missing per-frame records:\n${json_text}")
@@ -58,6 +91,52 @@ endif()
 if(NOT json_text MATCHES "\"per-camera\"")
     message(FATAL_ERROR "json missing per-camera records:\n${json_text}")
 endif()
+foreach(required_json_field
+        "\"schema_version\": 3"
+        "\"warmup_frames\": 1"
+        "\"random_seed\": 7"
+        "\"sample_stream\": 8"
+        "\"p99\""
+        "\"provenance\""
+        "\"source_revision\""
+        "\"source_scope\""
+        "\"source_state_sha256\""
+        "\"environment\""
+        "\"gpu_name\""
+        "\"nvidia_driver_version\""
+        "\"cuda_driver_api_version_text\""
+        "\"gpu_memory\""
+        "\"peak_used_bytes\""
+        "\"peak_delta_bytes\""
+        "\"optix_version_text\""
+    )
+    if(NOT json_text MATCHES "${required_json_field}")
+        message(FATAL_ERROR "json missing required field ${required_json_field}:\n${json_text}")
+    endif()
+endforeach()
+if(NOT json_text MATCHES "\"build_configuration\" *: *\"[^\"]+\"")
+    message(FATAL_ERROR "json build configuration is empty:\n${json_text}")
+endif()
+if(NOT json_text MATCHES "\"source_revision\" *: *\"[^\"]+\"")
+    message(FATAL_ERROR "json source revision is empty:\n${json_text}")
+endif()
+if(NOT json_text MATCHES "\"source_state_sha256\" *: *\"[0-9a-f]+\"")
+    message(FATAL_ERROR "json source-state fingerprint is missing:\n${json_text}")
+endif()
+
+file(READ "${manifest_path}" manifest_text)
+foreach(required_manifest_field
+        "\"report_schema_version\": 3"
+        "\"measured_frame_count\": 2"
+        "\"per_camera_record_count\": 2"
+        "\"filename\": \"benchmark_frames.csv\""
+        "\"filename\": \"benchmark_summary.json\""
+        "\"digest_algorithm\": \"fnv1a64\""
+    )
+    if(NOT manifest_text MATCHES "${required_manifest_field}")
+        message(FATAL_ERROR "manifest missing ${required_manifest_field}:\n${manifest_text}")
+    endif()
+endforeach()
 
 if(DEFINED EXPECT_SKIP_WRITE AND EXPECT_SKIP_WRITE)
     file(REMOVE_RECURSE "${OUTPUT_DIR}")
@@ -67,6 +146,8 @@ if(DEFINED EXPECT_SKIP_WRITE AND EXPECT_SKIP_WRITE)
         COMMAND "${RENDER_REALTIME_EXE}"
             --camera-count 1
             --frames 2
+            --warmup-frames 1
+            --seed 7
             --profile realtime
             --skip-image-write
             --output-dir "${OUTPUT_DIR}"

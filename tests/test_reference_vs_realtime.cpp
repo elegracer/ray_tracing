@@ -42,25 +42,36 @@ rt::RenderProfile make_smoke_profile() {
 }
 
 rt::PackedCamera make_helper_derived_equi_camera(std::string_view scene_id, int width, int height) {
-    rt::PackedCamera camera = rt::default_camera_rig_for_scene(scene_id, 1, width, height).pack().cameras[0];
-    const rt::DefaultCameraIntrinsics intrinsics = rt::derive_default_camera_intrinsics(
-        rt::CameraModelType::equi62_lut1d, width, height, rt::default_hfov_deg(rt::CameraModelType::equi62_lut1d));
+    rt::PackedCamera camera =
+        rt::default_camera_rig_for_scene(scene_id, 1, width, height).pack().cameras[0];
+    const rt::DefaultCameraIntrinsics intrinsics =
+        rt::derive_default_camera_intrinsics(rt::CameraModelType::equi62_lut1d, width, height,
+            rt::default_hfov_deg(rt::CameraModelType::equi62_lut1d));
     camera.model = rt::CameraModelType::equi62_lut1d;
     camera.width = width;
     camera.height = height;
-    camera.equi = rt::make_equi62_lut1d_params(width, height, intrinsics.fx, intrinsics.fy, intrinsics.cx, intrinsics.cy,
-        std::array<double, 6> {}, Eigen::Vector2d::Zero());
+    camera.equi = rt::make_equi62_lut1d_params(width, height, intrinsics.fx, intrinsics.fy,
+        intrinsics.cx, intrinsics.cy, std::array<double, 6> {}, Eigen::Vector2d::Zero());
     return camera;
 }
 
-void expect_cpu_gpu_smoke(std::string_view scene_id, const rt::PackedCamera& camera, const std::string& label) {
+void expect_cpu_gpu_smoke(std::string_view scene_id, const rt::PackedCamera& camera,
+    const std::string& label) {
     const cv::Mat cpu = rt::render_shared_scene_from_camera(scene_id, camera, 4);
     expect_true(!cpu.empty(), label + " cpu frame present");
-    expect_true(cpu.cols == camera.width && cpu.rows == camera.height, label + " cpu dimensions preserved");
+    expect_true(cpu.cols == camera.width && cpu.rows == camera.height,
+        label + " cpu dimensions preserved");
 
     rt::OptixRenderer renderer;
-    const rt::RadianceFrame gpu = renderer.render_radiance(
-        rt::make_realtime_scene(scene_id).pack(), make_single_camera_rig(camera), make_smoke_profile(), 0);
+    const rt::PackedScene scene = rt::make_realtime_scene(scene_id).pack();
+    const rt::PackedCameraRig rig = make_single_camera_rig(camera);
+    rt::RenderProfile raw_profile = make_smoke_profile();
+    raw_profile.enable_denoise = false;
+    const rt::RadianceFrame raw_gpu = renderer.render_radiance(scene, rig, raw_profile, 0);
+
+    rt::OptixRenderer denoised_renderer;
+    const rt::RadianceFrame gpu =
+        denoised_renderer.render_radiance(scene, rig, make_smoke_profile(), 0);
 
     expect_true(gpu.width == camera.width, label + " gpu width preserved");
     expect_true(gpu.height == camera.height, label + " gpu height preserved");
@@ -72,11 +83,13 @@ void expect_cpu_gpu_smoke(std::string_view scene_id, const rt::PackedCamera& cam
 
     const double cpu_mean_luminance = compute_cpu_mean_luminance(cpu);
     expect_true(cpu_mean_luminance > 0.001, label + " cpu frame is non-black");
-    expect_true(std::abs(gpu.average_luminance - cpu_mean_luminance) < 0.12,
-        label + " cpu and gpu mean luminance stay within smoke tolerance");
+    expect_true(std::abs(raw_gpu.average_luminance - cpu_mean_luminance) < 0.12,
+        label + " cpu and raw gpu mean luminance stay within integrator tolerance");
+    expect_true(std::abs(gpu.average_luminance - raw_gpu.average_luminance) < 0.12,
+        label + " denoised and raw gpu mean luminance stay within reconstruction tolerance");
 }
 
-}  // namespace
+} // namespace
 
 int main() {
     tbb::global_control render_threads(tbb::global_control::max_allowed_parallelism, 1);

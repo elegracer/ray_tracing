@@ -12,7 +12,7 @@ This is a brownfield C++/CUDA ray tracing project with a shared scene pipeline t
 
 ## Core Value
 
-Camera behavior must stay consistent across offline and realtime rendering so the same scene and rig produce the intended image no matter which path is used.
+Composed scene, camera, light, and material meaning must stay consistent across offline and realtime rendering, while measured changes improve physical correctness and realtime performance together.
 
 ## Requirements
 
@@ -26,10 +26,15 @@ Camera behavior must stay consistent across offline and realtime rendering so th
 - ✓ Project defaults now resolve to `equi62_lut1d` while explicit pinhole support remains available everywhere — `v1.0`
 - ✓ Default `fx/fy/cx/cy` derivation from `resolution + hfov` is implemented with `90` degree pinhole and `120` degree fisheye defaults — `v1.0`
 - ✓ Automated coverage now anchors camera math to the bundled reference headers and checks CPU/GPU cross-path camera contracts — `v1.0`
+- ✓ Phase 1 now provides truthful critical-path/work metrics, reproducible benchmark provenance, OptiX temporal AOV reconstruction, temporal reset/reference gates, and CUDA/OpenGL viewer presentation with opt-in host readback — `v2.0`
+- ✓ `SceneIR v2` now defines OpenUSD-aligned prim identity, stage units/time metadata, hierarchy, full affine transforms, visibility/purpose inheritance, transform samples, and explicit capability diagnostics; YAML scenes receive a deterministic v2 compatibility projection — `v2.0`
 
 ### Active
 
-No active milestone requirements are defined yet.
+- Align scene identity, hierarchy, geometry, transforms, cameras, lights, instancing, units, assets, and material binding with composed OpenUSD semantics — `v2.0`
+- Align material inputs with OpenPBR/MaterialX and implement matched, energy-aware BSDF evaluation, sampling, and PDFs across CPU/GPU — `v2.0`
+- Replace linear all-light scans and centroid lighting with scalable light distributions, MIS, then ReSTIR DI; keep GI/PT and neural caching evidence-gated — `v2.0`
+- Add reference USD/OpenPBR scenes, physical invariants, temporal tests, image metrics, and quality-normalized performance gates — `v2.0`
 
 ### Out of Scope
 
@@ -40,6 +45,8 @@ No active milestone requirements are defined yet.
 ## Context
 
 The existing project centers on a backend-agnostic shared scene representation that feeds both CPU and GPU renderers. Camera math lives in `src/realtime/camera_models.h` and `src/realtime/camera_models.cpp`, and `v1.0` standardized the authored/runtime camera contract around explicit shared camera specs, model-aware offline and realtime ray generation, and fisheye-first default construction.
+
+The `v2.0` audit found that this foundation is useful but semantically too small for production scene exchange and physically based materials. `SceneIR` is flat and integer-indexed, material variants are book-style approximations, direct lighting scans all primitives, and the advertised denoiser is a CPU clamp loop. On the RTX 3090 baseline, the denoise-enabled 1-spp profile is slower than the 4-spp no-denoise profile. The evidence and ordered response are recorded in `.planning/v2.0-REALTIME-MODERNIZATION-RESEARCH.md` and `.planning/v2.0-BASELINE.json`.
 
 Reference implementations already exist in `docs/reference/src-cam/cam_pinhole32.h` and `docs/reference/src-cam/cam_equi62_lut1d.h`. The new fisheye work should follow those references the same way the current pinhole work followed the pinhole reference.
 
@@ -52,6 +59,10 @@ The repo already has strong regression coverage across scene loading, camera rig
 - **Default calibration scope**: v1 uses derived `fx/fy/cx/cy` and zero distortion coefficients for both models — this keeps the first rollout focused and testable.
 - **Brownfield safety**: Existing render paths, scene loading, and tests must keep working while defaults move from pinhole to fisheye.
 - **Config flexibility**: Existing pinhole-only scene/config assumptions may be changed where necessary — the goal is a clean full-chain dual-model design, not strict text-format compatibility.
+- **Standards boundary**: Use OpenUSD for stage composition and MaterialX/OpenPBR definitions rather than recreating either standard with project-specific parsers.
+- **Compatibility**: Existing YAML and builtin scenes remain supported through explicit translators while OpenUSD becomes the canonical interchange path.
+- **Physical claims**: No material, light, denoise, or performance claim is accepted without a reference or invariant and a reproducible comparison at equal quality conditions.
+- **Hardware baseline**: RTX 3090 is the required performance baseline; newer-GPU features must be optional and capability-gated.
 
 ## Key Decisions
 
@@ -62,13 +73,21 @@ The repo already has strong regression coverage across scene loading, camera rig
 | Make fisheye the project default while preserving pinhole everywhere | The desired behavior is dual support with a default switch, not a pinhole removal | Shipped in `v1.0` |
 | Derive default `fx/fy/cx/cy` from resolution + horizontal FOV before exposing richer calibration | This provides deterministic defaults for both models and reduces the initial integration surface | Shipped in `v1.0` |
 | Defer dynamic resolution, explicit intrinsics, distortion tuning, and SE3 extrinsics to follow-up phases | Those capabilities are important but materially larger than the initial dual-model rollout | Deferred past `v1.0` |
+| Compile composed OpenUSD stages into `SceneIR v2` | OpenUSD should own composition and authoring semantics while the renderer owns compact execution data | Active in `v2.0` |
+| Keep legacy `SceneIR` as an execution compatibility model while `SceneIR v2` becomes the semantic contract | An additive deterministic frontend preserves current CPU/GPU behavior while stable prim paths and OpenUSD semantics are validated independently | Active in `v2.0` |
+| Use the official MaterialX OpenPBR node definition as the material contract | Stable names, defaults, connectivity, and reference implementations prevent another bespoke material dialect | Active in `v2.0` |
+| Implement OptiX temporal AOV denoising before evaluating NRD | It fits the current OptiX/CUDA stack and removes the measured CPU clamp bottleneck with the lowest integration risk | Active in `v2.0` |
+| Sequence unbiased light sampling and ReSTIR DI before ReSTIR GI/PT or neural caching | Reuse methods depend on correct BSDF/light PDFs, motion, and validation; advanced reuse cannot repair a biased baseline | Active in `v2.0` |
+| Treat wall latency and summed parallel work as different metrics | The current subtraction creates negative overhead and invalid performance conclusions | Active in `v2.0` |
 
 ## Next Milestone Goals
 
-- Add render-preset-controlled dynamic output resolution.
-- Support explicit per-camera `fx`, `fy`, `cx`, and `cy` instead of only derived defaults.
-- Support model-specific distortion coefficients for `pinhole32` and `equi62_lut1d`.
-- Support configurable body-relative camera extrinsics through scene or preset data.
+- Deliver a truthful, reproducible profiler and GPU-resident OptiX temporal denoiser.
+- Introduce `SceneIR v2` and legacy translation around OpenUSD identity, units, hierarchy, geometry, lights, and binding semantics.
+- Introduce a versioned OpenPBR material contract and physically grounded core BSDF shared by CPU and GPU.
+- Add OpenUSD/MaterialX import plus deterministic supported-subset export.
+- Replace all-light scans with explicit light sampling/MIS and then add ReSTIR DI.
+- Close physical, temporal, image, compatibility, and quality-normalized performance gates.
 
 ## Evolution
 
@@ -88,4 +107,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-22 after v1.0 milestone close*
+*Last updated: 2026-07-19 after SceneIR v2 core-contract delivery*

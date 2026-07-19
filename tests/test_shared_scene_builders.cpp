@@ -1,8 +1,10 @@
 #include "realtime/scene_catalog.h"
 #include "realtime/camera_models.h"
+#include "scene/scene_definition.h"
 #include "scene/shared_scene_builders.h"
 #include "test_support.h"
 
+#include <algorithm>
 #include <array>
 #include <numbers>
 #include <string_view>
@@ -24,7 +26,8 @@ int main() {
     };
 
     const auto& catalog = rt::scene_catalog();
-    expect_true(catalog.size() >= expected_ids.size() + 1, "catalog scene count includes file-backed scenes");
+    expect_true(catalog.size() >= expected_ids.size() + 1,
+        "catalog scene count includes file-backed scenes");
 
     for (std::string_view id : expected_ids) {
         const rt::SceneCatalogEntry* entry = rt::find_scene_catalog_entry(id);
@@ -33,6 +36,27 @@ int main() {
         const rt::scene::SceneIR scene = rt::scene::build_scene(id);
         expect_true(!scene.materials().empty(), "scene has materials");
         expect_true(!scene.shapes().empty(), "scene has shapes");
+
+        const rt::scene::SceneIRv2 scene_v2 = rt::scene::build_scene_v2(id);
+        rt::scene::require_valid_scene_ir_v2(scene_v2);
+        const std::size_t geometry_count = static_cast<std::size_t>(std::count_if(
+            scene_v2.prims().begin(), scene_v2.prims().end(), [](const rt::scene::ScenePrim& prim) {
+                return prim.kind == rt::scene::ScenePrimKind::geometry_prototype
+                       && prim.geometry.has_value();
+            }));
+        expect_true(geometry_count == scene.shapes().size(),
+            "builtin v2 geometry count matches legacy shapes");
+        const rt::scene::SceneDefinition* builtin = rt::scene::find_builtin_scene_definition(id);
+        expect_true(builtin != nullptr, "builtin scene definition exists");
+        const std::size_t camera_count = static_cast<std::size_t>(std::count_if(
+            scene_v2.prims().begin(), scene_v2.prims().end(), [](const rt::scene::ScenePrim& prim) {
+                return prim.kind == rt::scene::ScenePrimKind::camera && prim.camera.has_value();
+            }));
+        const std::size_t expected_camera_count =
+            builtin->cpu_presets.size()
+            + static_cast<std::size_t>(builtin->realtime_preset.has_value());
+        expect_true(camera_count == expected_camera_count,
+            "builtin v2 camera count matches compatibility presets");
     }
 
     const rt::SceneCatalogEntry* imported = rt::find_scene_catalog_entry("imported_obj_smoke");
@@ -40,6 +64,11 @@ int main() {
     const rt::scene::SceneIR imported_scene = rt::scene::build_scene("imported_obj_smoke");
     expect_true(!imported_scene.materials().empty(), "file-backed scene has materials");
     expect_true(!imported_scene.shapes().empty(), "file-backed scene has shapes");
+    const rt::scene::SceneIRv2 imported_scene_v2 =
+        rt::scene::build_scene_v2("imported_obj_smoke");
+    rt::scene::require_valid_scene_ir_v2(imported_scene_v2);
+    expect_true(imported_scene_v2.find_prim("/World/Prototypes/Shape_0000") != nullptr,
+        "file-backed v2 geometry is available through the shared builder");
 
     const rt::scene::SceneMetadata* imported_metadata = rt::scene::find_scene_metadata("imported_obj_smoke");
     expect_true(imported_metadata != nullptr, "file-backed scene metadata exists");
@@ -55,9 +84,18 @@ int main() {
     expect_true(earth_default != nullptr, "earth_sphere default CPU preset exists");
     expect_true(earth_default->camera.camera.model == rt::CameraModelType::equi62_lut1d,
         "earth_sphere default cpu preset now defaults to equi");
+    const rt::scene::SceneIRv2 earth_scene_v2 = rt::scene::build_scene_v2("earth_sphere");
+    const auto earth_asset_prim =
+        std::find_if(earth_scene_v2.prims().begin(), earth_scene_v2.prims().end(),
+            [](const rt::scene::ScenePrim& prim) { return !prim.asset_references.empty(); });
+    expect_true(earth_asset_prim != earth_scene_v2.prims().end(),
+        "earth_sphere v2 image asset exists");
+    expect_true(earth_asset_prim->asset_references.front().authored_path == "earthmap.jpg",
+        "builtin image path becomes authored asset identity");
+    expect_true(earth_asset_prim->asset_references.front().resolved_path == "earthmap.jpg",
+        "builtin image execution path is preserved");
 
-    const double default_cpu_height =
-        static_cast<double>(earth_default->camera.camera.height);
+    const double default_cpu_height = static_cast<double>(earth_default->camera.camera.height);
     const double expected_default_cpu_focal =
         0.5 * static_cast<double>(earth_default->camera.camera.width)
         / (rt::default_hfov_deg(rt::CameraModelType::equi62_lut1d) * std::numbers::pi / 360.0);
@@ -65,7 +103,8 @@ int main() {
         "earth_sphere default cpu equi fx");
     expect_near(earth_default->camera.camera.fy, expected_default_cpu_focal, 1e-9,
         "earth_sphere default cpu equi fy");
-    expect_near(earth_default->camera.camera.cx, 0.5 * static_cast<double>(earth_default->camera.camera.width), 1e-9,
+    expect_near(earth_default->camera.camera.cx,
+        0.5 * static_cast<double>(earth_default->camera.camera.width), 1e-9,
         "earth_sphere default cpu cx");
     expect_near(earth_default->camera.camera.cy, 0.5 * default_cpu_height, 1e-9,
         "earth_sphere default cpu cy");

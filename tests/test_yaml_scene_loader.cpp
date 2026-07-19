@@ -2,6 +2,7 @@
 
 #include <Eigen/Core>
 
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -141,6 +142,38 @@ realtime:
     expect_true(loaded.scene_ir.materials().size() == 1, "material count");
     expect_true(loaded.scene_ir.shapes().size() == 1, "shape count");
     expect_true(loaded.scene_ir.surface_instances().size() == 1, "instance count");
+    expect_true(loaded.scene_ir_v2.find_prim("/World") != nullptr, "v2 default prim");
+    expect_true(loaded.scene_ir_v2.find_prim("/World/Geometry/Surface_0000") != nullptr,
+        "v2 instance path");
+    expect_true(rt::scene::validate_scene_ir_v2(loaded.scene_ir_v2).empty(),
+        "v2 contract validation");
+    const rt::scene::ScenePrim* cpu_camera =
+        loaded.scene_ir_v2.find_prim("/World/Cameras/Cpu_0000");
+    expect_true(cpu_camera != nullptr && cpu_camera->camera.has_value(), "v2 CPU camera payload");
+    expect_true(cpu_camera->compatibility_source_name == "default", "v2 CPU preset identity");
+    expect_true(cpu_camera->local_to_parent.block<3, 1>(0, 3).isApprox(
+                    Eigen::Vector3d {0.0, 0.0, 5.0}, 1e-12),
+        "v2 CPU camera position");
+    expect_true(
+        cpu_camera->local_to_parent.block<3, 3>(0, 0).isApprox(Eigen::Matrix3d::Identity(), 1e-12),
+        "v2 CPU camera uses OpenUSD -Z forward and +Y up axes");
+    expect_true(cpu_camera->camera->renderer_calibration->model
+                    == rt::scene::SceneCameraCalibrationModel::pinhole32,
+        "v2 CPU camera calibration model");
+    expect_true(std::abs(cpu_camera->camera->renderer_calibration->focal_length_pixels.x()
+                         - 494.54593550183205)
+                    <= 1e-12,
+        "v2 CPU focal calibration");
+    const rt::scene::ScenePrim* realtime_camera =
+        loaded.scene_ir_v2.find_prim("/World/Cameras/Realtime_0000");
+    expect_true(realtime_camera != nullptr && realtime_camera->camera.has_value(),
+        "v2 realtime camera payload");
+    expect_true(realtime_camera->local_to_parent.block<3, 1>(0, 3).isApprox(
+                    Eigen::Vector3d {0.0, 0.0, 2.0}, 1e-12),
+        "v2 realtime camera position");
+    expect_true(realtime_camera->local_to_parent.block<3, 3>(0, 0).isApprox(
+                    Eigen::Matrix3d::Identity(), 1e-12),
+        "v2 realtime camera uses OpenUSD axes");
     expect_true(loaded.cpu_presets.size() == 1, "cpu preset count");
     expect_true(loaded.cpu_presets.front().scene_id == "basic_room", "cpu preset scene id");
     expect_true(loaded.cpu_presets.front().preset_id == "default", "cpu preset id");
@@ -186,13 +219,26 @@ scene:
 
     const rt::scene::SceneDefinition loaded = rt::scene::load_scene_definition(scene_file);
     expect_true(loaded.scene_ir.textures().size() == 1, "relative image texture count");
-    expect_true(std::holds_alternative<rt::scene::ImageTextureDesc>(loaded.scene_ir.textures().front()),
-                "image texture variant");
+    expect_true(
+        std::holds_alternative<rt::scene::ImageTextureDesc>(loaded.scene_ir.textures().front()),
+        "image texture variant");
     const auto& image = std::get<rt::scene::ImageTextureDesc>(loaded.scene_ir.textures().front());
+    expect_true(image.authored_path == "textures/earth.png", "authored image path");
     expect_true(image.path == image_file.lexically_normal().string(), "resolved image path");
+    const rt::scene::ScenePrim* texture_prim =
+        loaded.scene_ir_v2.find_prim("/World/Textures/Texture_0000");
+    expect_true(texture_prim != nullptr && texture_prim->asset_references.size() == 1,
+        "v2 image asset reference");
+    expect_true(texture_prim->asset_references[0].authored_path == "textures/earth.png",
+        "v2 authored asset path");
+    expect_true(texture_prim->asset_references[0].resolved_path
+                    == image_file.lexically_normal().string(),
+        "v2 resolved asset path");
     expect_true(loaded.dependencies.size() == 2, "dependency count with image");
-    expect_true(loaded.dependencies[0] == scene_file.lexically_normal().string(), "scene dependency path");
-    expect_true(loaded.dependencies[1] == image_file.lexically_normal().string(), "image dependency path");
+    expect_true(loaded.dependencies[0] == scene_file.lexically_normal().string(),
+        "scene dependency path");
+    expect_true(loaded.dependencies[1] == image_file.lexically_normal().string(),
+        "image dependency path");
 }
 
 void test_duplicate_texture_ids_are_rejected() {
@@ -407,12 +453,20 @@ scene:
     expect_true(loaded.metadata.supports_cpu_render, "cpu preset support");
     expect_true(loaded.metadata.supports_realtime, "realtime preset support");
     expect_true(loaded.cpu_presets.size() == 1, "cpu preset count");
-    expect_true(loaded.cpu_presets.front().scene_id == "include_presets", "included cpu preset scene id");
+    expect_true(loaded.cpu_presets.front().scene_id == "include_presets",
+        "included cpu preset scene id");
     expect_true(loaded.cpu_presets.front().preset_id == "preview", "included cpu preset id");
     expect_true(loaded.cpu_presets.front().samples_per_pixel == 32, "included cpu preset spp");
     expect_true(loaded.cpu_presets.front().camera.camera.width == 320, "included cpu preset width");
+    const rt::scene::ScenePrim* fallback_camera =
+        loaded.scene_ir_v2.find_prim("/World/Cameras/Cpu_0000");
+    expect_true(fallback_camera != nullptr && fallback_camera->camera.has_value()
+                    && fallback_camera->camera->renderer_calibration.has_value()
+                    && fallback_camera->camera->renderer_calibration->compatibility_pose_fallback,
+        "included placeholder camera records its deterministic pose fallback");
     expect_true(loaded.realtime_preset.has_value(), "included realtime preset");
-    expect_true(loaded.realtime_preset->frame_convention == rt::viewer::ViewerFrameConvention::world_z_up,
+    expect_true(loaded.realtime_preset->frame_convention
+                    == rt::viewer::ViewerFrameConvention::world_z_up,
         "included realtime convention");
     expect_true(loaded.realtime_preset->base_move_speed == 4.0, "included realtime speed");
 }

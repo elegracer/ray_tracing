@@ -2,7 +2,9 @@
 
 #include "realtime/camera_rig.h"
 #include "realtime/gpu/device_frame_buffers.h"
+#include "realtime/gpu/device_radiance_frame_view.h"
 #include "realtime/gpu/device_scene_buffers.h"
+#include "realtime/gpu/denoiser.h"
 #include "realtime/gpu/frame_types.h"
 #include "realtime/gpu/host_radiance_staging.h"
 #include "realtime/gpu/launch_params.h"
@@ -21,6 +23,7 @@ namespace rt {
 
 struct RadianceTiming {
     float render_ms = 0.0f;
+    float denoise_ms = 0.0f;
     float download_ms = 0.0f;
 };
 
@@ -29,22 +32,31 @@ struct ProfiledRadianceFrame {
     RadianceTiming timing;
 };
 
+struct ProfiledDeviceRadianceFrame {
+    DeviceRadianceFrameView frame;
+    RadianceTiming timing;
+};
+
 class OptixRenderer {
-   public:
+public:
     OptixRenderer();
     ~OptixRenderer();
 
     DirectionDebugFrame render_direction_debug(const PackedCameraRig& rig, int camera_index = 0);
     void prepare_scene(const PackedScene& scene);
     void reset_accumulation();
+    void reset_sequence(std::uint32_t sample_stream);
     RadianceFrame render_radiance(const PackedScene& scene, const PackedCameraRig& rig,
         const RenderProfile& profile, int camera_index);
-    ProfiledRadianceFrame render_prepared_radiance(
-        const PackedCameraRig& rig, const RenderProfile& profile, int camera_index);
-    ProfiledRadianceFrame render_radiance_profiled(const PackedScene& scene, const PackedCameraRig& rig,
+    // The view remains valid until this renderer launches another frame or releases its resources.
+    ProfiledDeviceRadianceFrame render_prepared_device(const PackedCameraRig& rig,
         const RenderProfile& profile, int camera_index);
+    ProfiledRadianceFrame render_prepared_radiance(const PackedCameraRig& rig,
+        const RenderProfile& profile, int camera_index);
+    ProfiledRadianceFrame render_radiance_profiled(const PackedScene& scene,
+        const PackedCameraRig& rig, const RenderProfile& profile, int camera_index);
 
-   private:
+private:
     void initialize_optix();
     void create_direction_debug_pipeline();
     void upload_scene(const PackedScene& scene);
@@ -53,7 +65,8 @@ class OptixRenderer {
     void launch_radiance(const PackedCameraRig& rig, const RenderProfile& profile, int camera_index,
         RadianceTiming* timing = nullptr);
     RadianceFrame download_radiance_frame(int camera_index) const;
-    RadianceFrame download_radiance_frame_profiled(int camera_index, RadianceTiming* timing);
+    RadianceFrame download_radiance_frame_profiled(int camera_index, const float4* beauty_source,
+        RadianceTiming* timing);
     void build_geometry_accels(const PackedScene& scene);
     void launch_radiance_pipeline(const PackedScene& scene, const PackedCameraRig& rig,
         const RenderProfile& profile, int camera_index, RadianceTiming* timing = nullptr);
@@ -69,8 +82,9 @@ class OptixRenderer {
     cudaStream_t stream_ = nullptr;
     OptixDeviceContext optix_context_ = nullptr;
     DeviceFrameBufferSet frame_buffers_;
+    OptixDenoiserWrapper denoiser_;
     DeviceSceneBuffers scene_buffers_;
-    PackedScene uploaded_scene_{};
+    PackedScene uploaded_scene_ {};
     int last_width_ = 0;
     int last_height_ = 0;
     int last_camera_index_ = 0;
@@ -78,10 +92,10 @@ class OptixRenderer {
     int quad_gas_count_ = 0;
     int triangle_gas_count_ = 0;
     int tlas_instance_count_ = 0;
-    RenderProfile last_profile_{};
+    RenderProfile last_profile_ {};
     bool scene_prepared_ = false;
     std::uint32_t launch_sample_stream_ = 0;
     HostRadianceStagingPool host_staging_;
 };
 
-}  // namespace rt
+} // namespace rt

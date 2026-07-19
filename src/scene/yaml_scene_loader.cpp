@@ -226,21 +226,28 @@ void parse_textures(const YAML::Node& textures_node, const std::filesystem::path
             continue;
         }
         if (type == "checker") {
-            texture_ids.emplace(id, out.scene_ir.add_texture(CheckerTextureDesc {
-                .scale = texture_node["scale"] ? texture_node["scale"].as<double>() : 1.0,
-                .even_texture = require_id(texture_ids, texture_node["even"].as<std::string>(), "texture"),
-                .odd_texture = require_id(texture_ids, texture_node["odd"].as<std::string>(), "texture"),
-            }));
+            texture_ids.emplace(id,
+                out.scene_ir.add_texture(CheckerTextureDesc {
+                    .scale = texture_node["scale"] ? texture_node["scale"].as<double>() : 1.0,
+                    .even_texture =
+                        require_id(texture_ids, texture_node["even"].as<std::string>(), "texture"),
+                    .odd_texture =
+                        require_id(texture_ids, texture_node["odd"].as<std::string>(), "texture"),
+                }));
             continue;
         }
         if (type == "image") {
-            std::filesystem::path texture_path = texture_node["path"].as<std::string>();
+            const std::string authored_path = texture_node["path"].as<std::string>();
+            std::filesystem::path texture_path = authored_path;
             if (texture_path.is_relative()) {
                 texture_path = scene_directory / texture_path;
             }
             texture_path = texture_path.lexically_normal();
             append_unique_dependency(out.dependencies, dependency_set, texture_path);
-            texture_ids.emplace(id, out.scene_ir.add_texture(ImageTextureDesc {.path = texture_path.string()}));
+            texture_ids.emplace(id, out.scene_ir.add_texture(ImageTextureDesc {
+                                        .authored_path = authored_path,
+                                        .path = texture_path.string(),
+                                    }));
             continue;
         }
         if (type == "noise") {
@@ -688,6 +695,7 @@ SceneDefinition load_scene_definition(const std::filesystem::path& scene_file) {
         StringSet active_files;
         load_scene_file(scene_file, true, true, out, texture_ids, material_ids, shape_ids, medium_ids, preset_ids,
             dependency_set, active_files);
+        out.scene_ir_v2 = compile_scene_definition_v2(out);
         out.metadata.supports_cpu_render = !out.cpu_presets.empty();
         out.metadata.supports_realtime = out.realtime_preset.has_value();
         return out;

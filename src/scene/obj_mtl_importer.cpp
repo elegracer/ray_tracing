@@ -5,7 +5,9 @@
 
 #include <Eigen/Core>
 
+#include <algorithm>
 #include <fstream>
+#include <map>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -16,6 +18,12 @@ namespace rt::scene {
 namespace {
 
 using DependencySet = std::unordered_set<std::string>;
+
+struct ObjTriangle {
+    Eigen::Vector3i positions = Eigen::Vector3i::Constant(-1);
+    Eigen::Vector3i normals = Eigen::Vector3i::Constant(-1);
+    Eigen::Vector3i texcoords = Eigen::Vector3i::Constant(-1);
+};
 
 void append_dependency(std::vector<std::string>& dependencies, DependencySet& seen, const std::filesystem::path& path) {
     const std::string normalized = path.lexically_normal().string();
@@ -78,10 +86,12 @@ std::unordered_map<std::string, std::filesystem::path> material_roots_by_name(
 }
 
 int add_diffuse_material(SceneIR& scene_ir, const tinyobj::material_t* material,
-    const std::unordered_map<std::string, std::filesystem::path>& material_roots, const std::filesystem::path& obj_root,
-    std::vector<std::string>& dependencies, DependencySet& dependency_set) {
+    const std::unordered_map<std::string, std::filesystem::path>& material_roots,
+    const std::filesystem::path& obj_root, std::vector<std::string>& dependencies,
+    DependencySet& dependency_set) {
     if (material != nullptr && !material->diffuse_texname.empty()) {
-        std::filesystem::path texture_path = material->diffuse_texname;
+        const std::string authored_path = material->diffuse_texname;
+        std::filesystem::path texture_path = authored_path;
         if (texture_path.is_relative()) {
             const auto root_it = material_roots.find(material->name);
             const std::filesystem::path& texture_root =
@@ -90,7 +100,10 @@ int add_diffuse_material(SceneIR& scene_ir, const tinyobj::material_t* material,
         }
         texture_path = texture_path.lexically_normal();
         append_dependency(dependencies, dependency_set, texture_path);
-        const int texture = scene_ir.add_texture(ImageTextureDesc {.path = texture_path.string()});
+        const int texture = scene_ir.add_texture(ImageTextureDesc {
+            .authored_path = authored_path,
+            .path = texture_path.string(),
+        });
         return scene_ir.add_material(DiffuseMaterial {.albedo_texture = texture});
     }
 
@@ -135,8 +148,23 @@ ObjImportResult import_obj_mtl(const std::filesystem::path& obj_file) {
                 static_cast<double>(attrib.vertices[i + 2]),
             });
         }
+        base_mesh.normals.reserve(attrib.normals.size() / 3);
+        for (std::size_t i = 0; i + 2 < attrib.normals.size(); i += 3) {
+            base_mesh.normals.push_back(Eigen::Vector3d {
+                static_cast<double>(attrib.normals[i + 0]),
+                static_cast<double>(attrib.normals[i + 1]),
+                static_cast<double>(attrib.normals[i + 2]),
+            });
+        }
+        base_mesh.texcoords.reserve(attrib.texcoords.size() / 2);
+        for (std::size_t i = 0; i + 1 < attrib.texcoords.size(); i += 2) {
+            base_mesh.texcoords.push_back(Eigen::Vector2d {
+                static_cast<double>(attrib.texcoords[i + 0]),
+                static_cast<double>(attrib.texcoords[i + 1]),
+            });
+        }
 
-        std::unordered_map<int, std::vector<Eigen::Vector3i>> triangles_by_material;
+        std::map<int, std::vector<ObjTriangle>> triangles_by_material;
         for (const tinyobj::shape_t& shape : reader.GetShapes()) {
             std::size_t index_offset = 0;
             for (std::size_t face = 0; face < shape.mesh.num_face_vertices.size(); ++face) {
@@ -145,13 +173,15 @@ ObjImportResult import_obj_mtl(const std::filesystem::path& obj_file) {
                     throw std::runtime_error("only triangulated faces are supported");
                 }
 
-                Eigen::Vector3i triangle;
+                ObjTriangle triangle;
                 for (int corner = 0; corner < 3; ++corner) {
                     const tinyobj::index_t index = shape.mesh.indices[index_offset + static_cast<std::size_t>(corner)];
                     if (index.vertex_index < 0) {
                         throw std::runtime_error("negative obj vertex indices are not supported");
                     }
-                    triangle[corner] = index.vertex_index;
+                    triangle.positions[corner] = index.vertex_index;
+                    triangle.normals[corner] = index.normal_index;
+                    triangle.texcoords[corner] = index.texcoord_index;
                 }
                 index_offset += 3;
 
@@ -164,7 +194,34 @@ ObjImportResult import_obj_mtl(const std::filesystem::path& obj_file) {
         const std::vector<tinyobj::material_t>& materials = reader.GetMaterials();
         for (const auto& [material_index, triangles] : triangles_by_material) {
             TriangleMeshShape mesh = base_mesh;
-            mesh.triangles = triangles;
+            mesh.triangles.reserve(triangles.size());
+            const bool complete_normals = !mesh.normals.empty()
+                && std::all_of(triangles.begin(), triangles.end(), [](const ObjTriangle& triangle) {
+                    return (triangle.normals.array() >= 0).all();
+                });
+            const bool complete_texcoords = !mesh.texcoords.empty()
+                && std::all_of(triangles.begin(), triangles.end(), [](const ObjTriangle& triangle) {
+                    return (triangle.texcoords.array() >= 0).all();
+                });
+            if (complete_normals) {
+                mesh.normal_indices.reserve(triangles.size());
+            } else {
+                mesh.normals.clear();
+            }
+            if (complete_texcoords) {
+                mesh.texcoord_indices.reserve(triangles.size());
+            } else {
+                mesh.texcoords.clear();
+            }
+            for (const ObjTriangle& triangle : triangles) {
+                mesh.triangles.push_back(triangle.positions);
+                if (complete_normals) {
+                    mesh.normal_indices.push_back(triangle.normals);
+                }
+                if (complete_texcoords) {
+                    mesh.texcoord_indices.push_back(triangle.texcoords);
+                }
+            }
 
             const tinyobj::material_t* material = nullptr;
             if (material_index >= 0 && static_cast<std::size_t>(material_index) < materials.size()) {

@@ -28,6 +28,8 @@ execute_process(
         --scene "${SCENE_NAME}"
         --camera-count 4
         --frames "${FRAME_COUNT}"
+        --warmup-frames 1
+        --seed 11
         --profile "${PROFILE_NAME}"
         --skip-image-write
         --output-dir "${OUTPUT_DIR}"
@@ -43,8 +45,20 @@ endif()
 if(NOT run_stdout MATCHES "denoise_ms=")
     message(FATAL_ERROR "stdout missing denoise_ms field:\n${run_stdout}")
 endif()
+if(NOT run_stdout MATCHES "pipeline_ms=")
+    message(FATAL_ERROR "stdout missing pipeline_ms field:\n${run_stdout}")
+endif()
+if(run_stdout MATCHES "host_overhead_ms=-")
+    message(FATAL_ERROR "4-camera run contains a negative host residual:\n${run_stdout}")
+endif()
+if(NOT run_stdout MATCHES "warmup=0 sample_stream=11 cameras=4")
+    message(FATAL_ERROR "4-camera run missing deterministic warmup record:\n${run_stdout}")
+endif()
+if(NOT run_stdout MATCHES "p99_frame_ms=")
+    message(FATAL_ERROR "4-camera run missing p99 timing:\n${run_stdout}")
+endif()
 if(NOT EXPECT_DENOISE_ENABLED)
-    string(REGEX MATCHALL "frame=[0-9]+ cameras=4 [^\r\n]*denoise_ms=0\\.000" zero_denoise_lines "${run_stdout}")
+    string(REGEX MATCHALL "frame=[0-9]+ sample_stream=[0-9]+ cameras=4 [^\r\n]*denoise_ms=0\\.000" zero_denoise_lines "${run_stdout}")
     list(LENGTH zero_denoise_lines zero_denoise_count)
     if(NOT zero_denoise_count EQUAL FRAME_COUNT)
         message(FATAL_ERROR
@@ -54,14 +68,51 @@ endif()
 
 set(csv_path "${OUTPUT_DIR}/benchmark_frames.csv")
 set(json_path "${OUTPUT_DIR}/benchmark_summary.json")
+set(manifest_path "${OUTPUT_DIR}/benchmark_manifest.json")
 if(NOT EXISTS "${csv_path}")
     message(FATAL_ERROR "missing ${csv_path}")
 endif()
 if(NOT EXISTS "${json_path}")
     message(FATAL_ERROR "missing ${json_path}")
 endif()
+if(NOT EXISTS "${manifest_path}")
+    message(FATAL_ERROR "missing ${manifest_path}")
+endif()
 
 file(READ "${json_path}" json_text)
+if(NOT json_text MATCHES "\"pipeline_ms\"")
+    message(FATAL_ERROR "json missing pipeline timing")
+endif()
+if(NOT json_text MATCHES "\"render_work_ms\"")
+    message(FATAL_ERROR "json missing summed render work timing")
+endif()
+foreach(required_json_field
+        "\"schema_version\": 3"
+        "\"warmup_frames\": 1"
+        "\"random_seed\": 11"
+        "\"sample_stream\": 12"
+        "\"p99\""
+        "\"provenance\""
+        "\"source_scope\""
+        "\"source_state_sha256\""
+        "\"environment\""
+        "\"nvidia_driver_version\""
+        "\"gpu_memory\""
+        "\"peak_used_bytes\""
+        "\"peak_delta_bytes\""
+    )
+    if(NOT json_text MATCHES "${required_json_field}")
+        message(FATAL_ERROR "json missing required field ${required_json_field}")
+    endif()
+endforeach()
+
+file(READ "${manifest_path}" manifest_text)
+if(NOT manifest_text MATCHES "\"filename\": \"benchmark_frames.csv\"")
+    message(FATAL_ERROR "manifest missing raw CSV artifact")
+endif()
+if(NOT manifest_text MATCHES "\"digest_algorithm\": \"fnv1a64\"")
+    message(FATAL_ERROR "manifest missing artifact digest")
+endif()
 set(json_flat "${json_text}")
 string(REGEX REPLACE "[\r\n\t ]+" " " json_flat "${json_flat}")
 

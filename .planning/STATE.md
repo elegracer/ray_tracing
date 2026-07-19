@@ -2,19 +2,77 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-22)
+See: .planning/PROJECT.md (updated 2026-07-18)
 
-**Core value:** Camera behavior must stay consistent across offline and realtime rendering so the same scene and rig produce the intended image no matter which path is used.
-**Current focus:** Next Milestone Definition
+**Core value:** Composed scene, camera, light, and material meaning must stay consistent across offline and realtime rendering, while measured changes improve physical correctness and realtime performance together.
+**Current focus:** v2.0 Phase 2 — SceneIR v2 And OpenUSD Semantics
 
 ## Current Position
 
-Phase: Milestone archived
-Plan: None active
-Status: Ready for next milestone
-Last activity: 2026-04-22 - Archived v1.0 roadmap and requirements, updated project state, and created release tag
+Phase: 2 of 6 — SceneIR v2 And OpenUSD Semantics
+Plan: USD-01 and USD-02 contracts plus camera/asset/light compatibility are complete; finish USD-05 texture/material translation before the OpenUSD SDK frontend
+Status: Active milestone, Phase 2 in progress
+Last activity: 2026-07-19 - Added UsdLux-aligned light payloads and projected legacy emissive surfaces as geometry lights
 
-Progress: [██████████] 100%
+Progress: [#######---] 67% Phase 2 requirements; USD-01 and USD-02 complete, USD-05 remains
+
+## v2.0 Phase 1 Evidence
+
+| Profile | Baseline frame / FPS | GPU reconstruction frame / FPS | Change |
+|---|---:|---:|---:|
+| realtime | 42.8487 ms / 23.3380 | 29.9772 ms / 33.3587 | +42.9% FPS |
+| balanced | 43.3536 ms / 23.0661 | 29.7147 ms / 33.6533 | +45.9% FPS |
+| quality | 28.9618 ms / 34.5282 | 26.6274 ms / 37.5553 | +8.8% FPS |
+
+Steady-state measurements discard frame zero across 99 measured frames at four cameras and 640x480 on RTX 3090. Realtime denoise critical path is 7.3764 ms while summed four-camera denoise work is 27.0912 ms; non-negative host residual averages 0.0087 ms.
+
+The current built-in protocol uses eight unmeasured warmup frames followed by 100 measured frames with seed `20260718`; CSV frame zero is now a real measured sample and starts at sample stream `20260726`.
+
+| Profile | Avg | P50 | P95 | P99 | FPS | Peak GPU delta |
+|---|---:|---:|---:|---:|---:|---:|
+| realtime | 31.0712 ms | 30.6497 ms | 34.8491 ms | 36.8067 ms | 32.1841 | 770 MiB |
+| balanced | 31.3196 ms | 31.4011 ms | 35.9828 ms | 37.2362 ms | 31.9289 | 770 MiB |
+| quality | 27.4086 ms | 27.4561 ms | 30.7860 ms | 32.3865 ms | 36.4849 | 322 MiB |
+
+These final protocol runs validate provenance and artifact completeness, not a new performance uplift: seed, warmup policy, dirty source tree, and thermal/clock state differ from the earlier reconstruction checkpoint. Each profile emitted 100 raw frame rows, 400 per-camera records, a schema-v3 summary, and a manifest with non-empty file sizes and FNV-1a 64 digests.
+
+The temporal reference gate uses a 64x48 `final_room` fixture, four history frames, a 0.03-unit camera translation, a 32-spp raw reference, and a world-space reprojection mask. Temporal motion MAE is `0.153471` versus `0.154568` for the same-seed cold start; across 40 genuinely disoccluded pixels it is `0.161560` versus `0.166292`. Resize, explicit camera-jump reset, and scene change each match a same-seed cold start within `1e-6`, while ViewerRenderSession verifies that a real pose jump requests reset before rendering.
+
+Two identical RTX 3090 performance guard runs kept the benchmark protocol unchanged:
+
+| Run | Avg | P95 | P99 | FPS | Denoise critical |
+|---|---:|---:|---:|---:|---:|
+| temporal gate A | 29.1951 ms | 33.0931 ms | 34.9069 ms | 34.2523 | 7.1981 ms |
+| temporal gate B | 29.7210 ms | 33.5333 ms | 34.4544 ms | 33.6462 | 7.2671 ms |
+
+These paired runs rule out a material regression against the prior protocol record (`31.0712 ms`, P99 `36.8067 ms`) but are not treated as a new uplift claim. The implementation now allocates or resets history before launch parameters capture it and validates history depth against the current world point's distance from the previous camera, rather than comparing depths measured from two different camera origins.
+
+The viewer now exports the final OptiX/denoiser beauty image as a borrowed device view and tone-maps it into CUDA-registered OpenGL pixel buffers. The default path performs no host frame materialization; `--host-readback` is the explicit diagnostic fallback. Hybrid Intel/NVIDIA Linux sessions select the NVIDIA GLX render-offload before GLFW initialization so the OpenGL and CUDA devices match.
+
+Two identical hidden-window product-path comparisons used `final_room`, four 640x480 cameras, the same preview/converge policy, no vsync, and 120 displayed frames. Times include process and renderer startup, so they are end-to-end viewer evidence rather than kernel microbenchmarks:
+
+| Run | GPU interop elapsed / RSS | Host readback elapsed / RSS | Elapsed ratio |
+|---|---:|---:|---:|
+| viewer A | 2.71 s / 408472 KiB | 9.28 s / 633020 KiB | 3.42x |
+| viewer B | 2.60 s / 408876 KiB | 9.32 s / 632596 KiB | 3.58x |
+
+`test_cuda_gl_presenter` verifies the real registered-PBO path and exact RGBA8 display-transfer pixels through a hidden OpenGL context. `test_renderer_pool` verifies a CUDA device pointer, valid stream and resolution, and zero download timing for the borrowed device path. Both presentation modes complete a three-frame viewer smoke, and the full suite passes 56/56.
+
+## v2.0 Phase 2 Evidence
+
+`SceneIRv2` now owns stage-wide `meters_per_unit`, Y/Z up axis, right-handedness, time-code/frame rates, optional time range, interpolation policy, and default prim identity. Prim records use validated absolute paths, parent-derived hierarchy, full local-to-parent affine matrices, reset-stack semantics, inherited visibility/purpose, sorted transform samples, and stable path references for prototypes and materials.
+
+The validator rejects malformed/duplicate paths, missing parents/default prims, non-finite or non-affine transforms, invalid stage/time metadata, bad references, and invalid volume density. Separate backend capability diagnostics report unsupported scale/shear, time samples, reset stacks, and proxy/guide purposes without silently flattening authored meaning.
+
+The existing flat `SceneIR` remains the current CPU/GPU execution model. `compile_legacy_scene_ir_v2` deterministically projects its resources and instances under `/World`, explicitly declares legacy units as one meter per unit, and retains integer indices only as compatibility provenance. YAML loading now creates this v2 projection after includes/imports are composed. Focused semantic/rejection/compatibility tests and the fully rebuilt CUDA/OptiX suite pass 57/57.
+
+`SceneMeshGeometry` now preserves polygon topology, right/left-handed orientation, `none`/Catmull-Clark/Loop/bilinear subdivision schemes, typed arbitrary primvars with OpenUSD interpolation domains and optional independent indices, plus non-overlapping or partitioned material subsets. The legacy compiler carries OBJ/YAML triangle normals, tangents, and UVs into indexed face-varying or vertex primvars, converts builtin quads and boxes without triangulating away authored topology, and reports unsupported backend capabilities explicitly. A full rebuild followed by CTest passes 57/57.
+
+`SceneCamera` now owns the standard OpenUSD projection, filmback/aperture offsets, focal length, clipping range, f-stop, and focus distance contract. The definition-level compatibility compiler converts CPU look-at and realtime body/extrinsic poses from the renderer's +Z-forward/+Y-down frame to OpenUSD's fixed -Z-forward/+Y-up frame, preserves pixel intrinsics and `pinhole32`/`equi62_lut1d` distortion in an explicit capability-diagnosed extension, and marks deterministic fallback poses for legacy placeholder presets. YAML and every builtin definition now compile cameras only after presets are composed. The full rebuilt suite remains 57/57.
+
+`SceneAssetReference` now separates authored, evaluated, and resolved paths without duplicating OpenUSD resolver behavior. `ImageTextureDesc` retains its existing execution `path` and additionally carries the authored token; YAML preserves relative authoring while storing its anchored normalized path, OBJ/MTL preserves `map_Kd` relative to the MTL while retaining the rebased path, and old builtins fall back to the execution path as authored identity. Image texture prims carry this contract with validation and backend capability diagnostics. A full rebuild and all 57 CTest cases pass.
+
+`SceneLight` now preserves the common `UsdLuxLightAPI` color, nit-based intensity, stop-based exposure, size normalization, color-temperature, diffuse/specular, and material-sync semantics together with supported sphere/disk/rect/cylinder/distant/dome shape inputs. Validation rejects non-finite radiometry, out-of-range Kelvin values, invalid shape dimensions, incompatible payload ownership, and exposure overflow; capability diagnostics keep common, analytic, dome, geometry-light, normalization, and color-temperature support explicit. The legacy frontend applies a geometry-light payload to every emissive surface with `materialGlowTintsLight`, intensity 1, exposure 0, and normalization disabled, so the existing material emission remains authoritative and the v1 CPU/OptiX path is unchanged. The full build and all 57 CTest cases pass.
 
 ## Performance Metrics
 
@@ -50,14 +108,32 @@ Recent decisions affecting current work:
 - Keep implicit/default camera construction fisheye-first while preserving explicit authored pinhole scenes and viewer rigs.
 - Lock Phase 1 to a single canonical shared camera schema with explicit `model`, pre-allocated `T_bc`, and model-specific parameter slots.
 - Migrate repo-owned builtin and YAML scene data directly to the new schema rather than maintaining project-owned old-format compatibility.
+- Compile composed OpenUSD stages into a renderer-owned `SceneIR v2`; do not reproduce USD composition locally.
+- Use the official MaterialX OpenPBR node definition as the authored material contract.
+- Replace the measured CPU clamp with native OptiX temporal AOV denoising before evaluating NRD.
+- Fix critical-path/work accounting before accepting any optimization claim.
+- Keep raw accumulation/history separate from denoised display output; temporal AOV consumes camera-space normals plus depth-derived flow/trust guides.
+- Give each camera an independent renderer, CUDA stream, and denoiser history.
+- Keep OpenGL ownership in the viewer layer; expose only a lifetime-bounded CUDA device frame from the renderer and retain host readback as an explicit consumer choice.
+- On hybrid-GPU Linux, choose NVIDIA GLX render-offload before GLFW initialization unless the user already supplied an explicit PRIME/GLX route.
+- Reset benchmark sample streams and temporal history together so a fixed seed and warmup interval define a reproducible measurement boundary.
+- Keep GPU memory explicitly labeled as CUDA device-global observation; report both the high-water mark and peak-minus-baseline delta outside measured frame timing.
+- Require correct light/BSDF PDFs and MIS before adding ReSTIR DI; keep GI/PT and neural caching evidence-gated.
 
 ### Pending Todos
 
-No active todos captured for the next milestone yet.
+- Finish USD-05 by translating YAML/builtin texture and non-emissive material semantics through the compatibility frontend while preserving the verified v1 execution adapter during migration.
 
 ### Blockers/Concerns
 
-No active blockers. The next milestone needs fresh requirement definition before execution work starts.
+- OptiX temporal AOV still costs about 7.20-7.27 ms on the four-camera critical path, leaving realtime slower than the no-denoise quality profile.
+- The benchmark/image-output CLI still downloads beauty, normal, albedo, and depth by design; only the interactive viewer has a no-readback default path.
+- CUDA/OpenGL interop requires the OpenGL context and CUDA allocation to use the same NVIDIA GPU; the viewer configures PRIME render-offload on Linux, while unsupported display stacks must use `--host-readback`.
+- The first temporal reference fixture covers final_room motion/disocclusion plus exact reset parity; broader multi-scene perceptual coverage remains part of VAL-02 rather than Phase 1 reconstruction closure.
+- Single-run P99 varied materially across repeated captures, so future speed claims need repeated identical runs in addition to the now-recorded workload and environment.
+- CUDA memory telemetry is device-global rather than per-process; concurrent GPU workloads can perturb baseline and peak values.
+- OpenUSD and MaterialX SDK dependencies are not yet present; add them only at the Phase 4 boundary after `SceneIR v2` is stable.
+- Codex 0.145.0-alpha.18 still routes `gpt-5.6-*` code-mode web calls through a host tool endpoint that returns HTTP 404. The active compatibility route now uses `gpt-5.5`, `web_search = "live"`, and an unfiltered `web` namespace; a clean default-config Codex run emitted a native `web_search` event and resolved the official OpenUSD 25.11 release page. Re-test the 5.6 route before restoring it as the default.
 
 ## Deferred Items
 
@@ -66,9 +142,12 @@ No active blockers. The next milestone needs fresh requirement definition before
 | Calibration | Dynamic render-preset-controlled resolution selection | Deferred to v2 | 2026-04-19 |
 | Calibration | Explicit per-camera intrinsics instead of derived defaults | Deferred to v2 | 2026-04-19 |
 | Calibration | Model-specific distortion coefficients and SE3 extrinsics | Deferred to v2 | 2026-04-19 |
+| Advanced reuse | ReSTIR GI/PT and neural radiance caching | Evidence-gated Phase 6 | 2026-07-18 |
+| Alternate denoiser | NRD integration | Compare after native OptiX temporal path | 2026-07-18 |
+| Hardware-specific | SER and post-Ampere-only paths | Capability-gated; not RTX 3090 acceptance work | 2026-07-18 |
 
 ## Session Continuity
 
-Last session: 2026-04-22 00:00
-Stopped at: v1.0 archived; next step is `$gsd-new-milestone`
-Resume file: .planning/ROADMAP.md
+Last session: 2026-07-19
+Stopped at: OpenUSD camera, asset, and UsdLux light semantics plus legacy emissive projection are implemented with 57/57 tests; remaining USD-05 texture/material translation is next
+Resume file: .planning/milestones/v2.0-REQUIREMENTS.md

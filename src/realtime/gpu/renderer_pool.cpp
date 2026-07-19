@@ -28,10 +28,18 @@ void RendererPool::reset_accumulation() {
     }
 }
 
-std::vector<CameraRenderResult> RendererPool::render_frame(
-    const PackedCameraRig& rig, const RenderProfile& profile, int active_cameras) {
+void RendererPool::reset_sequence(std::uint32_t sample_stream) {
     std::lock_guard<std::mutex> lock(mutex_);
-    validate_render_pool_request(rig, active_cameras, static_cast<int>(renderers_.size()), "RendererPool");
+    for (OptixRenderer& renderer : renderers_) {
+        renderer.reset_sequence(sample_stream);
+    }
+}
+
+std::vector<CameraRenderResult> RendererPool::render_frame(const PackedCameraRig& rig,
+    const RenderProfile& profile, int active_cameras) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    validate_render_pool_request(rig, active_cameras, static_cast<int>(renderers_.size()),
+        "RendererPool");
 
     std::vector<CameraRenderResult> results;
     results.reserve(static_cast<std::size_t>(active_cameras));
@@ -42,8 +50,9 @@ std::vector<CameraRenderResult> RendererPool::render_frame(
         futures.push_back(std::async(std::launch::async, [this, &rig, &profile, camera_index]() {
             CameraRenderResult result {};
             result.camera_index = camera_index;
-            result.profiled = renderers_[static_cast<std::size_t>(camera_index)]
-                                  .render_prepared_radiance(rig, profile, camera_index);
+            result.profiled =
+                renderers_[static_cast<std::size_t>(camera_index)].render_prepared_radiance(rig,
+                    profile, camera_index);
             return result;
         }));
     }
@@ -54,4 +63,32 @@ std::vector<CameraRenderResult> RendererPool::render_frame(
     return results;
 }
 
-}  // namespace rt
+std::vector<CameraDeviceRenderResult> RendererPool::render_device_frame(const PackedCameraRig& rig,
+    const RenderProfile& profile, int active_cameras) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    validate_render_pool_request(rig, active_cameras, static_cast<int>(renderers_.size()),
+        "RendererPool");
+
+    std::vector<CameraDeviceRenderResult> results;
+    results.reserve(static_cast<std::size_t>(active_cameras));
+
+    std::vector<std::future<CameraDeviceRenderResult>> futures;
+    futures.reserve(static_cast<std::size_t>(active_cameras));
+    for (int camera_index = 0; camera_index < active_cameras; ++camera_index) {
+        futures.push_back(std::async(std::launch::async, [this, &rig, &profile, camera_index]() {
+            CameraDeviceRenderResult result {};
+            result.camera_index = camera_index;
+            result.profiled =
+                renderers_[static_cast<std::size_t>(camera_index)].render_prepared_device(rig,
+                    profile, camera_index);
+            return result;
+        }));
+    }
+
+    for (std::future<CameraDeviceRenderResult>& future : futures) {
+        results.push_back(future.get());
+    }
+    return results;
+}
+
+} // namespace rt
