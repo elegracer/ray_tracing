@@ -11,7 +11,7 @@
 
 namespace {
 
-constexpr int kCaseCount = 4;
+constexpr int kCaseCount = 6;
 
 struct CoreCase {
     rt::OpenPbrCoreMaterial material {};
@@ -124,6 +124,28 @@ std::array<CoreCase, kCaseCount> make_cases() {
     cases[3].u_lobe = 0.95f;
     cases[3].u1 = 0.5f;
     cases[3].u2 = 0.5f;
+
+    cases[4].material.base_color = {0.7f, 0.5f, 0.2f};
+    cases[4].material.specular_roughness = 0.3f;
+    cases[4].material.coat_weight = 0.8f;
+    cases[4].material.coat_color = {0.6f, 0.8f, 1.0f};
+    cases[4].material.coat_roughness = 0.22f;
+    cases[4].material.coat_roughness_anisotropy = 0.45f;
+    cases[4].material.coat_ior = 1.6f;
+    cases[4].wi = rt::openpbr_normalize({0.3f, -0.2f, 1.0f});
+    cases[4].u_lobe = 0.04f;
+    cases[4].u1 = 0.42f;
+    cases[4].u2 = 0.73f;
+
+    cases[5].material.base_weight = 0.0f;
+    cases[5].material.specular_weight = 0.0f;
+    cases[5].material.fuzz_weight = 1.0f;
+    cases[5].material.fuzz_color = {0.8f, 0.4f, 0.2f};
+    cases[5].material.fuzz_roughness = 0.55f;
+    cases[5].wi = rt::openpbr_normalize({-0.55f, 0.3f, 1.0f});
+    cases[5].u_lobe = 0.5f;
+    cases[5].u1 = 0.37f;
+    cases[5].u2 = 0.61f;
     return cases;
 }
 

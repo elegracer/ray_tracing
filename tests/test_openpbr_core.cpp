@@ -66,6 +66,15 @@ void test_scene_contract_mapping() {
     authored.transmission_weight = 0.3;
     authored.transmission_color = Eigen::Vector3d {0.8, 0.9, 1.0};
     authored.transmission_depth = 2.5;
+    authored.fuzz_weight = 0.45;
+    authored.fuzz_color = Eigen::Vector3d {0.7, 0.8, 0.9};
+    authored.fuzz_roughness = 0.6;
+    authored.coat_weight = 0.55;
+    authored.coat_color = Eigen::Vector3d {0.6, 0.8, 1.0};
+    authored.coat_roughness = 0.2;
+    authored.coat_roughness_anisotropy = 0.35;
+    authored.coat_ior = 1.6;
+    authored.coat_darkening = 0.7;
     authored.emission_luminance = 12.0;
     authored.emission_color = Eigen::Vector3d {1.2, 0.6, 0.3};
     authored.geometry_opacity = 0.75;
@@ -85,6 +94,15 @@ void test_scene_contract_mapping() {
     expect_near(material.transmission_weight, 0.3, 1e-6, "transmission weight");
     expect_vec_near(material.transmission_color, {0.8f, 0.9f, 1.0f}, 1e-6, "transmission color");
     expect_near(material.transmission_depth, 2.5, 1e-6, "transmission depth");
+    expect_near(material.fuzz_weight, 0.45, 1e-6, "fuzz weight");
+    expect_vec_near(material.fuzz_color, {0.7f, 0.8f, 0.9f}, 1e-6, "fuzz color");
+    expect_near(material.fuzz_roughness, 0.6, 1e-6, "fuzz roughness");
+    expect_near(material.coat_weight, 0.55, 1e-6, "coat weight");
+    expect_vec_near(material.coat_color, {0.6f, 0.8f, 1.0f}, 1e-6, "coat color");
+    expect_near(material.coat_roughness, 0.2, 1e-6, "coat roughness");
+    expect_near(material.coat_roughness_anisotropy, 0.35, 1e-6, "coat anisotropy");
+    expect_near(material.coat_ior, 1.6, 1e-6, "coat IOR");
+    expect_near(material.coat_darkening, 0.7, 1e-6, "coat darkening");
     expect_near(material.emission_luminance, 12.0, 1e-6, "emission luminance");
     expect_vec_near(material.emission_color, {1.2f, 0.6f, 0.3f}, 1e-6, "emission color");
     expect_near(material.geometry_opacity, 0.75, 1e-6, "opacity");
@@ -211,6 +229,13 @@ void test_evaluate_sample_pdf_contract() {
     material.specular_roughness_anisotropy = 0.4f;
     material.transmission_weight = 0.25f;
     material.transmission_color = {0.8f, 0.9f, 1.0f};
+    material.coat_weight = 0.45f;
+    material.coat_color = {0.7f, 0.85f, 1.0f};
+    material.coat_roughness = 0.2f;
+    material.coat_roughness_anisotropy = 0.3f;
+    material.fuzz_weight = 0.35f;
+    material.fuzz_color = {0.9f, 0.5f, 0.25f};
+    material.fuzz_roughness = 0.55f;
 
     const rt::OpenPbrFrame frame = rt::make_openpbr_frame(kNormal, kTangent);
     const rt::OpenPbrVec3 wo = normalized({0.25f, -0.1f, 1.0f});
@@ -302,6 +327,112 @@ void test_pdf_normalization_and_furnace_energy() {
         integrate_furnace(rough_white, frame, wo, kIntegrationSamples);
     expect_vec_near(rough_white_energy, {1.0f, 1.0f, 1.0f}, 8e-3,
         "energy-compensated Oren-Nayar passes the white furnace");
+}
+
+void test_coat_and_fuzz_reference_semantics() {
+    constexpr std::size_t kIntegrationSamples = 131072;
+    const rt::OpenPbrFrame frame = rt::make_openpbr_frame(kNormal, kTangent);
+    const rt::OpenPbrVec3 wo = normalized({0.6614378f, 0.0f, 0.75f});
+
+    expect_near(rt::openpbr_fuzz_directional_albedo(0.75f, 0.5f), 0.053199173129,
+        2e-6, "MaterialX Zeltner directional-albedo fit");
+    const rt::OpenPbrVec3 ltc = rt::openpbr_fuzz_ltc_coefficients(0.75f, 0.5f);
+    expect_near(ltc.x, 0.544004842830, 2e-6, "MaterialX Zeltner LTC a inverse fit");
+    expect_near(ltc.y, -0.032001297492, 2e-6, "MaterialX Zeltner LTC b inverse fit");
+
+    rt::OpenPbrCoreMaterial coat_only;
+    coat_only.base_weight = 0.0f;
+    coat_only.specular_weight = 0.0f;
+    coat_only.coat_weight = 1.0f;
+    coat_only.coat_roughness = 0.0f;
+    coat_only.coat_ior = 1.6f;
+    const rt::OpenPbrSample coat_sample =
+        rt::sample_openpbr_core(coat_only, frame, wo, 0.5f, 0.3f, 0.7f);
+    expect_true(coat_sample.valid != 0 && coat_sample.delta != 0,
+        "smooth coat is a discrete reflection");
+    expect_true(coat_sample.event == rt::OpenPbrScatterEvent::coat_reflection,
+        "smooth coat preserves its event identity");
+    expect_near(coat_sample.discrete_pdf, 1.0, 1e-6, "pure coat selection probability");
+    expect_vec_near(coat_sample.weight,
+        rt::openpbr_make_vec3(rt::openpbr_coat_fresnel(coat_only, wo.z)), 2e-6,
+        "pure smooth coat carries dielectric Fresnel throughput");
+
+    rt::OpenPbrCoreMaterial fuzz_only;
+    fuzz_only.base_weight = 0.0f;
+    fuzz_only.specular_weight = 0.0f;
+    fuzz_only.fuzz_weight = 1.0f;
+    fuzz_only.fuzz_color = {0.8f, 0.4f, 0.2f};
+    fuzz_only.fuzz_roughness = 0.5f;
+    expect_near(integrate_pdf(fuzz_only, frame, wo, kIntegrationSamples), 1.0, 8e-3,
+        "Zeltner fuzz PDF normalization");
+    const rt::OpenPbrVec3 fuzz_energy =
+        integrate_furnace(fuzz_only, frame, wo, kIntegrationSamples);
+    const rt::OpenPbrVec3 expected_fuzz_energy = rt::openpbr_mul(fuzz_only.fuzz_color,
+        rt::openpbr_fuzz_directional_albedo(wo.z, fuzz_only.fuzz_roughness));
+    expect_vec_near(fuzz_energy, expected_fuzz_energy, 8e-3,
+        "Zeltner fuzz integrates to its fitted directional albedo");
+
+    int fuzz_samples = 0;
+    for (int index = 0; index < 2048; ++index) {
+        const float u1 = std::fmod(0.754877666f * static_cast<float>(index + 1), 1.0f);
+        const float u2 = std::fmod(0.569840296f * static_cast<float>(index + 1), 1.0f);
+        const rt::OpenPbrSample sample =
+            rt::sample_openpbr_core(fuzz_only, frame, wo, 0.5f, u1, u2);
+        expect_true(sample.valid != 0 && sample.delta == 0,
+            "pure fuzz produces a continuous sample");
+        expect_true(sample.event == rt::OpenPbrScatterEvent::fuzz_reflection,
+            "pure fuzz preserves its event identity");
+        const rt::OpenPbrEvaluation evaluation =
+            rt::evaluate_openpbr_core(fuzz_only, frame, wo, sample.wi);
+        expect_relative(sample.pdf, evaluation.pdf, 5e-5, "fuzz sample/evaluate PDF agreement");
+        expect_vec_relative(sample.value, evaluation.value, 5e-5,
+            "fuzz sample/evaluate value agreement");
+        ++fuzz_samples;
+    }
+    expect_true(fuzz_samples == 2048, "all pure fuzz samples are valid");
+
+    rt::OpenPbrCoreMaterial layered;
+    layered.base_color = {1.0f, 1.0f, 1.0f};
+    layered.base_diffuse_roughness = 0.6f;
+    layered.specular_roughness = 0.35f;
+    layered.coat_weight = 1.0f;
+    layered.coat_roughness = 0.3f;
+    layered.coat_ior = 1.6f;
+    layered.fuzz_weight = 1.0f;
+    layered.fuzz_roughness = 0.5f;
+    const rt::OpenPbrVec3 layered_energy =
+        integrate_furnace(layered, frame, wo, kIntegrationSamples);
+    expect_finite_nonnegative(layered_energy, "coat/fuzz layered furnace energy");
+    expect_true(layered_energy.x <= 1.02f && layered_energy.y <= 1.02f
+                    && layered_energy.z <= 1.02f,
+        "coat/fuzz layering does not create energy in a unit furnace");
+
+    rt::OpenPbrCoreMaterial tinted_coat;
+    tinted_coat.specular_weight = 0.0f;
+    tinted_coat.base_color = {1.0f, 1.0f, 1.0f};
+    tinted_coat.coat_weight = 1.0f;
+    tinted_coat.coat_color = {0.25f, 0.64f, 1.0f};
+    tinted_coat.coat_roughness = 0.35f;
+    const rt::OpenPbrEvaluation tinted = rt::evaluate_openpbr_core(tinted_coat, frame, wo,
+        normalized({-0.6f, 0.2f, 1.0f}));
+    expect_true(tinted.value.x < tinted.value.y && tinted.value.y < tinted.value.z,
+        "coat absorption tints the substrate in two passages");
+
+    rt::OpenPbrCoreMaterial unchanged;
+    unchanged.coat_color = {0.1f, 0.2f, 0.3f};
+    unchanged.coat_roughness = 0.9f;
+    unchanged.fuzz_color = {0.2f, 0.4f, 0.8f};
+    unchanged.fuzz_roughness = 0.1f;
+    const rt::OpenPbrCoreMaterial defaults;
+    const rt::OpenPbrVec3 wi = normalized({-0.3f, 0.2f, 1.0f});
+    const rt::OpenPbrEvaluation unchanged_eval =
+        rt::evaluate_openpbr_core(unchanged, frame, wo, wi);
+    const rt::OpenPbrEvaluation default_eval =
+        rt::evaluate_openpbr_core(defaults, frame, wo, wi);
+    expect_vec_near(unchanged_eval.value, default_eval.value, 1e-7,
+        "zero layer weights preserve the legacy default response");
+    expect_near(unchanged_eval.pdf, default_eval.pdf, 1e-7,
+        "zero layer weights preserve the legacy default PDF");
 }
 
 void test_openpbr_reference_parameter_semantics() {
@@ -451,6 +582,7 @@ int main() {
     test_frame_normal_and_tangent_semantics();
     test_evaluate_sample_pdf_contract();
     test_pdf_normalization_and_furnace_energy();
+    test_coat_and_fuzz_reference_semantics();
     test_openpbr_reference_parameter_semantics();
     test_anisotropy_rotates_with_tangent();
     test_opacity_thin_walled_and_emission();
