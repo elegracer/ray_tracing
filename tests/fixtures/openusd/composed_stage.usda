@@ -54,6 +54,15 @@ def Xform "World" (
         uniform token[] xformOpOrder = ["xformOp:translate"]
     }
 
+    def Mesh "Triangle"
+    {
+        int[] faceVertexCounts = [3]
+        int[] faceVertexIndices = [0, 1, 2]
+        uniform token orientation = "leftHanded"
+        point3f[] points = [(0, 0, 0), (2, 0, 0), (0, 3, 0)]
+        uniform token subdivisionScheme = "none"
+    }
+
     def SphereLight "SphereKey"
     {
         color3f inputs:color = (1, 0.5, 0.25)

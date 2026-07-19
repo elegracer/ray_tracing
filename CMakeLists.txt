@@ -448,6 +448,15 @@ target_link_libraries(test_openusd_stage_importer PRIVATE core)
 add_test(NAME test_openusd_stage_importer COMMAND test_openusd_stage_importer
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/openusd/composed_stage.usda)
 
+add_executable(test_openusd_stage_exporter)
+target_sources(test_openusd_stage_exporter
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_openusd_stage_exporter.cpp
+)
+target_link_libraries(test_openusd_stage_exporter PRIVATE core)
+add_test(NAME test_openusd_stage_exporter COMMAND test_openusd_stage_exporter
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/openusd/composed_stage.usda)
+
 add_executable(test_openpbr_core)
 target_sources(test_openpbr_core
     PRIVATE

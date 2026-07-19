@@ -84,6 +84,19 @@ int main(int argc, char** argv) {
     expect_translation(require_prim(scene, "/World/InstanceB").local_to_parent, {20.0, 0.0, 0.0},
         "second instance transform");
 
+    const rt::scene::ScenePrim& triangle = require_prim(scene, "/World/Triangle");
+    const rt::scene::ScenePrim& triangle_prototype = require_prim(scene, triangle.prototype_path);
+    const auto& mesh = std::get<rt::scene::SceneMeshGeometry>(*triangle_prototype.geometry);
+    expect_true(mesh.points.size() == 3 && mesh.face_vertex_counts == std::vector<std::int32_t> {3}
+                    && mesh.face_vertex_indices == std::vector<std::int32_t> {0, 1, 2},
+        "UsdGeom mesh topology");
+    expect_vec3_near(mesh.points[1], {2.0, 0.0, 0.0}, 1e-12, "UsdGeom mesh points");
+    expect_true(mesh.orientation == rt::scene::SceneMeshOrientation::left_handed
+                    && mesh.subdivision_scheme == rt::scene::SceneSubdivisionScheme::none,
+        "UsdGeom orientation and subdivision metadata");
+    expect_true(triangle.material_path == "/World/Looks/Red",
+        "mesh inherits the resolved material binding");
+
     const rt::scene::ScenePrim& material = require_prim(scene, "/World/Looks/Red");
     expect_true(material.kind == rt::scene::ScenePrimKind::material,
         "UsdShade material compiles as a SceneIR material");
