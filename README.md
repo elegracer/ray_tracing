@@ -68,7 +68,14 @@ the legacy YAML/builtin execution path and report missing I/O capabilities expli
 the deterministic supported subset to `.usda`; the round-trip gate checks byte stability and
 semantic equality for metadata, hierarchy, transforms, instances, sphere/mesh geometry, cameras,
 supported lights/assets, resolved material bindings, and constant OpenPBR inputs. Unsupported
-connected graphs and payloads fail explicitly instead of being discarded.
+payloads fail explicitly instead of being discarded.
+
+Connected OpenPBR color3 inputs may resolve directly through MaterialX 1.39.5
+`ND_constant_color3`, `ND_image_color3`, `ND_checkerboard_color3`, and default
+`ND_noise3d_color3` shaders. Image nodes require explicit USD `colorSpace` metadata; asset,
+address, filter, fallback, checker tiling, literal, reuse, and cycle semantics are validated.
+NodeGraph interfaces, multiple sources, scalar/vector connections, and fields outside the
+declared SceneIR subset remain fail-closed.
 
 ## GUI Viewer
 

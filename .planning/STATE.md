@@ -12,9 +12,9 @@ See: .planning/PROJECT.md (updated 2026-07-19)
 Phase: 4 of 6 — OpenUSD And MaterialX I/O
 Plan: Add optional official SDK integration, composed-stage import, deterministic supported-subset export, and advanced OpenPBR lobes
 Status: Active milestone, Phase 4 in progress
-Last activity: 2026-07-19 - Closed USD-04 with deterministic USDA export and semantic round-trip gates
+Last activity: 2026-07-20 - Compiled supported connected UsdShade/MaterialX graphs into SceneIR v2
 
-Progress: [##########] 100% of scoped OpenUSD requirements complete; connected MaterialX graph import and advanced OpenPBR lobes keep Phase 4 active
+Progress: [##########] 100% of scoped OpenUSD requirements complete; advanced OpenPBR PBR-03 lobes keep Phase 4 active
 
 ## v2.0 Phase 1 Evidence
 
@@ -102,6 +102,10 @@ USD-04 adds deterministic `.usda` export for the curated SceneIR v2 subset. It a
 
 The round-trip gate exports the composed fixture twice and requires byte-identical output, reimports it and compares stage metadata plus every prim/payload semantically, then requires the canonical re-export to remain byte-identical. The fixture now covers left-handed mesh topology in addition to sphere instances, hierarchy, sampled transforms, camera, six light types, assets, and constant OpenPBR. Official SDK ON and default SDK OFF full builds and CTest both pass 63/63. Implementation commit `65cc2f5` and fixture-gate commit `e853ebf` provide the USD-04 review boundary.
 
+The UsdShade graph compiler uses OpenUSD v26.05 `GetConnectedSources` rather than the deprecated single-source query, rejects invalid/multiple/cyclic sources, and assigns renderer-owned stable texture identities without persisting USD implementation paths. Direct `ND_constant_color3`, `ND_image_color3`, `ND_checkerboard_color3`, and default `ND_noise3d_color3` nodes compile into the existing typed SceneIR v2 texture/connection payloads. Image assets preserve authored/evaluated/resolved identity plus explicit `colorSpace`, address, filter, and fallback values; checker literals become stable constant nodes and shared nodes remain shared.
+
+The connected fixture follows the official MaterialX 1.39.5 nodedef inputs and gates four OpenPBR color connections, constant reuse, checker connected/literal inputs, uniform tiling, explicit sRGB image assets, and default noise. Unknown nodes, NodeGraph interfaces, scalar/vector connections, multiple sources, connected fallbacks, non-uniform checker transforms, missing image color space, and MaterialX inputs that SceneIR cannot preserve remain fail-closed. Official SDK ON and default SDK OFF full builds and CTest both pass 63/63. Implementation commit `6436817` and fixture-gate commit `0056595` provide the review boundary.
+
 ## Performance Metrics
 
 **Velocity:**
@@ -150,7 +154,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- Compile the supported SceneIR material connections from UsdShade/MaterialX graphs without weakening the current explicit rejection path.
+- Implement coat and fuzz as the next bounded PBR-03 evaluator slice with matched sampling and physical/reference gates.
 
 ### Blockers/Concerns
 
@@ -160,7 +164,7 @@ Recent decisions affecting current work:
 - The first temporal reference fixture covers final_room motion/disocclusion plus exact reset parity; broader multi-scene perceptual coverage remains part of VAL-02 rather than Phase 1 reconstruction closure.
 - Single-run P99 varied materially across repeated captures, so future speed claims need repeated identical runs in addition to the now-recorded workload and environment.
 - CUDA memory telemetry is device-global rather than per-process; concurrent GPU workloads can perturb baseline and peak values.
-- OpenUSD is an optional system SDK dependency with verified OFF/ON paths; MaterialX graph parsing remains unwired and connected USD shader inputs stay fail-closed.
+- OpenUSD is an optional system SDK dependency with verified OFF/ON paths; supported direct MaterialX color3 graphs compile, while NodeGraph interfaces and fields outside the declared SceneIR subset remain fail-closed.
 - Direct-light sampling still uses the existing center/nearest-point heuristic without solid-angle/area PDFs or MIS. OpenPBR surfaces now use the shared BSDF response and emissive materials participate, but unbiased light transport remains a Phase 5 gate before ReSTIR DI.
 - The current `gpt-5.6-*` Codex IDE route still returns HTTP 404 from the built-in web tool. This is not a renderer delivery blocker: bounded public research uses direct read-only HTTP against official primary sources and records the pinned source revision. Do not spend renderer goal turns repairing host search unless the user explicitly reopens that task.
 
@@ -177,6 +181,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-07-19
-Stopped at: USD-04 is closed with deterministic supported-subset USDA export, byte-stable canonical output, full semantic round trips, SDK OFF/ON tests, and 63/63 CTest in both configurations; supported connected UsdShade/MaterialX graph import is next
+Last session: 2026-07-20
+Stopped at: scoped OpenUSD and connected MaterialX import are closed with deterministic round trips, stable texture identities, explicit asset/color semantics, SDK OFF/ON tests, and 63/63 CTest in both configurations; coat and fuzz are the next PBR-03 slice
 Resume file: .planning/milestones/v2.0-REQUIREMENTS.md
