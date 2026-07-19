@@ -132,10 +132,12 @@ rt::scene::SceneIRv2 scene_with_mesh(rt::scene::SceneMeshGeometry mesh) {
     scene.add_prim(rt::scene::ScenePrim {
         .path = "/World/Materials/Matte",
         .kind = rt::scene::ScenePrimKind::material,
+        .material = rt::scene::SceneMaterial {rt::scene::SceneOpenPbrSurface {}},
     });
     scene.add_prim(rt::scene::ScenePrim {
         .path = "/World/Materials/Metal",
         .kind = rt::scene::ScenePrimKind::material,
+        .material = rt::scene::SceneMaterial {rt::scene::SceneOpenPbrSurface {}},
     });
     scene.add_prim(rt::scene::ScenePrim {.path = "/World/Prototypes"});
     scene.add_prim(rt::scene::ScenePrim {
@@ -166,6 +168,18 @@ rt::scene::SceneIRv2 scene_with_light(rt::scene::SceneLight light) {
         .path = "/World/Lights/Key",
         .kind = rt::scene::ScenePrimKind::light,
         .light = std::move(light),
+    });
+    return scene;
+}
+
+rt::scene::SceneIRv2 scene_with_open_pbr_material(rt::scene::SceneOpenPbrSurface material) {
+    rt::scene::SceneIRv2 scene;
+    scene.add_prim(rt::scene::ScenePrim {.path = "/World"});
+    scene.add_prim(rt::scene::ScenePrim {.path = "/World/Materials"});
+    scene.add_prim(rt::scene::ScenePrim {
+        .path = "/World/Materials/Test",
+        .kind = rt::scene::ScenePrimKind::material,
+        .material = rt::scene::SceneMaterial {std::move(material)},
     });
     return scene;
 }
@@ -247,6 +261,36 @@ rt::scene::SceneIR legacy_emissive_scene() {
         .shape_index = quad,
         .material_index = light,
     });
+    return scene;
+}
+
+rt::scene::SceneIR legacy_material_texture_scene() {
+    rt::scene::SceneIR scene;
+    const int red = scene.add_texture(rt::scene::ConstantColorTextureDesc {
+        .color = Eigen::Vector3d {0.8, 0.1, 0.05},
+    });
+    const int blue = scene.add_texture(rt::scene::ConstantColorTextureDesc {
+        .color = Eigen::Vector3d {0.05, 0.1, 0.8},
+    });
+    const int checker = scene.add_texture(rt::scene::CheckerTextureDesc {
+        .scale = 2.0,
+        .even_texture = red,
+        .odd_texture = blue,
+    });
+    const int image = scene.add_texture(rt::scene::ImageTextureDesc {
+        .authored_path = "textures/emission.exr",
+        .path = "/resolved/textures/emission.exr",
+    });
+    const int noise = scene.add_texture(rt::scene::NoiseTextureDesc {.scale = 4.0});
+
+    scene.add_material(rt::scene::DiffuseMaterial {.albedo_texture = red});
+    scene.add_material(rt::scene::MetalMaterial {
+        .albedo_texture = checker,
+        .fuzz = 0.25,
+    });
+    scene.add_material(rt::scene::DielectricMaterial {.ior = 1.52});
+    scene.add_material(rt::scene::EmissiveMaterial {.emission_texture = image});
+    scene.add_material(rt::scene::IsotropicVolumeMaterial {.albedo_texture = noise});
     return scene;
 }
 
@@ -364,9 +408,142 @@ void test_asset_reference_contract() {
     expect_true(rt::scene::has_scene_diagnostic(unsupported, "capability.asset_references"),
         "asset reference capability diagnostic");
     expect_true(rt::scene::diagnose_scene_ir_v2_capabilities(scene,
-                    rt::scene::SceneBackendCapabilities {.asset_references = true})
+                    rt::scene::SceneBackendCapabilities {
+                        .asset_references = true,
+                        .materialx_textures = true,
+                    })
                     .empty(),
         "asset-aware backend diagnostics");
+}
+
+void test_open_pbr_defaults_and_legacy_projection() {
+    const rt::scene::SceneOpenPbrSurface defaults;
+    expect_true(defaults.version == rt::scene::kOpenPbrVersion, "OpenPBR version");
+    expect_true(rt::scene::kOpenPbrMaterialXNodeDef
+                    == std::string_view {"ND_open_pbr_surface_surfaceshader"},
+        "OpenPBR MaterialX nodedef");
+    expect_near(defaults.base_weight, 1.0, 1e-12, "OpenPBR base weight default");
+    expect_vec3_near(defaults.base_color, Eigen::Vector3d::Constant(0.8), 1e-12,
+        "OpenPBR base color default");
+    expect_near(defaults.specular_roughness, 0.3, 1e-12, "OpenPBR specular roughness default");
+    expect_near(defaults.specular_ior, 1.5, 1e-12, "OpenPBR IOR default");
+    expect_near(defaults.coat_ior, 1.6, 1e-12, "OpenPBR coat IOR default");
+    expect_near(defaults.thin_film_thickness, 0.5, 1e-12, "OpenPBR thin-film thickness default");
+    expect_true(defaults.geometry_normal_default_geomprop == "Nworld",
+        "OpenPBR normal default geomprop");
+    expect_true(defaults.geometry_tangent_default_geomprop == "Tworld",
+        "OpenPBR tangent default geomprop");
+    expect_true(defaults.displacement.type == rt::scene::SceneMaterialXDisplacementType::none,
+        "MaterialX displacement is explicitly disabled by default");
+    expect_true(defaults.energy_policy
+                    == rt::scene::SceneMaterialEnergyPolicy::open_pbr_layered_energy_conserving,
+        "OpenPBR layered energy policy");
+
+    const rt::scene::SceneIRv2 compiled =
+        rt::scene::compile_legacy_scene_ir_v2(legacy_material_texture_scene());
+    rt::scene::require_valid_scene_ir_v2(compiled);
+
+    const rt::scene::ScenePrim& constant = *compiled.find_prim("/World/Textures/Texture_0000");
+    expect_true(constant.texture->node == rt::scene::SceneTextureNode::constant_color,
+        "constant texture MaterialX node");
+    expect_true(constant.texture->node_definition == "ND_constant_color3",
+        "constant texture MaterialX nodedef");
+    expect_true(constant.texture->color_space == rt::scene::SceneColorSpace::linear_srgb,
+        "numeric legacy color space");
+    expect_true(constant.compatibility_source_name == "constant_color",
+        "constant texture compatibility source");
+
+    const rt::scene::ScenePrim& checker = *compiled.find_prim("/World/Textures/Texture_0002");
+    expect_true(checker.texture->node == rt::scene::SceneTextureNode::checkerboard,
+        "checkerboard MaterialX node");
+    expect_true(checker.texture->node_definition == "ND_checkerboard_color3",
+        "checkerboard MaterialX nodedef");
+    expect_true(checker.texture->even_texture_path == "/World/Textures/Texture_0000"
+                    && checker.texture->odd_texture_path == "/World/Textures/Texture_0001",
+        "checkerboard connected texture inputs");
+    expect_near(checker.texture->scale, 2.0, 1e-12, "checkerboard scale");
+
+    const rt::scene::ScenePrim& image = *compiled.find_prim("/World/Textures/Texture_0003");
+    expect_true(image.texture->node == rt::scene::SceneTextureNode::image, "image MaterialX node");
+    expect_true(image.texture->node_definition == "ND_image_color3", "image MaterialX nodedef");
+    expect_true(image.texture->color_space == rt::scene::SceneColorSpace::raw,
+        "legacy image no-conversion color space");
+    expect_true(image.texture->u_address_mode == rt::scene::SceneTextureAddressMode::periodic
+                    && image.texture->filter_type == rt::scene::SceneTextureFilterType::linear,
+        "MaterialX image sampling defaults");
+    expect_true(image.asset_references.size() == 1
+                    && image.asset_references[0].authored_path == "textures/emission.exr",
+        "image texture asset semantics");
+
+    const rt::scene::ScenePrim& noise = *compiled.find_prim("/World/Textures/Texture_0004");
+    expect_true(noise.texture->node == rt::scene::SceneTextureNode::noise3d,
+        "noise MaterialX node");
+    expect_true(noise.texture->node_definition == "ND_noise3d_color3", "noise MaterialX nodedef");
+    expect_near(noise.texture->scale, 4.0, 1e-12, "noise scale");
+
+    const auto& diffuse = std::get<rt::scene::SceneOpenPbrSurface>(
+        *compiled.find_prim("/World/Materials/Material_0000")->material);
+    expect_near(diffuse.specular_weight, 0.0, 1e-12, "legacy diffuse lobe mapping");
+    expect_true(diffuse.connections.size() == 1 && diffuse.connections[0].input_name == "base_color"
+                    && diffuse.connections[0].input_type
+                           == rt::scene::SceneMaterialValueType::color3
+                    && diffuse.connections[0].texture_path == "/World/Textures/Texture_0000",
+        "legacy diffuse OpenPBR connection");
+
+    const auto& metal = std::get<rt::scene::SceneOpenPbrSurface>(
+        *compiled.find_prim("/World/Materials/Material_0001")->material);
+    expect_near(metal.base_metalness, 1.0, 1e-12, "legacy metal metalness");
+    expect_near(metal.specular_roughness, 0.25, 1e-12, "legacy metal fuzz mapping");
+    expect_true(metal.connections[0].texture_path == "/World/Textures/Texture_0002",
+        "legacy metal base color connection");
+
+    const auto& dielectric = std::get<rt::scene::SceneOpenPbrSurface>(
+        *compiled.find_prim("/World/Materials/Material_0002")->material);
+    expect_near(dielectric.specular_ior, 1.52, 1e-12, "legacy dielectric IOR");
+    expect_near(dielectric.transmission_weight, 1.0, 1e-12, "legacy dielectric transmission");
+    expect_near(dielectric.specular_roughness, 0.0, 1e-12,
+        "legacy dielectric perfect specular mapping");
+
+    const auto& emissive = std::get<rt::scene::SceneOpenPbrSurface>(
+        *compiled.find_prim("/World/Materials/Material_0003")->material);
+    expect_near(emissive.base_weight, 0.0, 1e-12, "legacy emissive base disabled");
+    expect_near(emissive.emission_luminance, 1.0, 1e-12, "legacy emissive unit luminance mapping");
+    expect_true(emissive.connections[0].input_name == "emission_color"
+                    && emissive.connections[0].texture_path == "/World/Textures/Texture_0003",
+        "legacy emissive OpenPBR connection");
+
+    const auto& volume = std::get<rt::scene::SceneIsotropicVolumeMaterial>(
+        *compiled.find_prim("/World/Materials/Material_0004")->material);
+    expect_true(volume.scattering_color_texture_path == "/World/Textures/Texture_0004",
+        "legacy volume scattering connection");
+    expect_near(volume.scattering_anisotropy, 0.0, 1e-12, "legacy isotropic volume anisotropy");
+    expect_true(compiled.find_prim("/World/Materials/Material_0004")->compatibility_source_name
+                    == "isotropic_volume",
+        "legacy volume compatibility source");
+
+    const std::vector<rt::scene::SceneDiagnostic> unsupported =
+        rt::scene::diagnose_scene_ir_v2_capabilities(compiled,
+            rt::scene::SceneBackendCapabilities {.backend_name = "legacy backend"});
+    expect_true(rt::scene::has_scene_diagnostic(unsupported, "capability.materialx_textures"),
+        "MaterialX texture capability diagnostic");
+    expect_true(rt::scene::has_scene_diagnostic(unsupported, "capability.texture_color_spaces"),
+        "texture color-space capability diagnostic");
+    expect_true(rt::scene::has_scene_diagnostic(unsupported, "capability.open_pbr_surface"),
+        "OpenPBR capability diagnostic");
+    expect_true(
+        rt::scene::has_scene_diagnostic(unsupported, "capability.isotropic_volume_material"),
+        "volume capability diagnostic");
+
+    const std::vector<rt::scene::SceneDiagnostic> supported =
+        rt::scene::diagnose_scene_ir_v2_capabilities(compiled,
+            rt::scene::SceneBackendCapabilities {
+                .asset_references = true,
+                .materialx_textures = true,
+                .texture_color_spaces = true,
+                .open_pbr_surface = true,
+                .isotropic_volume_materials = true,
+            });
+    expect_true(supported.empty(), "fully capable material backend diagnostics");
 }
 
 void test_light_contract() {
@@ -458,6 +635,9 @@ void test_legacy_emissive_light_projection() {
     expect_true(rt::scene::diagnose_scene_ir_v2_capabilities(compiled,
                     rt::scene::SceneBackendCapabilities {
                         .mesh_ngons = true,
+                        .materialx_textures = true,
+                        .texture_color_spaces = true,
+                        .open_pbr_surface = true,
                         .usd_lux_lights = true,
                         .geometry_lights = true,
                     })
@@ -573,6 +753,69 @@ void test_contract_rejections() {
     });
     expect_invalid(control_asset, "asset.path_control_character");
 
+    rt::scene::SceneIRv2 missing_texture;
+    missing_texture.add_prim(rt::scene::ScenePrim {.path = "/World"});
+    missing_texture.add_prim(rt::scene::ScenePrim {.path = "/World/Textures"});
+    missing_texture.add_prim(rt::scene::ScenePrim {
+        .path = "/World/Textures/Missing",
+        .kind = rt::scene::ScenePrimKind::texture,
+    });
+    expect_invalid(missing_texture, "texture.payload_missing");
+
+    rt::scene::SceneIRv2 negative_texture;
+    negative_texture.add_prim(rt::scene::ScenePrim {.path = "/World"});
+    negative_texture.add_prim(rt::scene::ScenePrim {.path = "/World/Textures"});
+    negative_texture.add_prim(rt::scene::ScenePrim {
+        .path = "/World/Textures/Negative",
+        .kind = rt::scene::ScenePrimKind::texture,
+        .texture = rt::scene::SceneTexture {.value = Eigen::Vector3d {-0.1, 0.0, 0.0}},
+    });
+    expect_invalid(negative_texture, "texture.value");
+
+    rt::scene::SceneIRv2 bad_checker;
+    bad_checker.add_prim(rt::scene::ScenePrim {.path = "/World"});
+    bad_checker.add_prim(rt::scene::ScenePrim {.path = "/World/Textures"});
+    bad_checker.add_prim(rt::scene::ScenePrim {
+        .path = "/World/Textures/Checker",
+        .kind = rt::scene::ScenePrimKind::texture,
+        .texture =
+            rt::scene::SceneTexture {
+                .node = rt::scene::SceneTextureNode::checkerboard,
+                .even_texture_path = "/World/Textures/MissingEven",
+                .odd_texture_path = "/World/Textures/MissingOdd",
+            },
+    });
+    expect_invalid(bad_checker, "texture.checker.even_reference");
+
+    rt::scene::SceneIRv2 missing_material;
+    missing_material.add_prim(rt::scene::ScenePrim {.path = "/World"});
+    missing_material.add_prim(rt::scene::ScenePrim {.path = "/World/Materials"});
+    missing_material.add_prim(rt::scene::ScenePrim {
+        .path = "/World/Materials/Missing",
+        .kind = rt::scene::ScenePrimKind::material,
+    });
+    expect_invalid(missing_material, "material.payload_missing");
+
+    rt::scene::SceneOpenPbrSurface invalid_weight;
+    invalid_weight.geometry_opacity = 1.5;
+    expect_invalid(scene_with_open_pbr_material(std::move(invalid_weight)),
+        "material.open_pbr.weight");
+
+    rt::scene::SceneOpenPbrSurface invalid_connection;
+    invalid_connection.connections.push_back(rt::scene::SceneMaterialConnection {
+        .input_name = "project_specific_base_color",
+        .texture_path = "/World/Textures/Missing",
+    });
+    expect_invalid(scene_with_open_pbr_material(std::move(invalid_connection)),
+        "material.connection.input_name");
+
+    rt::scene::SceneIRv2 unexpected_material = semantic_scene();
+    unexpected_material.add_prim(rt::scene::ScenePrim {
+        .path = "/World/UnexpectedMaterialPayload",
+        .material = rt::scene::SceneMaterial {rt::scene::SceneOpenPbrSurface {}},
+    });
+    expect_invalid(unexpected_material, "material.payload_unexpected");
+
     rt::scene::SceneIRv2 missing_light = semantic_scene();
     missing_light.add_prim(rt::scene::ScenePrim {
         .path = "/World/MissingLight",
@@ -657,6 +900,7 @@ void test_capability_diagnostics() {
                 .mesh_primvars = true,
                 .subdivision_surfaces = true,
                 .material_subsets = true,
+                .open_pbr_surface = true,
             });
     expect_true(mesh_supported.empty(), "fully capable mesh backend diagnostics");
 }
@@ -709,6 +953,7 @@ int main() {
     test_mesh_geometry_contract();
     test_camera_contract();
     test_asset_reference_contract();
+    test_open_pbr_defaults_and_legacy_projection();
     test_light_contract();
     test_legacy_emissive_light_projection();
     test_contract_rejections();

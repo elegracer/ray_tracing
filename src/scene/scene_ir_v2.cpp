@@ -6,6 +6,7 @@
 #include <fmt/format.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cctype>
 #include <numeric>
@@ -403,6 +404,306 @@ void append_asset_diagnostics(std::vector<SceneDiagnostic>& diagnostics,
     }
 }
 
+const ScenePrim* find_texture_prim(
+    const std::unordered_map<std::string, const ScenePrim*>& prims_by_path,
+    std::string_view texture_path) {
+    const auto found = prims_by_path.find(std::string {texture_path});
+    if (found == prims_by_path.end() || found->second->kind != ScenePrimKind::texture
+        || !found->second->texture) {
+        return nullptr;
+    }
+    return found->second;
+}
+
+void append_texture_reference_diagnostic(std::vector<SceneDiagnostic>& diagnostics,
+    const std::unordered_map<std::string, const ScenePrim*>& prims_by_path,
+    std::string_view owner_path, std::string_view texture_path, std::string_view code) {
+    if (find_texture_prim(prims_by_path, texture_path) == nullptr) {
+        diagnostics.push_back({SceneDiagnosticSeverity::error, std::string {code},
+            std::string {owner_path},
+            "texture input does not resolve to a texture payload: " + std::string {texture_path}});
+    }
+}
+
+void append_texture_diagnostics(std::vector<SceneDiagnostic>& diagnostics,
+    const SceneTexture& texture, const ScenePrim& prim,
+    const std::unordered_map<std::string, const ScenePrim*>& prims_by_path) {
+    const std::string_view expected_node_definition = [&] {
+        switch (texture.node) {
+            case SceneTextureNode::constant_color: return std::string_view {"ND_constant_color3"};
+            case SceneTextureNode::checkerboard: return std::string_view {"ND_checkerboard_color3"};
+            case SceneTextureNode::image: return std::string_view {"ND_image_color3"};
+            case SceneTextureNode::noise3d: return std::string_view {"ND_noise3d_color3"};
+        }
+        return std::string_view {};
+    }();
+    if (texture.output_type != SceneMaterialValueType::color3
+        || texture.node_definition != expected_node_definition) {
+        diagnostics.push_back({SceneDiagnosticSeverity::error, "texture.node_definition", prim.path,
+            "legacy SceneIR v2 textures require the matching official MaterialX color3 nodedef"});
+    }
+    if (!is_namespaced_identifier(texture.texcoord_primvar)) {
+        diagnostics.push_back({SceneDiagnosticSeverity::error, "texture.texcoord_primvar",
+            prim.path, "texture coordinate primvar must be a valid namespaced identifier"});
+    }
+    if (!texture.value.allFinite() || (texture.value.array() < 0.0).any()) {
+        diagnostics.push_back({SceneDiagnosticSeverity::error, "texture.value", prim.path,
+            "color3 texture values must be finite and non-negative"});
+    }
+    if (!std::isfinite(texture.scale) || texture.scale <= 0.0) {
+        diagnostics.push_back({SceneDiagnosticSeverity::error, "texture.scale", prim.path,
+            "texture scale must be finite and positive"});
+    }
+
+    if (texture.node == SceneTextureNode::checkerboard) {
+        append_texture_reference_diagnostic(diagnostics, prims_by_path, prim.path,
+            texture.even_texture_path, "texture.checker.even_reference");
+        append_texture_reference_diagnostic(diagnostics, prims_by_path, prim.path,
+            texture.odd_texture_path, "texture.checker.odd_reference");
+        if (texture.even_texture_path == prim.path || texture.odd_texture_path == prim.path) {
+            diagnostics.push_back({SceneDiagnosticSeverity::error, "texture.checker.self_reference",
+                prim.path, "checkerboard inputs must not reference the checkerboard itself"});
+        }
+    } else if (!texture.even_texture_path.empty() || !texture.odd_texture_path.empty()) {
+        diagnostics.push_back({SceneDiagnosticSeverity::error, "texture.input_unexpected",
+            prim.path, "only checkerboard textures may carry even and odd texture inputs"});
+    }
+
+    if (texture.node == SceneTextureNode::image) {
+        if (prim.asset_references.size() != 1) {
+            diagnostics.push_back({SceneDiagnosticSeverity::error, "texture.image.asset", prim.path,
+                "MaterialX image textures require exactly one asset reference"});
+        }
+    } else if (!prim.asset_references.empty()) {
+        diagnostics.push_back({SceneDiagnosticSeverity::error, "texture.asset_unexpected",
+            prim.path, "only image textures may carry image asset references"});
+    }
+}
+
+std::optional<SceneMaterialValueType> open_pbr_input_type(std::string_view input_name) {
+    using Entry = std::pair<std::string_view, SceneMaterialValueType>;
+    static constexpr std::array<Entry, 40> inputs {{
+        {"base_weight", SceneMaterialValueType::float_},
+        {"base_color", SceneMaterialValueType::color3},
+        {"base_diffuse_roughness", SceneMaterialValueType::float_},
+        {"base_metalness", SceneMaterialValueType::float_},
+        {"specular_weight", SceneMaterialValueType::float_},
+        {"specular_color", SceneMaterialValueType::color3},
+        {"specular_roughness", SceneMaterialValueType::float_},
+        {"specular_ior", SceneMaterialValueType::float_},
+        {"specular_roughness_anisotropy", SceneMaterialValueType::float_},
+        {"transmission_weight", SceneMaterialValueType::float_},
+        {"transmission_color", SceneMaterialValueType::color3},
+        {"transmission_depth", SceneMaterialValueType::float_},
+        {"transmission_scatter", SceneMaterialValueType::color3},
+        {"transmission_scatter_anisotropy", SceneMaterialValueType::float_},
+        {"transmission_dispersion_scale", SceneMaterialValueType::float_},
+        {"transmission_dispersion_abbe_number", SceneMaterialValueType::float_},
+        {"subsurface_weight", SceneMaterialValueType::float_},
+        {"subsurface_color", SceneMaterialValueType::color3},
+        {"subsurface_radius", SceneMaterialValueType::float_},
+        {"subsurface_radius_scale", SceneMaterialValueType::color3},
+        {"subsurface_scatter_anisotropy", SceneMaterialValueType::float_},
+        {"fuzz_weight", SceneMaterialValueType::float_},
+        {"fuzz_color", SceneMaterialValueType::color3},
+        {"fuzz_roughness", SceneMaterialValueType::float_},
+        {"coat_weight", SceneMaterialValueType::float_},
+        {"coat_color", SceneMaterialValueType::color3},
+        {"coat_roughness", SceneMaterialValueType::float_},
+        {"coat_roughness_anisotropy", SceneMaterialValueType::float_},
+        {"coat_ior", SceneMaterialValueType::float_},
+        {"coat_darkening", SceneMaterialValueType::float_},
+        {"thin_film_weight", SceneMaterialValueType::float_},
+        {"thin_film_thickness", SceneMaterialValueType::float_},
+        {"thin_film_ior", SceneMaterialValueType::float_},
+        {"emission_luminance", SceneMaterialValueType::float_},
+        {"emission_color", SceneMaterialValueType::color3},
+        {"geometry_opacity", SceneMaterialValueType::float_},
+        {"geometry_normal", SceneMaterialValueType::vector3},
+        {"geometry_coat_normal", SceneMaterialValueType::vector3},
+        {"geometry_tangent", SceneMaterialValueType::vector3},
+        {"geometry_coat_tangent", SceneMaterialValueType::vector3},
+    }};
+    const auto found = std::find_if(inputs.begin(), inputs.end(),
+        [&](const Entry& input) { return input.first == input_name; });
+    return found == inputs.end() ? std::nullopt : std::optional {found->second};
+}
+
+void append_open_pbr_numeric_diagnostics(std::vector<SceneDiagnostic>& diagnostics,
+    const SceneOpenPbrSurface& material, std::string_view path) {
+    const auto in_range = [](double value, double low, double high) {
+        return std::isfinite(value) && value >= low && value <= high;
+    };
+    const std::array weights {material.base_weight, material.base_metalness,
+        material.transmission_weight, material.transmission_dispersion_scale,
+        material.subsurface_weight, material.fuzz_weight, material.coat_weight,
+        material.coat_darkening, material.thin_film_weight, material.geometry_opacity};
+    if (std::any_of(weights.begin(), weights.end(),
+            [&](double value) { return !in_range(value, 0.0, 1.0); })) {
+        diagnostics.push_back(
+            {SceneDiagnosticSeverity::error, "material.open_pbr.weight", std::string {path},
+                "OpenPBR weights, metalness, darkening, and opacity must be in [0, 1]"});
+    }
+    const std::array roughness {material.base_diffuse_roughness, material.specular_roughness,
+        material.specular_roughness_anisotropy, material.fuzz_roughness, material.coat_roughness,
+        material.coat_roughness_anisotropy};
+    if (std::any_of(roughness.begin(), roughness.end(),
+            [&](double value) { return !in_range(value, 0.0, 1.0); })) {
+        diagnostics.push_back({SceneDiagnosticSeverity::error, "material.open_pbr.roughness",
+            std::string {path}, "OpenPBR roughness and roughness anisotropy must be in [0, 1]"});
+    }
+    const std::array signed_anisotropy {material.transmission_scatter_anisotropy,
+        material.subsurface_scatter_anisotropy};
+    if (std::any_of(signed_anisotropy.begin(), signed_anisotropy.end(),
+            [&](double value) { return !in_range(value, -1.0, 1.0); })) {
+        diagnostics.push_back({SceneDiagnosticSeverity::error, "material.open_pbr.anisotropy",
+            std::string {path}, "OpenPBR scatter anisotropy must be in [-1, 1]"});
+    }
+
+    const std::array colors {material.base_color, material.specular_color,
+        material.transmission_color, material.transmission_scatter, material.subsurface_color,
+        material.subsurface_radius_scale, material.fuzz_color, material.coat_color,
+        material.emission_color};
+    if (std::any_of(colors.begin(), colors.end(), [](const Eigen::Vector3d& color) {
+            return !color.allFinite() || (color.array() < 0.0).any();
+        })) {
+        diagnostics.push_back(
+            {SceneDiagnosticSeverity::error, "material.open_pbr.color", std::string {path},
+                "OpenPBR colors must be finite and non-negative; emission may be HDR"});
+    }
+
+    const std::array nonnegative {material.specular_weight, material.transmission_depth,
+        material.subsurface_radius, material.thin_film_thickness, material.emission_luminance};
+    if (std::any_of(nonnegative.begin(), nonnegative.end(),
+            [](double value) { return !std::isfinite(value) || value < 0.0; })) {
+        diagnostics.push_back(
+            {SceneDiagnosticSeverity::error, "material.open_pbr.nonnegative", std::string {path},
+                "OpenPBR unbounded weights, depths, radii, and luminance must be finite and "
+                "non-negative"});
+    }
+    const std::array positive {material.specular_ior, material.transmission_dispersion_abbe_number,
+        material.coat_ior, material.thin_film_ior};
+    if (std::any_of(positive.begin(), positive.end(),
+            [](double value) { return !std::isfinite(value) || value <= 0.0; })) {
+        diagnostics.push_back({SceneDiagnosticSeverity::error, "material.open_pbr.positive",
+            std::string {path}, "OpenPBR IOR and Abbe number inputs must be finite and positive"});
+    }
+}
+
+void append_material_connection_diagnostics(std::vector<SceneDiagnostic>& diagnostics,
+    const SceneOpenPbrSurface& material, std::string_view path,
+    const std::unordered_map<std::string, const ScenePrim*>& prims_by_path) {
+    std::unordered_set<std::string> connected_inputs;
+    for (const SceneMaterialConnection& connection : material.connections) {
+        const std::optional<SceneMaterialValueType> expected =
+            open_pbr_input_type(connection.input_name);
+        if (!expected) {
+            diagnostics.push_back({SceneDiagnosticSeverity::error, "material.connection.input_name",
+                std::string {path},
+                "connection does not name an OpenPBR 1.1.1 input: " + connection.input_name});
+            continue;
+        }
+        if (!connected_inputs.insert(connection.input_name).second) {
+            diagnostics.push_back({SceneDiagnosticSeverity::error, "material.connection.duplicate",
+                std::string {path}, "an OpenPBR input may have at most one texture connection"});
+        }
+        if (connection.input_type != *expected) {
+            diagnostics.push_back({SceneDiagnosticSeverity::error, "material.connection.input_type",
+                std::string {path},
+                "connected input type does not match the official OpenPBR node definition"});
+        }
+        const ScenePrim* texture = find_texture_prim(prims_by_path, connection.texture_path);
+        if (texture == nullptr) {
+            append_texture_reference_diagnostic(diagnostics, prims_by_path, path,
+                connection.texture_path, "material.connection.texture_reference");
+            continue;
+        }
+        const SceneMaterialValueType output_type = texture->texture->output_type;
+        const bool direct_match =
+            output_type == connection.input_type && connection.channel == SceneTextureChannel::rgb;
+        const bool scalar_extract = connection.input_type == SceneMaterialValueType::float_
+                                    && output_type == SceneMaterialValueType::color3
+                                    && connection.channel != SceneTextureChannel::rgb;
+        if (!direct_match && !scalar_extract) {
+            diagnostics.push_back({SceneDiagnosticSeverity::error,
+                "material.connection.output_type", std::string {path},
+                "texture output and selected channel do not match the connected input"});
+        }
+    }
+}
+
+void append_displacement_diagnostics(std::vector<SceneDiagnostic>& diagnostics,
+    const SceneMaterialXDisplacement& displacement, std::string_view path,
+    const std::unordered_map<std::string, const ScenePrim*>& prims_by_path) {
+    if (!std::isfinite(displacement.scale) || !std::isfinite(displacement.scalar_value)
+        || !displacement.vector_value.allFinite()) {
+        diagnostics.push_back({SceneDiagnosticSeverity::error, "material.displacement.value",
+            std::string {path}, "MaterialX displacement values and scale must be finite"});
+    }
+    if (displacement.type == SceneMaterialXDisplacementType::none) {
+        if (!displacement.texture_path.empty()) {
+            diagnostics.push_back({SceneDiagnosticSeverity::error,
+                "material.displacement.unexpected_texture", std::string {path},
+                "a disabled displacement shader must not have a texture input"});
+        }
+        return;
+    }
+    if (!displacement.texture_path.empty()) {
+        append_texture_reference_diagnostic(diagnostics, prims_by_path, path,
+            displacement.texture_path, "material.displacement.texture_reference");
+    }
+}
+
+void append_material_diagnostics(std::vector<SceneDiagnostic>& diagnostics,
+    const SceneMaterial& material, std::string_view path,
+    const std::unordered_map<std::string, const ScenePrim*>& prims_by_path) {
+    std::visit(
+        [&](const auto& payload) {
+            using T = std::decay_t<decltype(payload)>;
+            if constexpr (std::is_same_v<T, SceneOpenPbrSurface>) {
+                if (payload.version != kOpenPbrVersion) {
+                    diagnostics.push_back({SceneDiagnosticSeverity::error,
+                        "material.open_pbr.version", std::string {path},
+                        "SceneIR v2 currently requires the OpenPBR 1.1.1 contract"});
+                }
+                append_open_pbr_numeric_diagnostics(diagnostics, payload, path);
+                const std::array geomprops {
+                    std::string_view {payload.geometry_normal_default_geomprop},
+                    std::string_view {payload.geometry_coat_normal_default_geomprop},
+                    std::string_view {payload.geometry_tangent_default_geomprop},
+                    std::string_view {payload.geometry_coat_tangent_default_geomprop}};
+                if (std::any_of(geomprops.begin(), geomprops.end(),
+                        [](std::string_view value) { return !is_namespaced_identifier(value); })) {
+                    diagnostics.push_back({SceneDiagnosticSeverity::error,
+                        "material.open_pbr.geometry_default", std::string {path},
+                        "OpenPBR normal and tangent defaults must name valid geometry properties"});
+                }
+                append_material_connection_diagnostics(diagnostics, payload, path, prims_by_path);
+                append_displacement_diagnostics(diagnostics, payload.displacement, path,
+                    prims_by_path);
+            } else if constexpr (std::is_same_v<T, SceneIsotropicVolumeMaterial>) {
+                if (!payload.scattering_color.allFinite()
+                    || (payload.scattering_color.array() < 0.0).any()) {
+                    diagnostics.push_back({SceneDiagnosticSeverity::error,
+                        "material.volume.scattering_color", std::string {path},
+                        "volume scattering color must be finite and non-negative"});
+                }
+                if (!std::isfinite(payload.scattering_anisotropy)
+                    || payload.scattering_anisotropy < -1.0
+                    || payload.scattering_anisotropy > 1.0) {
+                    diagnostics.push_back(
+                        {SceneDiagnosticSeverity::error, "material.volume.anisotropy",
+                            std::string {path}, "volume scattering anisotropy must be in [-1, 1]"});
+                }
+                if (!payload.scattering_color_texture_path.empty()) {
+                    append_texture_reference_diagnostic(diagnostics, prims_by_path, path,
+                        payload.scattering_color_texture_path, "material.volume.texture_reference");
+                }
+            }
+        },
+        material);
+}
+
 void append_light_diagnostics(std::vector<SceneDiagnostic>& diagnostics, const SceneLight& light,
     std::string_view path) {
     if (!light.color.allFinite() || (light.color.array() < 0.0).any()) {
@@ -464,6 +765,148 @@ void append_light_diagnostics(std::vector<SceneDiagnostic>& diagnostics, const S
         diagnostics.push_back({SceneDiagnosticSeverity::error, "light.treat_as_line",
             std::string {path}, "only cylinder lights may be treated as line lights"});
     }
+}
+
+SceneTexture compile_legacy_texture(const TextureDesc& legacy) {
+    return std::visit(
+        [&](const auto& texture) {
+            using T = std::decay_t<decltype(texture)>;
+            if constexpr (std::is_same_v<T, ConstantColorTextureDesc>) {
+                return SceneTexture {
+                    .node = SceneTextureNode::constant_color,
+                    .node_definition = "ND_constant_color3",
+                    .color_space = SceneColorSpace::linear_srgb,
+                    .value = texture.color,
+                };
+            } else if constexpr (std::is_same_v<T, CheckerTextureDesc>) {
+                return SceneTexture {
+                    .node = SceneTextureNode::checkerboard,
+                    .node_definition = "ND_checkerboard_color3",
+                    .color_space = SceneColorSpace::linear_srgb,
+                    .scale = texture.scale,
+                    .even_texture_path = indexed_path("/World/Textures", "Texture",
+                        static_cast<std::size_t>(texture.even_texture)),
+                    .odd_texture_path = indexed_path("/World/Textures", "Texture",
+                        static_cast<std::size_t>(texture.odd_texture)),
+                };
+            } else if constexpr (std::is_same_v<T, ImageTextureDesc>) {
+                return SceneTexture {
+                    .node = SceneTextureNode::image,
+                    .node_definition = "ND_image_color3",
+                    .color_space = SceneColorSpace::raw,
+                };
+            } else if constexpr (std::is_same_v<T, NoiseTextureDesc>) {
+                return SceneTexture {
+                    .node = SceneTextureNode::noise3d,
+                    .node_definition = "ND_noise3d_color3",
+                    .color_space = SceneColorSpace::linear_srgb,
+                    .scale = texture.scale,
+                };
+            } else {
+                static_assert(std::is_same_v<T, void>, "unsupported legacy texture");
+            }
+        },
+        legacy);
+}
+
+std::string legacy_texture_source_name(const TextureDesc& legacy) {
+    return std::visit(
+        [](const auto& texture) -> std::string {
+            using T = std::decay_t<decltype(texture)>;
+            if constexpr (std::is_same_v<T, ConstantColorTextureDesc>) {
+                return "constant_color";
+            } else if constexpr (std::is_same_v<T, CheckerTextureDesc>) {
+                return "checkerboard";
+            } else if constexpr (std::is_same_v<T, ImageTextureDesc>) {
+                return "image";
+            } else if constexpr (std::is_same_v<T, NoiseTextureDesc>) {
+                return "noise3d";
+            } else {
+                static_assert(std::is_same_v<T, void>, "unsupported legacy texture");
+            }
+        },
+        legacy);
+}
+
+SceneMaterialConnection legacy_color_connection(std::string input_name, int texture_index) {
+    return SceneMaterialConnection {
+        .input_name = std::move(input_name),
+        .input_type = SceneMaterialValueType::color3,
+        .texture_path =
+            indexed_path("/World/Textures", "Texture", static_cast<std::size_t>(texture_index)),
+        .channel = SceneTextureChannel::rgb,
+    };
+}
+
+SceneMaterial compile_legacy_material(const MaterialDesc& legacy) {
+    return std::visit(
+        [](const auto& material) -> SceneMaterial {
+            using T = std::decay_t<decltype(material)>;
+            if constexpr (std::is_same_v<T, DiffuseMaterial>) {
+                SceneOpenPbrSurface surface;
+                // The legacy Lambertian model has no dielectric specular lobe.
+                surface.specular_weight = 0.0;
+                surface.connections.push_back(
+                    legacy_color_connection("base_color", material.albedo_texture));
+                return surface;
+            } else if constexpr (std::is_same_v<T, MetalMaterial>) {
+                SceneOpenPbrSurface surface;
+                surface.base_metalness = 1.0;
+                // Legacy fuzz perturbs the reflected direction; clamping it into the
+                // standardized roughness range is the deterministic compatibility map.
+                surface.specular_roughness = std::clamp(material.fuzz, 0.0, 1.0);
+                surface.connections.push_back(
+                    legacy_color_connection("base_color", material.albedo_texture));
+                return surface;
+            } else if constexpr (std::is_same_v<T, DielectricMaterial>) {
+                SceneOpenPbrSurface surface;
+                surface.base_color = Eigen::Vector3d::Ones();
+                surface.specular_roughness = 0.0;
+                surface.specular_ior = material.ior;
+                surface.transmission_weight = 1.0;
+                return surface;
+            } else if constexpr (std::is_same_v<T, EmissiveMaterial>) {
+                SceneOpenPbrSurface surface;
+                surface.base_weight = 0.0;
+                surface.specular_weight = 0.0;
+                // A unit luminance multiplier preserves the legacy texture's numeric
+                // emission while making the OpenPBR radiometric control explicit.
+                surface.emission_luminance = 1.0;
+                surface.connections.push_back(
+                    legacy_color_connection("emission_color", material.emission_texture));
+                return surface;
+            } else if constexpr (std::is_same_v<T, IsotropicVolumeMaterial>) {
+                return SceneIsotropicVolumeMaterial {
+                    .scattering_color_texture_path = indexed_path("/World/Textures", "Texture",
+                        static_cast<std::size_t>(material.albedo_texture)),
+                    .scattering_anisotropy = 0.0,
+                };
+            } else {
+                static_assert(std::is_same_v<T, void>, "unsupported legacy material");
+            }
+        },
+        legacy);
+}
+
+std::string legacy_material_source_name(const MaterialDesc& legacy) {
+    return std::visit(
+        [](const auto& material) -> std::string {
+            using T = std::decay_t<decltype(material)>;
+            if constexpr (std::is_same_v<T, DiffuseMaterial>) {
+                return "diffuse";
+            } else if constexpr (std::is_same_v<T, MetalMaterial>) {
+                return "metal";
+            } else if constexpr (std::is_same_v<T, DielectricMaterial>) {
+                return "dielectric";
+            } else if constexpr (std::is_same_v<T, EmissiveMaterial>) {
+                return "emissive";
+            } else if constexpr (std::is_same_v<T, IsotropicVolumeMaterial>) {
+                return "isotropic_volume";
+            } else {
+                static_assert(std::is_same_v<T, void>, "unsupported legacy material");
+            }
+        },
+        legacy);
 }
 
 SceneMeshGeometry legacy_quad_geometry(const QuadShape& quad) {
@@ -789,6 +1232,30 @@ std::vector<SceneDiagnostic> validate_scene_ir_v2(const SceneIRv2& scene) {
             append_light_diagnostics(diagnostics, *prim.light, prim.path);
         }
 
+        if (prim.kind == ScenePrimKind::texture) {
+            if (!prim.texture) {
+                diagnostics.push_back({SceneDiagnosticSeverity::error, "texture.payload_missing",
+                    prim.path, "texture prim requires a MaterialX texture payload"});
+            } else {
+                append_texture_diagnostics(diagnostics, *prim.texture, prim, prims_by_path);
+            }
+        } else if (prim.texture) {
+            diagnostics.push_back({SceneDiagnosticSeverity::error, "texture.payload_unexpected",
+                prim.path, "only texture prims may carry texture payloads"});
+        }
+
+        if (prim.kind == ScenePrimKind::material) {
+            if (!prim.material) {
+                diagnostics.push_back({SceneDiagnosticSeverity::error, "material.payload_missing",
+                    prim.path, "material prim requires an OpenPBR or volume payload"});
+            } else {
+                append_material_diagnostics(diagnostics, *prim.material, prim.path, prims_by_path);
+            }
+        } else if (prim.material) {
+            diagnostics.push_back({SceneDiagnosticSeverity::error, "material.payload_unexpected",
+                prim.path, "only material prims may carry material payloads"});
+        }
+
         for (const SceneAssetReference& asset : prim.asset_references) {
             append_asset_diagnostics(diagnostics, asset, prim.path);
         }
@@ -894,6 +1361,62 @@ std::vector<SceneDiagnostic> diagnose_scene_ir_v2_capabilities(const SceneIRv2& 
                 {SceneDiagnosticSeverity::error, "capability.asset_references", prim.path,
                     capabilities.backend_name
                         + " does not preserve authored and resolved asset paths"});
+        }
+        if (prim.texture) {
+            if (!capabilities.materialx_textures) {
+                diagnostics.push_back(
+                    {SceneDiagnosticSeverity::error, "capability.materialx_textures", prim.path,
+                        capabilities.backend_name
+                            + " does not support SceneIR v2 MaterialX texture nodes"});
+            }
+            if (!capabilities.texture_color_spaces
+                && prim.texture->color_space != SceneColorSpace::raw) {
+                diagnostics.push_back(
+                    {SceneDiagnosticSeverity::error, "capability.texture_color_spaces", prim.path,
+                        capabilities.backend_name
+                            + " does not preserve explicit texture color-space semantics"});
+            }
+        }
+        if (prim.material) {
+            std::visit(
+                [&](const auto& material) {
+                    using T = std::decay_t<decltype(material)>;
+                    if constexpr (std::is_same_v<T, SceneOpenPbrSurface>) {
+                        if (!capabilities.open_pbr_surface) {
+                            diagnostics.push_back({SceneDiagnosticSeverity::error,
+                                "capability.open_pbr_surface", prim.path,
+                                capabilities.backend_name
+                                    + " does not implement the OpenPBR Surface contract"});
+                        }
+                        const bool has_normal_connection =
+                            std::any_of(material.connections.begin(), material.connections.end(),
+                                [](const SceneMaterialConnection& connection) {
+                                    return connection.input_name == "geometry_normal"
+                                           || connection.input_name == "geometry_coat_normal";
+                                });
+                        if (!capabilities.normal_mapping && has_normal_connection) {
+                            diagnostics.push_back({SceneDiagnosticSeverity::error,
+                                "capability.normal_mapping", prim.path,
+                                capabilities.backend_name
+                                    + " does not support connected OpenPBR normal inputs"});
+                        }
+                        if (!capabilities.material_displacement
+                            && material.displacement.type != SceneMaterialXDisplacementType::none) {
+                            diagnostics.push_back({SceneDiagnosticSeverity::error,
+                                "capability.material_displacement", prim.path,
+                                capabilities.backend_name
+                                    + " does not support MaterialX displacement shaders"});
+                        }
+                    } else if constexpr (std::is_same_v<T, SceneIsotropicVolumeMaterial>) {
+                        if (!capabilities.isotropic_volume_materials) {
+                            diagnostics.push_back({SceneDiagnosticSeverity::error,
+                                "capability.isotropic_volume_material", prim.path,
+                                capabilities.backend_name
+                                    + " does not support isotropic volume material payloads"});
+                        }
+                    }
+                },
+                *prim.material);
         }
         if (prim.light) {
             const SceneLight& light = *prim.light;
@@ -1058,12 +1581,15 @@ SceneIRv2 compile_legacy_scene_ir_v2(const SceneIR& legacy_scene, SceneStageMeta
     scene.add_prim(ScenePrim {.path = "/World/Volumes"});
 
     for (std::size_t index = 0; index < legacy_scene.textures().size(); ++index) {
+        const TextureDesc& legacy_texture = legacy_scene.textures()[index];
         ScenePrim texture_prim {
             .path = indexed_path("/World/Textures", "Texture", index),
             .kind = ScenePrimKind::texture,
+            .texture = compile_legacy_texture(legacy_texture),
             .compatibility_source_index = index,
+            .compatibility_source_name = legacy_texture_source_name(legacy_texture),
         };
-        if (const auto* image = std::get_if<ImageTextureDesc>(&legacy_scene.textures()[index])) {
+        if (const auto* image = std::get_if<ImageTextureDesc>(&legacy_texture)) {
             texture_prim.asset_references.push_back(SceneAssetReference {
                 .authored_path = image->authored_path.empty() ? image->path : image->authored_path,
                 .resolved_path = image->path,
@@ -1072,10 +1598,13 @@ SceneIRv2 compile_legacy_scene_ir_v2(const SceneIR& legacy_scene, SceneStageMeta
         scene.add_prim(std::move(texture_prim));
     }
     for (std::size_t index = 0; index < legacy_scene.materials().size(); ++index) {
+        const MaterialDesc& legacy_material = legacy_scene.materials()[index];
         scene.add_prim(ScenePrim {
             .path = indexed_path("/World/Materials", "Material", index),
             .kind = ScenePrimKind::material,
+            .material = compile_legacy_material(legacy_material),
             .compatibility_source_index = index,
+            .compatibility_source_name = legacy_material_source_name(legacy_material),
         });
     }
     for (std::size_t index = 0; index < legacy_scene.shapes().size(); ++index) {

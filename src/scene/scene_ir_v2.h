@@ -90,6 +90,165 @@ struct SceneAssetReference {
     std::string resolved_path;
 };
 
+inline constexpr std::string_view kOpenPbrMaterialXNodeDef = "ND_open_pbr_surface_surfaceshader";
+inline constexpr std::string_view kOpenPbrVersion = "1.1.1";
+inline constexpr std::string_view kMaterialXScalarDisplacementNodeDef = "ND_displacement_float";
+inline constexpr std::string_view kMaterialXVectorDisplacementNodeDef = "ND_displacement_vector3";
+
+enum class SceneMaterialValueType {
+    float_,
+    color3,
+    vector3,
+};
+
+enum class SceneColorSpace {
+    raw,
+    linear_srgb,
+    srgb_texture,
+    acescg,
+};
+
+enum class SceneTextureNode {
+    constant_color,
+    checkerboard,
+    image,
+    noise3d,
+};
+
+enum class SceneTextureAddressMode {
+    constant,
+    clamp,
+    periodic,
+    mirror,
+};
+
+enum class SceneTextureFilterType {
+    closest,
+    linear,
+    cubic,
+};
+
+struct SceneTexture {
+    SceneTextureNode node = SceneTextureNode::constant_color;
+    std::string node_definition = "ND_constant_color3";
+    SceneMaterialValueType output_type = SceneMaterialValueType::color3;
+    // Numeric legacy colors are linear sRGB. Legacy image bytes remain raw so this
+    // compatibility projection records the existing no-conversion execution behavior.
+    SceneColorSpace color_space = SceneColorSpace::linear_srgb;
+    Eigen::Vector3d value = Eigen::Vector3d::Zero();
+    double scale = 1.0;
+    std::string even_texture_path;
+    std::string odd_texture_path;
+    // SceneIR uses the OpenUSD primary UV convention; MaterialX frontends map this to UV0.
+    std::string texcoord_primvar = "st";
+    SceneTextureAddressMode u_address_mode = SceneTextureAddressMode::periodic;
+    SceneTextureAddressMode v_address_mode = SceneTextureAddressMode::periodic;
+    SceneTextureFilterType filter_type = SceneTextureFilterType::linear;
+};
+
+enum class SceneTextureChannel {
+    rgb,
+    red,
+    green,
+    blue,
+    alpha,
+    luminance,
+};
+
+struct SceneMaterialConnection {
+    // Exact OpenPBR or MaterialX input name. Validation also checks its declared type.
+    std::string input_name;
+    SceneMaterialValueType input_type = SceneMaterialValueType::color3;
+    std::string texture_path;
+    SceneTextureChannel channel = SceneTextureChannel::rgb;
+};
+
+enum class SceneMaterialXDisplacementType {
+    none,
+    scalar,
+    vector3,
+};
+
+struct SceneMaterialXDisplacement {
+    SceneMaterialXDisplacementType type = SceneMaterialXDisplacementType::none;
+    double scalar_value = 0.0;
+    Eigen::Vector3d vector_value = Eigen::Vector3d::Zero();
+    double scale = 1.0;
+    std::string texture_path;
+};
+
+enum class SceneMaterialEnergyPolicy {
+    open_pbr_layered_energy_conserving,
+};
+
+struct SceneOpenPbrSurface {
+    std::string version = std::string {kOpenPbrVersion};
+
+    double base_weight = 1.0;
+    Eigen::Vector3d base_color = Eigen::Vector3d::Constant(0.8);
+    double base_diffuse_roughness = 0.0;
+    double base_metalness = 0.0;
+
+    double specular_weight = 1.0;
+    Eigen::Vector3d specular_color = Eigen::Vector3d::Ones();
+    double specular_roughness = 0.3;
+    double specular_ior = 1.5;
+    double specular_roughness_anisotropy = 0.0;
+
+    double transmission_weight = 0.0;
+    Eigen::Vector3d transmission_color = Eigen::Vector3d::Ones();
+    double transmission_depth = 0.0;
+    Eigen::Vector3d transmission_scatter = Eigen::Vector3d::Zero();
+    double transmission_scatter_anisotropy = 0.0;
+    double transmission_dispersion_scale = 0.0;
+    double transmission_dispersion_abbe_number = 20.0;
+
+    double subsurface_weight = 0.0;
+    Eigen::Vector3d subsurface_color = Eigen::Vector3d::Constant(0.8);
+    double subsurface_radius = 1.0;
+    Eigen::Vector3d subsurface_radius_scale = Eigen::Vector3d {1.0, 0.5, 0.25};
+    double subsurface_scatter_anisotropy = 0.0;
+
+    double fuzz_weight = 0.0;
+    Eigen::Vector3d fuzz_color = Eigen::Vector3d::Ones();
+    double fuzz_roughness = 0.5;
+
+    double coat_weight = 0.0;
+    Eigen::Vector3d coat_color = Eigen::Vector3d::Ones();
+    double coat_roughness = 0.0;
+    double coat_roughness_anisotropy = 0.0;
+    double coat_ior = 1.6;
+    double coat_darkening = 1.0;
+
+    double thin_film_weight = 0.0;
+    double thin_film_thickness = 0.5;
+    double thin_film_ior = 1.4;
+
+    double emission_luminance = 0.0;
+    Eigen::Vector3d emission_color = Eigen::Vector3d::Ones();
+
+    double geometry_opacity = 1.0;
+    bool geometry_thin_walled = false;
+    std::string geometry_normal_default_geomprop = "Nworld";
+    std::string geometry_coat_normal_default_geomprop = "Nworld";
+    std::string geometry_tangent_default_geomprop = "Tworld";
+    std::string geometry_coat_tangent_default_geomprop = "Tworld";
+
+    std::vector<SceneMaterialConnection> connections;
+    // MaterialX displacement is a companion shader, not an OpenPBR Surface input.
+    SceneMaterialXDisplacement displacement;
+    SceneMaterialEnergyPolicy energy_policy =
+        SceneMaterialEnergyPolicy::open_pbr_layered_energy_conserving;
+};
+
+struct SceneIsotropicVolumeMaterial {
+    Eigen::Vector3d scattering_color = Eigen::Vector3d::Ones();
+    std::string scattering_color_texture_path;
+    double scattering_anisotropy = 0.0;
+};
+
+using SceneMaterial = std::variant<SceneOpenPbrSurface, SceneIsotropicVolumeMaterial>;
+
 enum class SceneLightType {
     geometry,
     sphere,
@@ -247,6 +406,8 @@ struct ScenePrim {
     std::optional<SceneCamera> camera;
     // Intrinsic lights use kind=light. Geometry lights apply this payload to a surface prim.
     std::optional<SceneLight> light;
+    std::optional<SceneTexture> texture;
+    std::optional<SceneMaterial> material;
     std::vector<SceneAssetReference> asset_references;
     // Populated only by compatibility frontends; native v2 prims do not need an integer identity.
     std::optional<std::size_t> compatibility_source_index;
@@ -294,6 +455,12 @@ struct SceneBackendCapabilities {
     bool camera_model_extensions = false;
     bool camera_distortion = false;
     bool asset_references = false;
+    bool materialx_textures = false;
+    bool texture_color_spaces = false;
+    bool open_pbr_surface = false;
+    bool isotropic_volume_materials = false;
+    bool normal_mapping = false;
+    bool material_displacement = false;
     // usd_lux_lights implies support for every common LightAPI input, including exposure.
     bool usd_lux_lights = false;
     bool analytic_lights = false;
