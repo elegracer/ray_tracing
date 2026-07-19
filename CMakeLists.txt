@@ -99,9 +99,12 @@ target_sources(core
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/core.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/offline_shared_scene_renderer.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/offline_shared_scene_renderer.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/common/openpbr_core.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/cpu_scene_adapter.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/obj_mtl_importer.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/cpu_scene_adapter.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/openpbr_core_adapter.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/openpbr_core_adapter.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/realtime_scene_adapter.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/realtime_scene_adapter.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/scene_file_catalog.cpp
