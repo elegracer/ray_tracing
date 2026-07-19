@@ -28,6 +28,7 @@ struct CoreOutput {
     rt::OpenPbrSample sample {};
     rt::OpenPbrVec3 emission {};
     rt::OpenPbrVec3 transmission_at_depth {};
+    rt::OpenPbrVec3 decoded_srgb {};
 };
 
 void check_cuda(cudaError_t error, const char* operation) {
@@ -67,6 +68,8 @@ __global__ void evaluate_cases(const CoreCase* cases, CoreOutput* outputs) {
     outputs[index].emission = rt::emission_openpbr_core(test_case.material);
     outputs[index].transmission_at_depth = rt::openpbr_transmission_at_distance(test_case.material,
         test_case.material.transmission_depth);
+    outputs[index].decoded_srgb = rt::openpbr_source_to_linear(
+        {0.04045f, 0.5f, 1.0f}, rt::OpenPbrSourceColorSpace::srgb_texture);
 }
 
 void expect_vec_near(const rt::OpenPbrVec3& actual, const rt::OpenPbrVec3& expected,
@@ -142,6 +145,8 @@ int main() {
         expected[index].emission = rt::emission_openpbr_core(cases[index].material);
         expected[index].transmission_at_depth = rt::openpbr_transmission_at_distance(
             cases[index].material, cases[index].material.transmission_depth);
+        expected[index].decoded_srgb = rt::openpbr_source_to_linear(
+            {0.04045f, 0.5f, 1.0f}, rt::OpenPbrSourceColorSpace::srgb_texture);
     }
 
     CoreCase* device_cases = nullptr;
@@ -187,6 +192,8 @@ int main() {
             expect_vec_near(actual[index].transmission_at_depth,
                 expected[index].transmission_at_depth, 2e-5,
                 prefix + " transmission at authored depth");
+            expect_vec_near(actual[index].decoded_srgb, expected[index].decoded_srgb, 2e-6,
+                prefix + " source-to-linear conversion");
         }
 
         cudaFree(device_outputs);

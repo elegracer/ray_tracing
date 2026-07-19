@@ -44,6 +44,36 @@ struct OpenPbrCoreMaterial {
     int geometry_thin_walled = 0;
 };
 
+enum class OpenPbrSourceColorSpace : int {
+    raw = 0,
+    linear_srgb = 1,
+    srgb_texture = 2,
+};
+
+enum class OpenPbrColorInput : int {
+    base_color = 0,
+    specular_color = 1,
+    transmission_color = 2,
+    emission_color = 3,
+};
+
+struct OpenPbrColorTextureBinding {
+    int texture_index = -1;
+    OpenPbrSourceColorSpace source_color_space = OpenPbrSourceColorSpace::linear_srgb;
+};
+
+struct OpenPbrColorTextureBindings {
+    OpenPbrColorTextureBinding base_color {};
+    OpenPbrColorTextureBinding specular_color {};
+    OpenPbrColorTextureBinding transmission_color {};
+    OpenPbrColorTextureBinding emission_color {};
+};
+
+struct OpenPbrCompiledMaterial {
+    OpenPbrCoreMaterial parameters {};
+    OpenPbrColorTextureBindings color_textures {};
+};
+
 struct OpenPbrFrame {
     OpenPbrVec3 tangent {1.0f, 0.0f, 0.0f};
     OpenPbrVec3 bitangent {0.0f, 1.0f, 0.0f};
@@ -169,6 +199,31 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_clamp_nonnegative(const Open
 
 RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_clamp_unit(const OpenPbrVec3& value) {
     return {openpbr_saturate(value.x), openpbr_saturate(value.y), openpbr_saturate(value.z)};
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE float openpbr_srgb_channel_to_linear(float value) {
+    return value <= 0.04045f ? value / 12.92f : powf((value + 0.055f) / 1.055f, 2.4f);
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_source_to_linear(const OpenPbrVec3& value,
+    OpenPbrSourceColorSpace source_color_space) {
+    if (source_color_space != OpenPbrSourceColorSpace::srgb_texture) {
+        return value;
+    }
+    return {openpbr_srgb_channel_to_linear(value.x), openpbr_srgb_channel_to_linear(value.y),
+        openpbr_srgb_channel_to_linear(value.z)};
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE void openpbr_apply_color_input(OpenPbrCoreMaterial& material,
+    OpenPbrColorInput input, const OpenPbrVec3& source_value,
+    OpenPbrSourceColorSpace source_color_space) {
+    const OpenPbrVec3 value = openpbr_source_to_linear(source_value, source_color_space);
+    switch (input) {
+        case OpenPbrColorInput::base_color: material.base_color = value; break;
+        case OpenPbrColorInput::specular_color: material.specular_color = value; break;
+        case OpenPbrColorInput::transmission_color: material.transmission_color = value; break;
+        case OpenPbrColorInput::emission_color: material.emission_color = value; break;
+    }
 }
 
 RT_OPENPBR_HD RT_OPENPBR_INLINE float openpbr_luminance(const OpenPbrVec3& value) {

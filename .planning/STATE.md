@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-07-19)
 ## Current Position
 
 Phase: 3 of 6 — OpenPBR Core And Physical BSDFs
-Plan: PBR-01/02 authoring and shared core behavior plus the opt-in constant-material production path are complete; implement PBR-04 connected texture/color execution before PBR-05 compatibility images
+Plan: PBR-01/02/04 authoring, shared core behavior, and connected color execution are complete; implement PBR-05 compatibility images and lossy-mapping diagnostics
 Status: Active milestone, Phase 3 in progress
-Last activity: 2026-07-19 - Wired constant SceneIR v2 OpenPBR materials through CPU and GPU rendering with a deterministic cross-backend gate
+Last activity: 2026-07-19 - Wired supported SceneIR v2 MaterialX color3 connections and shared source-to-linear conversion through CPU and GPU OpenPBR rendering
 
-Progress: [####------] 40% OpenPBR requirements; PBR-01/02 complete, PBR-04/05 remain and PBR-03 stays gated to Phase 4
+Progress: [######----] 60% OpenPBR requirements; PBR-01/02/04 complete, PBR-05 remains and PBR-03 stays gated to Phase 4
 
 ## v2.0 Phase 1 Evidence
 
@@ -78,11 +78,13 @@ The existing flat `SceneIR` remains the current CPU/GPU execution model. `compil
 
 ## v2.0 Phase 3 Evidence
 
-`OpenPbrCoreMaterial` now crosses the production boundary through explicit `adapt_to_cpu_openpbr` and `adapt_to_realtime_openpbr` entry points. Both consume the same SceneIR v2 compatibility material table; missing or duplicate identities, surface/volume mismatches, connected inputs, displacement, scattering/dispersion, and active Phase-4 lobes fail explicitly rather than rendering with ignored parameters. The legacy adapters and default scene factory remain unchanged.
+`OpenPbrCoreMaterial` now crosses the production boundary through explicit `adapt_to_cpu_openpbr` and `adapt_to_realtime_openpbr` entry points. Both consume the same SceneIR v2 compatibility material table; missing or duplicate identities, surface/volume mismatches, unsupported connections, displacement, scattering/dispersion, and active Phase-4 lobes fail explicitly rather than rendering with ignored parameters. The legacy adapters and default scene factory remain unchanged.
 
-The CPU material and GPU path tracer call the shared OpenPBR emission, evaluate, and sample/PDF implementation. GPU direct lighting evaluates the OpenPBR BSDF and recognizes OpenPBR emissive geometry. Full parameter blocks live in an opt-in sidecar buffer while the common `MaterialSample` remains at most 24 bytes, preventing every legacy hit from carrying the OpenPBR block.
+The CPU material and GPU path tracer call the shared OpenPBR emission, evaluate, and sample/PDF implementation. GPU direct lighting evaluates the OpenPBR BSDF and recognizes OpenPBR emissive geometry. `OpenPbrCompiledMaterial` keeps constants plus base/specular/transmission/emission color bindings in an opt-in sidecar buffer while the common `MaterialSample` remains at most 24 bytes, preventing every legacy hit from carrying the OpenPBR block.
 
-The deterministic 64x64 reference gate hits and scatters the same SceneIR v2 material on CPU, renders it through `OptixRenderer`, and bounds linear RGB disagreement to `5e-4`; separate scenes prove non-Lambertian direct response and OpenPBR emissive-light participation. The focused production-path gate passes five consecutive runs. The full suite contains 60 tests after this slice.
+The shared host/device color path preserves raw and linear-sRGB values, decodes sRGB texture inputs with the standard piecewise transfer, and applies sampled values only to the four supported color3 inputs. The compiler resolves bindings through compatibility texture identities; ACEScg, non-RGB channels, missing identities, and other connected inputs fail explicitly. CPU proxy textures and OptiX packed textures evaluate the same binding at the hit point.
+
+The deterministic 64x64 reference gate now hits and scatters a connected SceneIR v2 material on CPU, renders it through `OptixRenderer`, and bounds linear RGB disagreement to `5e-4`; separate scenes prove non-Lambertian direct response and OpenPBR emissive-light participation. Host/CUDA transfer tests cover source-to-linear parity, and raw/linear/sRGB plus unsupported cases are independently gated. The full suite passes 60/60 after this slice.
 
 Two fixed-seed default `smoke` captures used four 640x480 cameras, eight warmup frames, 100 measured frames, realtime profile, and no image writes on RTX 3090. They measured `29.996 ms / 33.34 FPS` and `28.022 ms / 35.69 FPS`, compared with the preceding same-protocol `29.1951/29.7210 ms` records. This is no-regression evidence, not a new uplift claim; one run contained system-noise P99 spikes while the second P99 was `32.309 ms`.
 
@@ -134,7 +136,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- Evaluate supported SceneIR v2 MaterialX color3 connections in the shared CPU/GPU compiler with explicit source-to-linear color conversion, then add legacy compatibility images and lossy-mapping diagnostics.
+- Add PBR-05 legacy diffuse/metal/dielectric/emissive/volume compatibility images and report lossy mappings before considering default-path migration.
 
 ### Blockers/Concerns
 
@@ -162,5 +164,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-07-19
-Stopped at: PBR-01/02 and the opt-in constant-material production path are closed with shared CPU/GPU sampling, direct lighting, emission, compact sidecar storage, a `5e-4` linear reference bound, 60 tests, and two no-regression benchmark captures; PBR-04 connected texture/color execution is next
+Stopped at: PBR-01/02/04 and the opt-in connected-material production path are closed with shared CPU/GPU sampling, direct lighting, emission, raw/linear/sRGB conversion, compact sidecar storage, a `5e-4` linear reference bound, and 60/60 tests; PBR-05 compatibility images and lossy-mapping diagnostics are next
 Resume file: .planning/milestones/v2.0-REQUIREMENTS.md

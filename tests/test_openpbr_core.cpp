@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -70,7 +71,8 @@ void test_scene_contract_mapping() {
     authored.geometry_opacity = 0.75;
     authored.geometry_thin_walled = true;
 
-    const rt::OpenPbrCoreMaterial material = rt::scene::compile_openpbr_core_material(authored);
+    const rt::OpenPbrCoreMaterial material =
+        rt::scene::compile_openpbr_core_material(authored).parameters;
     expect_near(material.base_weight, 0.7, 1e-6, "base weight");
     expect_vec_near(material.base_color, {0.2f, 0.4f, 0.6f}, 1e-6, "base color");
     expect_near(material.base_diffuse_roughness, 0.35, 1e-6, "diffuse roughness");
@@ -99,9 +101,88 @@ void test_scene_contract_mapping() {
     } catch (const std::invalid_argument& ex) {
         rejected_connection =
             std::string {ex.what()}
-            == "OpenPBR production core does not yet support connected material inputs";
+            == "connected OpenPBR inputs require a SceneIR v2 texture compilation context";
     }
-    expect_true(rejected_connection, "connected inputs fail instead of being ignored");
+    expect_true(rejected_connection,
+        "connected inputs require the SceneIR v2 texture compilation context");
+}
+
+rt::scene::SceneIRv2 connected_color_scene(std::vector<std::string> input_names,
+    rt::scene::SceneColorSpace color_space) {
+    rt::scene::SceneIRv2 scene;
+    scene.add_prim(rt::scene::ScenePrim {.path = "/World"});
+    scene.add_prim(rt::scene::ScenePrim {.path = "/World/Textures"});
+    scene.add_prim(rt::scene::ScenePrim {
+        .path = "/World/Textures/Color",
+        .kind = rt::scene::ScenePrimKind::texture,
+        .texture = rt::scene::SceneTexture {.color_space = color_space},
+        .compatibility_source_index = 0,
+    });
+    scene.add_prim(rt::scene::ScenePrim {.path = "/World/Materials"});
+    rt::scene::SceneOpenPbrSurface surface;
+    for (std::string& input_name : input_names) {
+        surface.connections.push_back(rt::scene::SceneMaterialConnection {
+            .input_name = std::move(input_name),
+            .input_type = rt::scene::SceneMaterialValueType::color3,
+            .texture_path = "/World/Textures/Color",
+            .channel = rt::scene::SceneTextureChannel::rgb,
+        });
+    }
+    scene.add_prim(rt::scene::ScenePrim {
+        .path = "/World/Materials/Surface",
+        .kind = rt::scene::ScenePrimKind::material,
+        .material = surface,
+        .compatibility_source_index = 0,
+    });
+    return scene;
+}
+
+void test_color_connections_and_color_spaces() {
+    rt::scene::SceneIRv2 scene = connected_color_scene(
+        {"base_color", "specular_color", "transmission_color", "emission_color"},
+        rt::scene::SceneColorSpace::srgb_texture);
+
+    const auto table = rt::scene::compile_openpbr_core_material_table(scene, 1, 1);
+    expect_true(table.size() == 1 && table[0].has_value(), "connected material table entry");
+    const rt::OpenPbrColorTextureBindings& bindings = table[0]->color_textures;
+    expect_true(bindings.base_color.texture_index == 0 && bindings.specular_color.texture_index == 0
+                    && bindings.transmission_color.texture_index == 0
+                    && bindings.emission_color.texture_index == 0,
+        "supported color3 inputs bind the compatibility texture");
+    expect_true(bindings.base_color.source_color_space == rt::OpenPbrSourceColorSpace::srgb_texture,
+        "compiled binding retains source color space");
+
+    const rt::OpenPbrVec3 raw =
+        rt::openpbr_source_to_linear({0.04045f, 0.5f, 1.0f}, rt::OpenPbrSourceColorSpace::raw);
+    const rt::OpenPbrVec3 linear = rt::openpbr_source_to_linear({0.04045f, 0.5f, 1.0f},
+        rt::OpenPbrSourceColorSpace::linear_srgb);
+    const rt::OpenPbrVec3 srgb = rt::openpbr_source_to_linear({0.04045f, 0.5f, 1.0f},
+        rt::OpenPbrSourceColorSpace::srgb_texture);
+    expect_vec_near(raw, {0.04045f, 0.5f, 1.0f}, 1e-7, "raw source bypass");
+    expect_vec_near(linear, {0.04045f, 0.5f, 1.0f}, 1e-7, "linear source bypass");
+    expect_vec_near(srgb, {0.0031308f, 0.21404114f, 1.0f}, 1e-6,
+        "sRGB texture source decodes to linear sRGB");
+
+    bool unsupported_input = false;
+    try {
+        (void)rt::scene::compile_openpbr_core_material_table(
+            connected_color_scene({"coat_color"}, rt::scene::SceneColorSpace::linear_srgb), 1, 1);
+    } catch (const std::invalid_argument& ex) {
+        unsupported_input =
+            std::string {ex.what()}.find("supports RGB connections only") != std::string::npos;
+    }
+    expect_true(unsupported_input, "unsupported active color connection fails explicitly");
+
+    bool unsupported_color_space = false;
+    try {
+        (void)rt::scene::compile_openpbr_core_material_table(
+            connected_color_scene({"base_color"}, rt::scene::SceneColorSpace::acescg), 1, 1);
+    } catch (const std::invalid_argument& ex) {
+        unsupported_color_space =
+            std::string {ex.what()}
+            == "OpenPBR production core does not yet support ACEScg source conversion";
+    }
+    expect_true(unsupported_color_space, "unsupported color conversion fails explicitly");
 }
 
 void test_frame_normal_and_tangent_semantics() {
@@ -366,6 +447,7 @@ void test_opacity_thin_walled_and_emission() {
 
 int main() {
     test_scene_contract_mapping();
+    test_color_connections_and_color_spaces();
     test_frame_normal_and_tangent_semantics();
     test_evaluate_sample_pdf_contract();
     test_pdf_normalization_and_furnace_energy();

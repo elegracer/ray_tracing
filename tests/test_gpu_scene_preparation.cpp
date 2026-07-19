@@ -37,8 +37,9 @@ int main() {
     rt::OpenPbrCoreMaterial openpbr_parameters;
     openpbr_parameters.base_color = {0.25f, 0.5f, 0.75f};
     openpbr_parameters.specular_weight = 0.0f;
-    const int openpbr =
-        scene.add_material(rt::OpenPbrMaterialDesc {.parameters = openpbr_parameters});
+    const int openpbr = scene.add_material(rt::OpenPbrMaterialDesc {
+        .compiled = rt::OpenPbrCompiledMaterial {.parameters = openpbr_parameters},
+    });
 
     scene.add_sphere(rt::SpherePrimitive {
         lambertian,
@@ -126,7 +127,8 @@ int main() {
     expect_true(prepared.materials[5].type == 5, "OpenPBR type");
     expect_true(prepared.materials[5].openpbr_index == 0, "OpenPBR sidecar index");
     expect_true(prepared.openpbr_materials.size() == 1, "OpenPBR sidecar count");
-    expect_near(prepared.openpbr_materials[0].base_color.x, 0.25, 1e-6, "OpenPBR base color");
+    expect_near(prepared.openpbr_materials[0].parameters.base_color.x, 0.25, 1e-6,
+        "OpenPBR base color");
     expect_true(openpbr == 5, "OpenPBR material index");
     expect_true(sizeof(rt::MaterialSample) <= 24,
         "legacy material samples remain compact after OpenPBR integration");

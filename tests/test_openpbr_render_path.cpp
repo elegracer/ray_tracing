@@ -21,10 +21,14 @@ struct OpenPbrReferenceScene {
 
 OpenPbrReferenceScene make_reference_scene() {
     OpenPbrReferenceScene scene;
-    const int legacy_texture = scene.compatibility.add_texture(
-        rt::scene::ConstantColorTextureDesc {.color = Eigen::Vector3d::Zero()});
+    const Eigen::Vector3d base_source {0.5, 0.25, 0.75};
+    const Eigen::Vector3d emission_source {0.5, 0.25, 0.125};
+    const int base_texture =
+        scene.compatibility.add_texture(rt::scene::ConstantColorTextureDesc {.color = base_source});
+    const int emission_texture = scene.compatibility.add_texture(
+        rt::scene::ConstantColorTextureDesc {.color = emission_source});
     const int legacy_material = scene.compatibility.add_material(
-        rt::scene::DiffuseMaterial {.albedo_texture = legacy_texture});
+        rt::scene::DiffuseMaterial {.albedo_texture = base_texture});
     const int sphere = scene.compatibility.add_shape(rt::scene::SphereShape {
         .center = rt::legacy_renderer_to_world(Eigen::Vector3d {0.0, 0.0, -3.0}),
         .radius = 1.0,
@@ -35,12 +39,43 @@ OpenPbrReferenceScene make_reference_scene() {
     });
 
     scene.scene_v2.add_prim(rt::scene::ScenePrim {.path = "/World"});
+    scene.scene_v2.add_prim(rt::scene::ScenePrim {.path = "/World/Textures"});
+    scene.scene_v2.add_prim(rt::scene::ScenePrim {
+        .path = "/World/Textures/Base",
+        .kind = rt::scene::ScenePrimKind::texture,
+        .texture =
+            rt::scene::SceneTexture {
+                .color_space = rt::scene::SceneColorSpace::srgb_texture,
+                .value = base_source,
+            },
+        .compatibility_source_index = static_cast<std::size_t>(base_texture),
+    });
+    scene.scene_v2.add_prim(rt::scene::ScenePrim {
+        .path = "/World/Textures/Emission",
+        .kind = rt::scene::ScenePrimKind::texture,
+        .texture =
+            rt::scene::SceneTexture {
+                .color_space = rt::scene::SceneColorSpace::linear_srgb,
+                .value = emission_source,
+            },
+        .compatibility_source_index = static_cast<std::size_t>(emission_texture),
+    });
     scene.scene_v2.add_prim(rt::scene::ScenePrim {.path = "/World/Materials"});
     rt::scene::SceneOpenPbrSurface surface;
-    surface.base_color = Eigen::Vector3d {0.2, 0.4, 0.6};
     surface.specular_weight = 0.0;
     surface.emission_luminance = 2.0;
-    surface.emission_color = Eigen::Vector3d {0.5, 0.25, 0.125};
+    surface.connections = {
+        rt::scene::SceneMaterialConnection {
+            .input_name = "base_color",
+            .input_type = rt::scene::SceneMaterialValueType::color3,
+            .texture_path = "/World/Textures/Base",
+        },
+        rt::scene::SceneMaterialConnection {
+            .input_name = "emission_color",
+            .input_type = rt::scene::SceneMaterialValueType::color3,
+            .texture_path = "/World/Textures/Emission",
+        },
+    };
     scene.scene_v2.add_prim(rt::scene::ScenePrim {
         .path = "/World/Materials/Reference",
         .kind = rt::scene::ScenePrimKind::material,
@@ -76,8 +111,9 @@ rt::RadianceFrame render_openpbr_direct_light(bool openpbr_light) {
     receiver_parameters.base_color = {0.0f, 0.0f, 0.0f};
     receiver_parameters.specular_weight = 1.0f;
     receiver_parameters.specular_roughness = 0.5f;
-    const int receiver =
-        scene.add_material(rt::OpenPbrMaterialDesc {.parameters = receiver_parameters});
+    const int receiver = scene.add_material(rt::OpenPbrMaterialDesc {
+        .compiled = rt::OpenPbrCompiledMaterial {.parameters = receiver_parameters},
+    });
 
     int light = -1;
     if (openpbr_light) {
@@ -85,7 +121,9 @@ rt::RadianceFrame render_openpbr_direct_light(bool openpbr_light) {
         light_parameters.base_weight = 0.0f;
         light_parameters.specular_weight = 0.0f;
         light_parameters.emission_luminance = 20.0f;
-        light = scene.add_material(rt::OpenPbrMaterialDesc {.parameters = light_parameters});
+        light = scene.add_material(rt::OpenPbrMaterialDesc {
+            .compiled = rt::OpenPbrCompiledMaterial {.parameters = light_parameters},
+        });
     } else {
         light = scene.add_material(
             rt::DiffuseLightMaterial {.emission = Eigen::Vector3d::Constant(20.0)});
@@ -128,8 +166,10 @@ int main() {
     ScatterRecord scatter;
     expect_true(hit.mat->scatter(primary, hit, scatter), "CPU OpenPBR reference material scatters");
     expect_true(scatter.skip_pdf, "CPU OpenPBR core owns the sampled direction and weight");
-    expect_vec3_near(scatter.attenuation, Vec3d {0.2, 0.4, 0.6}, 1e-5,
-        "CPU OpenPBR diffuse throughput");
+    const rt::OpenPbrVec3 decoded_base = rt::openpbr_source_to_linear({0.5f, 0.25f, 0.75f},
+        rt::OpenPbrSourceColorSpace::srgb_texture);
+    expect_vec3_near(scatter.attenuation, Vec3d {decoded_base.x, decoded_base.y, decoded_base.z},
+        1e-5, "CPU OpenPBR connected diffuse throughput");
     expect_vec3_near(emitted, Vec3d {1.0, 0.5, 0.25}, 1e-6, "CPU OpenPBR emission");
     const Vec3d cpu_reference = emitted + scatter.attenuation;
 
@@ -146,7 +186,7 @@ int main() {
         renderer.render_radiance(gpu_scene.pack(), make_test_rig().pack(), profile, 0);
     const Eigen::Vector3d gpu_reference = center_pixel_rgb(gpu);
     expect_vec3_near(gpu_reference, cpu_reference, 5e-4,
-        "SceneIR v2 OpenPBR CPU and GPU linear reference agreement");
+        "SceneIR v2 connected OpenPBR CPU and GPU linear reference agreement");
     expect_true(center_pixel_luminance(render_openpbr_direct_light(false)) > 0.01,
         "OpenPBR direct response uses the shared BSDF instead of base-color fallback");
     expect_true(center_pixel_luminance(render_openpbr_direct_light(true)) > 0.01,

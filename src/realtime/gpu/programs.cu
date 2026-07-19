@@ -479,6 +479,45 @@ __device__ void set_face_normal(const Ray& ray, const float3& outward_normal, Hi
     hit.shading_normal = hit.front_face ? outward_normal : mul3(outward_normal, -1.0f);
 }
 
+__device__ const OpenPbrCompiledMaterial* resolve_openpbr_material(
+    const DeviceSceneView& scene, int openpbr_index) {
+    if (openpbr_index < 0 || openpbr_index >= scene.openpbr_material_count
+        || scene.openpbr_materials == nullptr) {
+        return nullptr;
+    }
+    return &scene.openpbr_materials[openpbr_index];
+}
+
+__device__ const OpenPbrCompiledMaterial* resolve_openpbr_material(
+    const DeviceSceneView& scene, const MaterialSample& material) {
+    return material.type == 5 ? resolve_openpbr_material(scene, material.openpbr_index) : nullptr;
+}
+
+__device__ void evaluate_openpbr_color_binding(const DeviceSceneView& scene,
+    OpenPbrCoreMaterial& parameters, const OpenPbrColorTextureBinding& binding,
+    OpenPbrColorInput input, float tex_u, float tex_v, const float3& position) {
+    if (binding.texture_index < 0) {
+        return;
+    }
+    const float3 sampled =
+        evaluate_texture(scene, binding.texture_index, tex_u, tex_v, position);
+    openpbr_apply_color_input(
+        parameters, input, to_openpbr_vec3(sampled), binding.source_color_space);
+}
+
+__device__ OpenPbrCoreMaterial evaluate_openpbr_scattering_material(const DeviceSceneView& scene,
+    const OpenPbrCompiledMaterial& material, const HitInfo& hit) {
+    OpenPbrCoreMaterial parameters = material.parameters;
+    if (material.color_textures.base_color.texture_index >= 0) {
+        parameters.base_color = to_openpbr_vec3(hit.base_color);
+    }
+    evaluate_openpbr_color_binding(scene, parameters, material.color_textures.specular_color,
+        OpenPbrColorInput::specular_color, hit.tex_u, hit.tex_v, hit.position);
+    evaluate_openpbr_color_binding(scene, parameters, material.color_textures.transmission_color,
+        OpenPbrColorInput::transmission_color, hit.tex_u, hit.tex_v, hit.position);
+    return parameters;
+}
+
 __device__ void populate_material(const DeviceSceneView& scene, int material_index, HitInfo& hit) {
     if (material_index < 0 || material_index >= scene.material_count
         || scene.materials == nullptr) {
@@ -511,51 +550,50 @@ __device__ void populate_material(const DeviceSceneView& scene, int material_ind
         hit.emission = make_float3(0.0f, 0.0f, 0.0f);
     }
     if (hit.material_type == 5) {
-        if (material.openpbr_index < 0 || material.openpbr_index >= scene.openpbr_material_count
-            || scene.openpbr_materials == nullptr) {
+        const OpenPbrCompiledMaterial* compiled =
+            resolve_openpbr_material(scene, material.openpbr_index);
+        if (compiled == nullptr) {
             hit.material_type = -1;
             hit.base_color = make_float3(0.0f, 0.0f, 0.0f);
             hit.emission = make_float3(0.0f, 0.0f, 0.0f);
             return;
         }
-        const OpenPbrCoreMaterial& parameters = scene.openpbr_materials[material.openpbr_index];
+        OpenPbrCoreMaterial parameters = compiled->parameters;
+        evaluate_openpbr_color_binding(scene, parameters, compiled->color_textures.base_color,
+            OpenPbrColorInput::base_color, hit.tex_u, hit.tex_v, hit.position);
+        evaluate_openpbr_color_binding(scene, parameters, compiled->color_textures.emission_color,
+            OpenPbrColorInput::emission_color, hit.tex_u, hit.tex_v, hit.position);
         hit.base_color = from_openpbr_vec3(parameters.base_color);
         hit.emission = from_openpbr_vec3(emission_openpbr_core(parameters));
     }
-}
-
-__device__ const OpenPbrCoreMaterial* resolve_openpbr_material(const DeviceSceneView& scene,
-    int openpbr_index) {
-    if (openpbr_index < 0 || openpbr_index >= scene.openpbr_material_count
-        || scene.openpbr_materials == nullptr) {
-        return nullptr;
-    }
-    return &scene.openpbr_materials[openpbr_index];
-}
-
-__device__ const OpenPbrCoreMaterial* resolve_openpbr_material(const DeviceSceneView& scene,
-    const MaterialSample& material) {
-    return material.type == 5 ? resolve_openpbr_material(scene, material.openpbr_index) : nullptr;
 }
 
 __device__ bool material_is_emissive(const DeviceSceneView& scene, const MaterialSample& material) {
     if (material.type == 3) {
         return true;
     }
-    const OpenPbrCoreMaterial* parameters = resolve_openpbr_material(scene, material);
-    if (parameters == nullptr) {
+    const OpenPbrCompiledMaterial* compiled = resolve_openpbr_material(scene, material);
+    if (compiled == nullptr || compiled->parameters.emission_luminance <= 0.0f) {
         return false;
     }
-    const OpenPbrVec3 emission = emission_openpbr_core(*parameters);
+    if (compiled->color_textures.emission_color.texture_index >= 0) {
+        return true;
+    }
+    const OpenPbrVec3 emission = emission_openpbr_core(compiled->parameters);
     return emission.x > 0.0f || emission.y > 0.0f || emission.z > 0.0f;
 }
 
 __device__ float3 evaluate_material_emission(const DeviceSceneView& scene,
     const MaterialSample& material, float tex_u, float tex_v, const float3& position) {
     if (material.type == 5) {
-        const OpenPbrCoreMaterial* parameters = resolve_openpbr_material(scene, material);
-        return parameters == nullptr ? make_float3(0.0f, 0.0f, 0.0f)
-                                     : from_openpbr_vec3(emission_openpbr_core(*parameters));
+        const OpenPbrCompiledMaterial* compiled = resolve_openpbr_material(scene, material);
+        if (compiled == nullptr) {
+            return make_float3(0.0f, 0.0f, 0.0f);
+        }
+        OpenPbrCoreMaterial parameters = compiled->parameters;
+        evaluate_openpbr_color_binding(scene, parameters, compiled->color_textures.emission_color,
+            OpenPbrColorInput::emission_color, tex_u, tex_v, position);
+        return from_openpbr_vec3(emission_openpbr_core(parameters));
     }
     return evaluate_texture(scene, material.emission_texture, tex_u, tex_v, position);
 }
@@ -565,13 +603,15 @@ __device__ float3 direct_material_response(const DeviceSceneView& scene, const H
     if (hit.material_type != 5) {
         return mul3(hit.base_color, legacy_directional_pdf);
     }
-    const OpenPbrCoreMaterial* parameters = resolve_openpbr_material(scene, hit.openpbr_index);
-    if (parameters == nullptr) {
+    const OpenPbrCompiledMaterial* compiled = resolve_openpbr_material(scene, hit.openpbr_index);
+    if (compiled == nullptr) {
         return make_float3(0.0f, 0.0f, 0.0f);
     }
+    const OpenPbrCoreMaterial parameters =
+        evaluate_openpbr_scattering_material(scene, *compiled, hit);
     const OpenPbrFrame frame =
         make_openpbr_frame(to_openpbr_vec3(hit.geometric_normal), OpenPbrVec3 {});
-    const OpenPbrEvaluation evaluation = evaluate_openpbr_core(*parameters, frame,
+    const OpenPbrEvaluation evaluation = evaluate_openpbr_core(parameters, frame,
         to_openpbr_vec3(mul3(normalize3(state.ray.direction), -1.0f)),
         to_openpbr_vec3(light_direction));
     const float cosine = fabsf(dot3(hit.shading_normal, light_direction));
@@ -1321,15 +1361,17 @@ __device__ void sample_bsdf(const LaunchParams& params, const HitInfo& hit, std:
     }
 
     if (hit.material_type == 5) {
-        const OpenPbrCoreMaterial* parameters =
+        const OpenPbrCompiledMaterial* compiled =
             resolve_openpbr_material(params.scene, hit.openpbr_index);
-        if (parameters == nullptr) {
+        if (compiled == nullptr) {
             state.alive = false;
             return;
         }
+        const OpenPbrCoreMaterial parameters =
+            evaluate_openpbr_scattering_material(params.scene, *compiled, hit);
         const OpenPbrFrame frame =
             make_openpbr_frame(to_openpbr_vec3(hit.geometric_normal), OpenPbrVec3 {});
-        const OpenPbrSample sample = sample_openpbr_core(*parameters, frame,
+        const OpenPbrSample sample = sample_openpbr_core(parameters, frame,
             to_openpbr_vec3(mul3(normalize3(state.ray.direction), -1.0f)), random_float01(rng),
             random_float01(rng), random_float01(rng));
         if (sample.valid == 0) {

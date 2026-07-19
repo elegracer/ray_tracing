@@ -26,7 +26,7 @@ private:
     PackedTexture* textures_ = nullptr;
     Eigen::Vector3f* image_texels_ = nullptr;
     MaterialSample* materials_ = nullptr;
-    OpenPbrCoreMaterial* openpbr_materials_ = nullptr;
+    OpenPbrCompiledMaterial* openpbr_materials_ = nullptr;
     int sphere_count_ = 0;
     int quad_count_ = 0;
     int triangle_count_ = 0;

@@ -96,7 +96,7 @@ void add_box_quads(rt::SceneDescription& out, int material_index, const BoxShape
 } // namespace
 
 rt::SceneDescription adapt_to_realtime_impl(const SceneIR& scene,
-    const std::vector<std::optional<OpenPbrCoreMaterial>>* openpbr_materials) {
+    const std::vector<std::optional<OpenPbrCompiledMaterial>>* openpbr_materials) {
     validate_scene_ir(scene);
 
     rt::SceneDescription out;
@@ -113,7 +113,7 @@ rt::SceneDescription adapt_to_realtime_impl(const SceneIR& scene,
                     "SceneIR v2 surface material cannot replace a compatibility volume");
             }
             out.add_material(rt::OpenPbrMaterialDesc {
-                .parameters = *(*openpbr_materials)[material_index],
+                .compiled = *(*openpbr_materials)[material_index],
             });
             continue;
         }
@@ -208,8 +208,8 @@ rt::SceneDescription adapt_to_realtime(const SceneIR& scene) {
 
 rt::SceneDescription adapt_to_realtime_openpbr(const SceneIR& compatibility_scene,
     const SceneIRv2& scene_v2) {
-    const auto materials =
-        compile_openpbr_core_material_table(scene_v2, compatibility_scene.materials().size());
+    const auto materials = compile_openpbr_core_material_table(scene_v2,
+        compatibility_scene.materials().size(), compatibility_scene.textures().size());
     return adapt_to_realtime_impl(compatibility_scene, &materials);
 }
 

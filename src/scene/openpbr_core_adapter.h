@@ -9,8 +9,9 @@
 
 namespace rt::scene {
 
-OpenPbrCoreMaterial compile_openpbr_core_material(const SceneOpenPbrSurface& material);
-std::vector<std::optional<OpenPbrCoreMaterial>> compile_openpbr_core_material_table(
-    const SceneIRv2& scene, std::size_t compatibility_material_count);
+OpenPbrCompiledMaterial compile_openpbr_core_material(const SceneOpenPbrSurface& material);
+std::vector<std::optional<OpenPbrCompiledMaterial>> compile_openpbr_core_material_table(
+    const SceneIRv2& scene, std::size_t compatibility_material_count,
+    std::size_t compatibility_texture_count);
 
 } // namespace rt::scene

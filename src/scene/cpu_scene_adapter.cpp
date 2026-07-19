@@ -98,7 +98,7 @@ pro::proxy<Hittable> make_shape_hittable(const ShapeDesc& shape,
 } // namespace
 
 CpuSceneAdapterResult adapt_to_cpu_impl(const SceneIR& scene,
-    const std::vector<std::optional<OpenPbrCoreMaterial>>* openpbr_materials) {
+    const std::vector<std::optional<OpenPbrCompiledMaterial>>* openpbr_materials) {
     validate_scene_ir(scene);
 
     const std::vector<TextureDesc>& texture_descs = scene.textures();
@@ -139,7 +139,7 @@ CpuSceneAdapterResult adapt_to_cpu_impl(const SceneIR& scene,
                     "SceneIR v2 surface material cannot replace a compatibility volume");
             }
             materials.push_back(pro::make_proxy_shared<Material, OpenPbrSurfaceMaterial>(
-                *(*openpbr_materials)[material_index]));
+                *(*openpbr_materials)[material_index], textures));
             continue;
         }
         if (openpbr_materials != nullptr
@@ -200,7 +200,7 @@ CpuSceneAdapterResult adapt_to_cpu_impl(const SceneIR& scene,
             openpbr_materials != nullptr
             && (*openpbr_materials)[static_cast<std::size_t>(instance.material_index)]
             && (*openpbr_materials)[static_cast<std::size_t>(instance.material_index)]
-                       ->emission_luminance
+                       ->parameters.emission_luminance
                    > 0.0f;
         if ((std::holds_alternative<EmissiveMaterial>(material_desc) || openpbr_emissive)
             && is_identity_transform(instance.transform)) {
@@ -245,8 +245,8 @@ CpuSceneAdapterResult adapt_to_cpu(const SceneIR& scene) {
 
 CpuSceneAdapterResult adapt_to_cpu_openpbr(const SceneIR& compatibility_scene,
     const SceneIRv2& scene_v2) {
-    const auto materials =
-        compile_openpbr_core_material_table(scene_v2, compatibility_scene.materials().size());
+    const auto materials = compile_openpbr_core_material_table(scene_v2,
+        compatibility_scene.materials().size(), compatibility_scene.textures().size());
     return adapt_to_cpu_impl(compatibility_scene, &materials);
 }
 

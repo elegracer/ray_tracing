@@ -56,7 +56,7 @@ struct IsotropicVolumeMaterial {
 };
 
 struct OpenPbrMaterialDesc {
-    OpenPbrCoreMaterial parameters;
+    OpenPbrCompiledMaterial compiled;
 };
 
 using MaterialDesc = std::variant<LambertianMaterial, MetalMaterial, DielectricMaterial,

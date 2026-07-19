@@ -8,6 +8,9 @@
 #include "texture.h"
 #include "pdf.h"
 
+#include <stdexcept>
+#include <vector>
+
 struct HitRecord {
     Vec3d p;
     Vec3d normal;
@@ -154,15 +157,26 @@ private:
 };
 
 struct OpenPbrSurfaceMaterial {
-    explicit OpenPbrSurfaceMaterial(const rt::OpenPbrCoreMaterial& parameters)
-        : parameters(parameters) {}
+    OpenPbrSurfaceMaterial(const rt::OpenPbrCompiledMaterial& material,
+        const std::vector<pro::proxy<Texture>>& textures)
+        : material(material),
+          base_color_texture(resolve_texture(material.color_textures.base_color, textures)),
+          specular_color_texture(resolve_texture(material.color_textures.specular_color, textures)),
+          transmission_color_texture(
+              resolve_texture(material.color_textures.transmission_color, textures)),
+          emission_color_texture(
+              resolve_texture(material.color_textures.emission_color, textures)) {}
 
-    Vec3d emitted(const Ray&, const HitRecord&, const double, const double, const Vec3d&) const {
+    Vec3d emitted(const Ray&, const HitRecord&, const double u, const double v,
+        const Vec3d& p) const {
+        const rt::OpenPbrCoreMaterial parameters = evaluated_emission_parameters(u, v, p);
         const rt::OpenPbrVec3 value = rt::emission_openpbr_core(parameters);
         return {value.x, value.y, value.z};
     }
 
     bool scatter(const Ray& ray_in, const HitRecord& hit_rec, ScatterRecord& scatter_rec) const {
+        const rt::OpenPbrCoreMaterial parameters =
+            evaluated_scattering_parameters(hit_rec.u, hit_rec.v, hit_rec.p);
         const Vec3d outward_normal = hit_rec.front_face ? hit_rec.normal : -hit_rec.normal;
         const rt::OpenPbrFrame frame =
             rt::make_openpbr_frame(to_openpbr(outward_normal), rt::OpenPbrVec3 {});
@@ -182,6 +196,8 @@ struct OpenPbrSurfaceMaterial {
     }
 
     double scattering_pdf(const Ray& ray_in, const HitRecord& hit_rec, const Ray& scattered) const {
+        const rt::OpenPbrCoreMaterial parameters =
+            evaluated_scattering_parameters(hit_rec.u, hit_rec.v, hit_rec.p);
         const Vec3d outward_normal = hit_rec.front_face ? hit_rec.normal : -hit_rec.normal;
         const rt::OpenPbrFrame frame =
             rt::make_openpbr_frame(to_openpbr(outward_normal), rt::OpenPbrVec3 {});
@@ -191,12 +207,65 @@ struct OpenPbrSurfaceMaterial {
     }
 
 private:
+    static pro::proxy<Texture> resolve_texture(const rt::OpenPbrColorTextureBinding& binding,
+        const std::vector<pro::proxy<Texture>>& textures) {
+        if (binding.texture_index < 0) {
+            return nullptr;
+        }
+        const std::size_t index = static_cast<std::size_t>(binding.texture_index);
+        if (index >= textures.size()) {
+            throw std::invalid_argument("OpenPBR texture binding index is out of range");
+        }
+        return textures[index];
+    }
+
+    static rt::OpenPbrVec3 sample_texture(const pro::proxy<Texture>& texture, double u, double v,
+        const Vec3d& p) {
+        const Vec3d value = texture->value(u, v, p);
+        return {static_cast<float>(value.x()), static_cast<float>(value.y()),
+            static_cast<float>(value.z())};
+    }
+
+    static void apply_binding(rt::OpenPbrCoreMaterial& parameters,
+        const rt::OpenPbrColorTextureBinding& binding, rt::OpenPbrColorInput input,
+        const pro::proxy<Texture>& texture, double u, double v, const Vec3d& p) {
+        if (binding.texture_index < 0) {
+            return;
+        }
+        rt::openpbr_apply_color_input(parameters, input, sample_texture(texture, u, v, p),
+            binding.source_color_space);
+    }
+
+    rt::OpenPbrCoreMaterial evaluated_scattering_parameters(double u, double v,
+        const Vec3d& p) const {
+        rt::OpenPbrCoreMaterial parameters = material.parameters;
+        apply_binding(parameters, material.color_textures.base_color,
+            rt::OpenPbrColorInput::base_color, base_color_texture, u, v, p);
+        apply_binding(parameters, material.color_textures.specular_color,
+            rt::OpenPbrColorInput::specular_color, specular_color_texture, u, v, p);
+        apply_binding(parameters, material.color_textures.transmission_color,
+            rt::OpenPbrColorInput::transmission_color, transmission_color_texture, u, v, p);
+        return parameters;
+    }
+
+    rt::OpenPbrCoreMaterial evaluated_emission_parameters(double u, double v,
+        const Vec3d& p) const {
+        rt::OpenPbrCoreMaterial parameters = material.parameters;
+        apply_binding(parameters, material.color_textures.emission_color,
+            rt::OpenPbrColorInput::emission_color, emission_color_texture, u, v, p);
+        return parameters;
+    }
+
     static rt::OpenPbrVec3 to_openpbr(const Vec3d& value) {
         return {static_cast<float>(value.x()), static_cast<float>(value.y()),
             static_cast<float>(value.z())};
     }
 
-    rt::OpenPbrCoreMaterial parameters;
+    rt::OpenPbrCompiledMaterial material;
+    pro::proxy<Texture> base_color_texture;
+    pro::proxy<Texture> specular_color_texture;
+    pro::proxy<Texture> transmission_color_texture;
+    pro::proxy<Texture> emission_color_texture;
 };
 
 struct DiffuseLight {

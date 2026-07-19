@@ -50,7 +50,7 @@ PackedMedium pack_medium(const HomogeneousMediumPrimitive& medium) {
 }
 
 MaterialSample pack_material(const MaterialDesc& material,
-    std::vector<OpenPbrCoreMaterial>& openpbr_materials) {
+    std::vector<OpenPbrCompiledMaterial>& openpbr_materials) {
     MaterialSample sample {};
     std::visit(
         [&](const auto& value) {
@@ -73,7 +73,7 @@ MaterialSample pack_material(const MaterialDesc& material,
                 sample.type = 4;
             } else if constexpr (std::is_same_v<T, OpenPbrMaterialDesc>) {
                 sample.openpbr_index = static_cast<int>(openpbr_materials.size());
-                openpbr_materials.push_back(value.parameters);
+                openpbr_materials.push_back(value.compiled);
                 sample.type = 5;
             }
         },

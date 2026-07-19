@@ -29,6 +29,7 @@ Composed scene, camera, light, and material meaning must stay consistent across 
 - ✓ Phase 1 now provides truthful critical-path/work metrics, reproducible benchmark provenance, OptiX temporal AOV reconstruction, temporal reset/reference gates, and CUDA/OpenGL viewer presentation with opt-in host readback — `v2.0`
 - ✓ `SceneIR v2` now defines OpenUSD-aligned prim identity, stage units/time metadata, hierarchy, full affine transforms, visibility/purpose inheritance, transform samples, and explicit capability diagnostics; YAML scenes receive a deterministic v2 compatibility projection — `v2.0`
 - ✓ `SceneIR v2` now carries the official OpenPBR 1.1.1 parameter/default contract, MaterialX color3 texture nodes and displacement metadata, typed connected inputs, explicit color spaces, and deterministic projections for every legacy material and texture variant without changing the v1 execution path — `v2.0`
+- ✓ The opt-in OpenPBR production path compiles base/specular/transmission/emission color3 connections into a compact CPU/GPU sidecar, evaluates existing textures at the hit point, and applies shared raw/linear/sRGB source-to-linear semantics — `v2.0`
 
 ### Active
 
@@ -108,4 +109,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-19 after SceneIR v2 OpenPBR/MaterialX contract delivery*
+*Last updated: 2026-07-19 after OpenPBR connected color execution delivery*

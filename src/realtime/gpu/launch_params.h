@@ -36,7 +36,7 @@ struct DeviceSceneView {
     PackedTexture* textures = nullptr;
     Eigen::Vector3f* image_texels = nullptr;
     MaterialSample* materials = nullptr;
-    OpenPbrCoreMaterial* openpbr_materials = nullptr;
+    OpenPbrCompiledMaterial* openpbr_materials = nullptr;
     int sphere_count = 0;
     int quad_count = 0;
     int triangle_count = 0;
