@@ -396,6 +396,14 @@ target_sources(test_scene_ir_v2
 target_link_libraries(test_scene_ir_v2 PRIVATE core)
 add_test(NAME test_scene_ir_v2 COMMAND test_scene_ir_v2)
 
+add_executable(test_openpbr_core)
+target_sources(test_openpbr_core
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_openpbr_core.cpp
+)
+target_link_libraries(test_openpbr_core PRIVATE core)
+add_test(NAME test_openpbr_core COMMAND test_openpbr_core)
+
 add_executable(test_shared_scene_builders)
 target_sources(test_shared_scene_builders
     PRIVATE
@@ -515,6 +523,16 @@ target_sources(test_gpu_scene_preparation
 )
 target_link_libraries(test_gpu_scene_preparation PRIVATE realtime_gpu)
 add_test(NAME test_gpu_scene_preparation COMMAND test_gpu_scene_preparation)
+
+add_executable(test_openpbr_core_cuda)
+target_sources(test_openpbr_core_cuda
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_openpbr_core_cuda.cu
+)
+target_include_directories(test_openpbr_core_cuda PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(test_openpbr_core_cuda PRIVATE CUDA::cudart)
+add_test(NAME test_openpbr_core_cuda COMMAND test_openpbr_core_cuda)
+set_tests_properties(test_openpbr_core_cuda PROPERTIES SKIP_RETURN_CODE 77)
 
 add_executable(test_device_scene_buffers)
 target_sources(test_device_scene_buffers
