@@ -1,0 +1,62 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+)
+
+def Xform "World"
+{
+    def Material "Material"
+    {
+        token outputs:surface.connect = </World/Material/OpenPBR.outputs:out>
+
+        def Shader "OpenPBR"
+        {
+            uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+            color3f inputs:base_color.connect = </World/Material/Checker.outputs:out>
+            color3f inputs:emission_color.connect = </World/Material/Image.outputs:out>
+            float inputs:emission_luminance = 2
+            color3f inputs:specular_color.connect = </World/Material/Constant.outputs:out>
+            color3f inputs:transmission_color.connect = </World/Material/Noise.outputs:out>
+            float inputs:transmission_weight = 0.2
+            token outputs:out
+        }
+
+        def Shader "Constant"
+        {
+            uniform token info:id = "ND_constant_color3"
+            color3f inputs:value = (0.2, 0.4, 0.8)
+            color3f outputs:out
+        }
+
+        def Shader "Checker"
+        {
+            uniform token info:id = "ND_checkerboard_color3"
+            color3f inputs:color1.connect = </World/Material/Constant.outputs:out>
+            color3f inputs:color2 = (0.05, 0.1, 0.15)
+            float2 inputs:uvoffset = (0, 0)
+            float2 inputs:uvtiling = (4, 4)
+            color3f outputs:out
+        }
+
+        def Shader "Noise"
+        {
+            uniform token info:id = "ND_noise3d_color3"
+            vector3f inputs:amplitude = (1, 1, 1)
+            float inputs:pivot = 0
+            color3f outputs:out
+        }
+
+        def Shader "Image"
+        {
+            uniform token info:id = "ND_image_color3"
+            color3f inputs:default = (0.01, 0.02, 0.03)
+            asset inputs:file = @textures/emission.png@ (
+                colorSpace = "srgb_texture"
+            )
+            string inputs:filtertype = "cubic"
+            string inputs:uaddressmode = "clamp"
+            string inputs:vaddressmode = "mirror"
+            color3f outputs:out
+        }
+    }
+}

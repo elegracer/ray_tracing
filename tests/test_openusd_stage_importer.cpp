@@ -19,6 +19,16 @@ const rt::scene::ScenePrim& require_prim(const rt::scene::SceneIRv2& scene, std:
     return *prim;
 }
 
+const rt::scene::SceneMaterialConnection& require_connection(
+    const rt::scene::SceneOpenPbrSurface& surface, std::string_view input_name) {
+    for (const rt::scene::SceneMaterialConnection& connection : surface.connections) {
+        if (connection.input_name == input_name) {
+            return connection;
+        }
+    }
+    throw std::runtime_error("missing expected OpenPBR connection: " + std::string {input_name});
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -147,16 +157,61 @@ int main(int argc, char** argv) {
         "UsdLux texture asset preserves authored and evaluated identity");
 
     const std::filesystem::path connected_fixture =
+        fixture.parent_path() / "connected_material.usda";
+    const rt::scene::SceneIRv2 connected_scene = rt::scene::import_openusd_stage(connected_fixture);
+    const auto& connected_surface = std::get<rt::scene::SceneOpenPbrSurface>(
+        *require_prim(connected_scene, "/World/Material").material);
+    expect_true(connected_surface.connections.size() == 4,
+        "four supported OpenPBR color connections compile");
+
+    const rt::scene::ScenePrim& constant = require_prim(connected_scene,
+        require_connection(connected_surface, "specular_color").texture_path);
+    expect_true(constant.texture->node == rt::scene::SceneTextureNode::constant_color,
+        "MaterialX constant node type");
+    expect_vec3_near(constant.texture->value, {0.2, 0.4, 0.8}, 1e-6, "MaterialX constant value");
+
+    const rt::scene::ScenePrim& checker = require_prim(connected_scene,
+        require_connection(connected_surface, "base_color").texture_path);
+    expect_true(checker.texture->node == rt::scene::SceneTextureNode::checkerboard,
+        "MaterialX checkerboard node type");
+    expect_near(checker.texture->scale, 4.0, 1e-12, "checkerboard uniform UV tiling");
+    expect_true(checker.texture->even_texture_path == constant.path,
+        "checkerboard reuses the connected constant node");
+    const rt::scene::ScenePrim& checker_literal =
+        require_prim(connected_scene, checker.texture->odd_texture_path);
+    expect_vec3_near(checker_literal.texture->value, {0.05, 0.1, 0.15}, 1e-6,
+        "checkerboard literal compiles to a stable constant texture");
+
+    const rt::scene::ScenePrim& noise = require_prim(connected_scene,
+        require_connection(connected_surface, "transmission_color").texture_path);
+    expect_true(noise.texture->node == rt::scene::SceneTextureNode::noise3d,
+        "MaterialX noise3d node type");
+
+    const rt::scene::ScenePrim& image = require_prim(connected_scene,
+        require_connection(connected_surface, "emission_color").texture_path);
+    expect_true(image.texture->node == rt::scene::SceneTextureNode::image,
+        "MaterialX image node type");
+    expect_true(image.texture->color_space == rt::scene::SceneColorSpace::srgb_texture,
+        "image colorSpace metadata");
+    expect_true(image.texture->u_address_mode == rt::scene::SceneTextureAddressMode::clamp
+                    && image.texture->v_address_mode == rt::scene::SceneTextureAddressMode::mirror
+                    && image.texture->filter_type == rt::scene::SceneTextureFilterType::cubic,
+        "image address and filter semantics");
+    expect_true(image.asset_references.size() == 1
+                    && image.asset_references[0].authored_path == "textures/emission.png",
+        "image authored asset identity");
+
+    const std::filesystem::path unsupported_fixture =
         fixture.parent_path() / "unsupported_connected_material.usda";
     try {
-        static_cast<void>(rt::scene::import_openusd_stage(connected_fixture));
+        static_cast<void>(rt::scene::import_openusd_stage(unsupported_fixture));
     } catch (const std::invalid_argument& error) {
-        expect_true(std::string {error.what()}.find("connected OpenPBR inputs")
+        expect_true(std::string {error.what()}.find("unsupported connected MaterialX shader")
                         != std::string::npos,
-            "unsupported connected shader input fails explicitly");
+            "unknown connected shader node fails explicitly");
         return 0;
     }
-    throw std::runtime_error("connected OpenPBR input was silently accepted");
+    throw std::runtime_error("unsupported connected MaterialX node was silently accepted");
 #else
     expect_true(!rt::scene::openusd_stage_importer_available(), "disabled OpenUSD capability");
     try {
