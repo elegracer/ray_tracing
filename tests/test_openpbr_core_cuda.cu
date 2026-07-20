@@ -11,7 +11,7 @@
 
 namespace {
 
-constexpr int kCaseCount = 6;
+constexpr int kCaseCount = 7;
 
 struct CoreCase {
     rt::OpenPbrCoreMaterial material {};
@@ -29,6 +29,7 @@ struct CoreOutput {
     rt::OpenPbrVec3 emission {};
     rt::OpenPbrVec3 transmission_at_depth {};
     rt::OpenPbrVec3 decoded_srgb {};
+    rt::OpenPbrVec3 thin_film_reflectance {};
 };
 
 void check_cuda(cudaError_t error, const char* operation) {
@@ -70,6 +71,8 @@ __global__ void evaluate_cases(const CoreCase* cases, CoreOutput* outputs) {
         test_case.material.transmission_depth);
     outputs[index].decoded_srgb = rt::openpbr_source_to_linear(
         {0.04045f, 0.5f, 1.0f}, rt::OpenPbrSourceColorSpace::srgb_texture);
+    outputs[index].thin_film_reflectance =
+        rt::openpbr_dielectric_reflectance(test_case.material, 0.75f, true);
 }
 
 void expect_vec_near(const rt::OpenPbrVec3& actual, const rt::OpenPbrVec3& expected,
@@ -146,6 +149,22 @@ std::array<CoreCase, kCaseCount> make_cases() {
     cases[5].u_lobe = 0.5f;
     cases[5].u1 = 0.37f;
     cases[5].u2 = 0.61f;
+
+    cases[6].material.base_color = {0.9f, 0.7f, 0.4f};
+    cases[6].material.base_metalness = 0.35f;
+    cases[6].material.specular_roughness = 0.28f;
+    cases[6].material.specular_ior = 1.5f;
+    cases[6].material.transmission_weight = 0.25f;
+    cases[6].material.coat_weight = 0.45f;
+    cases[6].material.coat_roughness = 0.2f;
+    cases[6].material.coat_ior = 1.6f;
+    cases[6].material.thin_film_weight = 0.8f;
+    cases[6].material.thin_film_thickness = 0.45f;
+    cases[6].material.thin_film_ior = 1.4f;
+    cases[6].wi = rt::openpbr_normalize({0.25f, 0.3f, 1.0f});
+    cases[6].u_lobe = 0.55f;
+    cases[6].u1 = 0.29f;
+    cases[6].u2 = 0.83f;
     return cases;
 }
 
@@ -169,6 +188,8 @@ int main() {
             cases[index].material, cases[index].material.transmission_depth);
         expected[index].decoded_srgb = rt::openpbr_source_to_linear(
             {0.04045f, 0.5f, 1.0f}, rt::OpenPbrSourceColorSpace::srgb_texture);
+        expected[index].thin_film_reflectance =
+            rt::openpbr_dielectric_reflectance(cases[index].material, 0.75f, true);
     }
 
     CoreCase* device_cases = nullptr;
@@ -216,6 +237,9 @@ int main() {
                 prefix + " transmission at authored depth");
             expect_vec_near(actual[index].decoded_srgb, expected[index].decoded_srgb, 2e-6,
                 prefix + " source-to-linear conversion");
+            expect_vec_near(actual[index].thin_film_reflectance,
+                expected[index].thin_film_reflectance, 3e-5,
+                prefix + " thin-film reflectance");
         }
 
         cudaFree(device_outputs);

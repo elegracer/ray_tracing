@@ -75,6 +75,9 @@ void test_scene_contract_mapping() {
     authored.coat_roughness_anisotropy = 0.35;
     authored.coat_ior = 1.6;
     authored.coat_darkening = 0.7;
+    authored.thin_film_weight = 0.65;
+    authored.thin_film_thickness = 0.3;
+    authored.thin_film_ior = 1.35;
     authored.emission_luminance = 12.0;
     authored.emission_color = Eigen::Vector3d {1.2, 0.6, 0.3};
     authored.geometry_opacity = 0.75;
@@ -103,6 +106,9 @@ void test_scene_contract_mapping() {
     expect_near(material.coat_roughness_anisotropy, 0.35, 1e-6, "coat anisotropy");
     expect_near(material.coat_ior, 1.6, 1e-6, "coat IOR");
     expect_near(material.coat_darkening, 0.7, 1e-6, "coat darkening");
+    expect_near(material.thin_film_weight, 0.65, 1e-6, "thin-film weight");
+    expect_near(material.thin_film_thickness, 0.3, 1e-6, "thin-film thickness in micrometers");
+    expect_near(material.thin_film_ior, 1.35, 1e-6, "thin-film IOR");
     expect_near(material.emission_luminance, 12.0, 1e-6, "emission luminance");
     expect_vec_near(material.emission_color, {1.2f, 0.6f, 0.3f}, 1e-6, "emission color");
     expect_near(material.geometry_opacity, 0.75, 1e-6, "opacity");
@@ -423,6 +429,8 @@ void test_coat_and_fuzz_reference_semantics() {
     unchanged.coat_roughness = 0.9f;
     unchanged.fuzz_color = {0.2f, 0.4f, 0.8f};
     unchanged.fuzz_roughness = 0.1f;
+    unchanged.thin_film_thickness = 0.85f;
+    unchanged.thin_film_ior = 2.1f;
     const rt::OpenPbrCoreMaterial defaults;
     const rt::OpenPbrVec3 wi = normalized({-0.3f, 0.2f, 1.0f});
     const rt::OpenPbrEvaluation unchanged_eval =
@@ -433,6 +441,109 @@ void test_coat_and_fuzz_reference_semantics() {
         "zero layer weights preserve the legacy default response");
     expect_near(unchanged_eval.pdf, default_eval.pdf, 1e-7,
         "zero layer weights preserve the legacy default PDF");
+}
+
+void test_thin_film_reference_semantics() {
+    constexpr std::size_t kIntegrationSamples = 131072;
+    const rt::OpenPbrFrame frame = rt::make_openpbr_frame(kNormal, kTangent);
+    const rt::OpenPbrVec3 wo = normalized({0.6614378f, 0.0f, 0.75f});
+
+    rt::OpenPbrCoreMaterial reference;
+    reference.specular_ior = 1.5f;
+    reference.thin_film_weight = 1.0f;
+    reference.thin_film_thickness = 0.3f;
+    reference.thin_film_ior = 1.4f;
+    expect_vec_near(rt::openpbr_dielectric_reflectance(reference, 0.75f, true),
+        {0.04098798f, 0.02764139f, 0.02773710f}, 2e-6,
+        "MaterialX two-order Airy reference at 300 nm");
+    reference.thin_film_thickness = 0.6f;
+    expect_vec_near(rt::openpbr_dielectric_reflectance(reference, 0.75f, true),
+        {0.01976027f, 0.03432216f, 0.03386349f}, 2e-6,
+        "MaterialX two-order Airy reference at 600 nm");
+
+    rt::OpenPbrCoreMaterial film;
+    film.base_color = {0.9f, 0.9f, 0.9f};
+    film.base_diffuse_roughness = 0.35f;
+    film.specular_roughness = 0.28f;
+    film.specular_ior = 1.5f;
+    film.transmission_weight = 0.35f;
+    film.thin_film_weight = 0.8f;
+    film.thin_film_thickness = 0.45f;
+    film.thin_film_ior = 1.4f;
+    expect_near(integrate_pdf(film, frame, wo, kIntegrationSamples), 1.0, 9e-3,
+        "thin-film lobe mixture PDF normalization");
+    const rt::OpenPbrVec3 film_energy = integrate_furnace(film, frame, wo, kIntegrationSamples);
+    expect_finite_nonnegative(film_energy, "thin-film layered furnace energy");
+    expect_true(film_energy.x <= 1.02f && film_energy.y <= 1.02f && film_energy.z <= 1.02f,
+        "non-absorbing thin film only redistributes bounded energy");
+
+    int matched_samples = 0;
+    for (int index = 0; index < 4096; ++index) {
+        const float u_lobe = std::fmod(0.618033989f * static_cast<float>(index + 1), 1.0f);
+        const float u1 = std::fmod(0.754877666f * static_cast<float>(index + 1), 1.0f);
+        const float u2 = std::fmod(0.569840296f * static_cast<float>(index + 1), 1.0f);
+        const rt::OpenPbrSample sample =
+            rt::sample_openpbr_core(film, frame, wo, u_lobe, u1, u2);
+        if (sample.valid == 0 || sample.delta != 0) {
+            continue;
+        }
+        const rt::OpenPbrEvaluation evaluation =
+            rt::evaluate_openpbr_core(film, frame, wo, sample.wi);
+        expect_relative(sample.pdf, evaluation.pdf, 7e-5,
+            "thin-film sample/evaluate PDF agreement");
+        expect_vec_relative(sample.value, evaluation.value, 7e-5,
+            "thin-film sample/evaluate value agreement");
+        ++matched_samples;
+    }
+    expect_true(matched_samples > 3000, "thin-film sampling produces a stable continuous population");
+
+    rt::OpenPbrCoreMaterial coat = film;
+    coat.coat_weight = 0.8f;
+    coat.coat_roughness = 0.22f;
+    coat.coat_ior = 1.6f;
+    const rt::OpenPbrVec3 wi = normalized({-0.3f, 0.2f, 1.0f});
+    rt::OpenPbrCoreMaterial coat_without_film = coat;
+    coat_without_film.thin_film_weight = 0.0f;
+    expect_vec_near(rt::openpbr_coat_reflection_value(coat, wo, wi),
+        rt::openpbr_coat_reflection_value(coat_without_film, wo, wi), 1e-7,
+        "thin film modifies the base interface but not the separate coat lobe");
+    expect_true(rt::openpbr_length_squared(rt::openpbr_sub(
+                    rt::openpbr_dielectric_reflectance(coat, 0.75f, true),
+                    rt::openpbr_dielectric_reflectance(coat_without_film, 0.75f, true)))
+                    > 1e-6f,
+        "coat/base IOR context still produces a visible thin-film response");
+    const rt::OpenPbrVec3 coat_energy = integrate_furnace(coat, frame, wo, kIntegrationSamples);
+    expect_finite_nonnegative(coat_energy, "coat plus thin-film furnace energy");
+    expect_true(coat_energy.x <= 1.02f && coat_energy.y <= 1.02f && coat_energy.z <= 1.02f,
+        "coat passage bounds the thin-film substrate");
+
+    rt::OpenPbrCoreMaterial thin_wall;
+    thin_wall.base_weight = 0.0f;
+    thin_wall.specular_roughness = 0.0f;
+    thin_wall.specular_ior = 1.5f;
+    thin_wall.transmission_weight = 1.0f;
+    thin_wall.geometry_thin_walled = 1;
+    thin_wall.thin_film_weight = 1.0f;
+    thin_wall.thin_film_thickness = 0.3f;
+    thin_wall.thin_film_ior = 1.4f;
+    const rt::OpenPbrLobeProbabilities probabilities =
+        rt::openpbr_lobe_probabilities(thin_wall, wo.z, true);
+    const rt::OpenPbrSample reflected = rt::sample_openpbr_core(thin_wall, frame, wo,
+        0.5f * probabilities.reflection, 0.2f, 0.8f);
+    const rt::OpenPbrSample transmitted = rt::sample_openpbr_core(thin_wall, frame, wo,
+        probabilities.reflection + 0.5f * probabilities.transmission, 0.2f, 0.8f);
+    expect_true(reflected.valid != 0 && reflected.event == rt::OpenPbrScatterEvent::glossy_reflection,
+        "thin-film thin wall samples reflection");
+    expect_true(transmitted.valid != 0
+                    && transmitted.event == rt::OpenPbrScatterEvent::thin_walled_transmission,
+        "thin-film thin wall samples straight-through transmission");
+    const rt::OpenPbrVec3 resolved_reflection =
+        rt::openpbr_mul(reflected.weight, reflected.discrete_pdf);
+    const rt::OpenPbrVec3 resolved_transmission =
+        rt::openpbr_mul(transmitted.weight, transmitted.discrete_pdf);
+    expect_vec_near(rt::openpbr_add(resolved_reflection, resolved_transmission),
+        rt::openpbr_make_vec3(1.0f), 3e-4,
+        "thin-film thin wall conserves reflection plus transmission");
 }
 
 void test_openpbr_reference_parameter_semantics() {
@@ -583,6 +694,7 @@ int main() {
     test_evaluate_sample_pdf_contract();
     test_pdf_normalization_and_furnace_energy();
     test_coat_and_fuzz_reference_semantics();
+    test_thin_film_reference_semantics();
     test_openpbr_reference_parameter_semantics();
     test_anisotropy_rotates_with_tangent();
     test_opacity_thin_walled_and_emission();
