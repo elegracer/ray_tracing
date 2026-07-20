@@ -68,6 +68,10 @@ void test_scene_contract_mapping() {
     authored.transmission_depth = 2.5;
     authored.transmission_dispersion_scale = 0.75;
     authored.transmission_dispersion_abbe_number = 32.0;
+    authored.subsurface_color = Eigen::Vector3d {0.75, 0.35, 0.2};
+    authored.subsurface_radius = 2.0;
+    authored.subsurface_radius_scale = Eigen::Vector3d {1.0, 0.4, 0.2};
+    authored.subsurface_scatter_anisotropy = 0.25;
     authored.fuzz_weight = 0.45;
     authored.fuzz_color = Eigen::Vector3d {0.7, 0.8, 0.9};
     authored.fuzz_roughness = 0.6;
@@ -102,6 +106,14 @@ void test_scene_contract_mapping() {
     expect_near(material.transmission_dispersion_scale, 0.75, 1e-6, "dispersion scale");
     expect_near(material.transmission_dispersion_abbe_number, 32.0, 1e-6,
         "dispersion Abbe number");
+    expect_near(material.subsurface_weight, 0.0, 1e-6, "subsurface weight");
+    expect_vec_near(material.subsurface_color, {0.75f, 0.35f, 0.2f}, 1e-6,
+        "subsurface color");
+    expect_near(material.subsurface_radius, 2.0, 1e-6, "subsurface radius");
+    expect_vec_near(material.subsurface_radius_scale, {1.0f, 0.4f, 0.2f}, 1e-6,
+        "subsurface radius scale");
+    expect_near(material.subsurface_scatter_anisotropy, 0.25, 1e-6,
+        "subsurface anisotropy");
     expect_near(material.fuzz_weight, 0.45, 1e-6, "fuzz weight");
     expect_vec_near(material.fuzz_color, {0.7f, 0.8f, 0.9f}, 1e-6, "fuzz color");
     expect_near(material.fuzz_roughness, 0.6, 1e-6, "fuzz roughness");
@@ -718,6 +730,191 @@ void test_openpbr_reference_parameter_semantics() {
         "the same direction still refracts when entering");
 }
 
+void test_subsurface_reference_semantics() {
+    rt::scene::SceneOpenPbrSurface authored;
+    authored.subsurface_weight = 0.75;
+    authored.subsurface_color = Eigen::Vector3d {0.8, 0.5, 0.2};
+    authored.subsurface_radius = 2.0;
+    authored.subsurface_radius_scale = Eigen::Vector3d {1.0, 0.5, 0.25};
+    authored.subsurface_scatter_anisotropy = 0.35;
+    const rt::OpenPbrCoreMaterial material =
+        rt::scene::compile_openpbr_core_material(authored).parameters;
+    const rt::OpenPbrSubsurfaceMedium medium = rt::openpbr_subsurface_medium(material);
+    expect_true(medium.active != 0, "positive-radius non-thin-walled subsurface enables random walk");
+    expect_vec_near(medium.extinction, {0.5f, 1.0f, 2.0f}, 1e-6,
+        "OpenPBR radius times radius-scale is RGB mean free path");
+    expect_near(medium.anisotropy, 0.35, 1e-6, "OpenPBR anisotropy maps to HG g");
+
+    const rt::OpenPbrVec3 observed = material.subsurface_color;
+    for (int channel = 0; channel < 3; ++channel) {
+        const double alpha = rt::openpbr_component(medium.single_scattering_albedo, channel);
+        const double g = medium.anisotropy;
+        const double s = std::sqrt(std::max(0.0, (1.0 - alpha) / (1.0 - alpha * g)));
+        const double reconstructed = (1.0 - s) * (1.0 - 0.139 * s) / (1.0 + 1.17 * s);
+        expect_near(reconstructed, rt::openpbr_component(observed, channel), 2e-5,
+            "van de Hulst observed-color inversion channel " + std::to_string(channel));
+    }
+
+    constexpr std::size_t kSamples = 65536;
+    constexpr float kBoundaryDistance = 0.7f;
+    rt::OpenPbrTransportContext context;
+    context.path_throughput = {0.2f, 0.5f, 0.3f};
+    rt::OpenPbrVec3 expected_energy {};
+    const rt::OpenPbrVec3 transmittance =
+        rt::openpbr_subsurface_transmittance(medium, kBoundaryDistance);
+    expected_energy = rt::openpbr_add(transmittance,
+        rt::openpbr_mul(medium.single_scattering_albedo,
+            rt::openpbr_sub(rt::openpbr_make_vec3(1.0f), transmittance)));
+    double measured_energy_x = 0.0;
+    double measured_energy_y = 0.0;
+    double measured_energy_z = 0.0;
+    for (std::size_t index = 0; index < kSamples; ++index) {
+        const float u = (static_cast<float>(index) + 0.5f) / static_cast<float>(kSamples);
+        const rt::OpenPbrSubsurfaceSegment segment =
+            rt::openpbr_sample_subsurface_segment(medium, kBoundaryDistance, u, context);
+        expect_finite_nonnegative(segment.weight, "random-walk segment weight");
+        measured_energy_x += segment.weight.x;
+        measured_energy_y += segment.weight.y;
+        measured_energy_z += segment.weight.z;
+    }
+    const rt::OpenPbrVec3 measured_energy {
+        static_cast<float>(measured_energy_x / static_cast<double>(kSamples)),
+        static_cast<float>(measured_energy_y / static_cast<double>(kSamples)),
+        static_cast<float>(measured_energy_z / static_cast<double>(kSamples)),
+    };
+    expect_vec_near(measured_energy, expected_energy, 2e-4,
+        "RGB free-flight mixture is unbiased over scattering and boundary survival");
+
+    double mean_cosine = 0.0;
+    const rt::OpenPbrVec3 incident {0.0f, 0.0f, 1.0f};
+    for (std::size_t index = 0; index < kSamples; ++index) {
+        const float u1 = (static_cast<float>(index) + 0.5f) / static_cast<float>(kSamples);
+        const float u2 = std::fmod(0.61803398875f * static_cast<float>(index + 1), 1.0f);
+        const rt::OpenPbrVec3 direction = rt::openpbr_sample_henyey_greenstein(
+            incident, medium.anisotropy, u1, u2);
+        mean_cosine += rt::openpbr_dot(incident, direction);
+    }
+    expect_near(mean_cosine / static_cast<double>(kSamples), medium.anisotropy, 2e-4,
+        "Henyey-Greenstein samples reproduce the authored mean cosine");
+
+    rt::OpenPbrCoreMaterial boundary_material = material;
+    boundary_material.subsurface_weight = 1.0f;
+    boundary_material.specular_roughness = 0.0f;
+    const rt::OpenPbrFrame frame = rt::make_openpbr_frame(kNormal, kTangent);
+    const rt::OpenPbrVec3 outside {0.0f, 0.0f, 1.0f};
+    const rt::OpenPbrLobeProbabilities probabilities =
+        rt::openpbr_lobe_probabilities(boundary_material);
+    const rt::OpenPbrSample entry = rt::sample_openpbr_core(boundary_material, frame, outside,
+        probabilities.diffuse + 0.5f * probabilities.subsurface, 0.25f, 0.75f);
+    expect_true(entry.valid != 0 && entry.event == rt::OpenPbrScatterEvent::subsurface_entry,
+        "opaque-base subsurface mixture enters the bounded random walk");
+    expect_true(entry.wi.z < 0.0f, "subsurface entry refracts below the boundary");
+
+    const rt::OpenPbrSample exit = rt::sample_openpbr_core(
+        boundary_material, frame, {0.0f, 0.0f, -1.0f}, 0.99f, 0.25f, 0.75f);
+    expect_true(exit.valid != 0 && exit.event == rt::OpenPbrScatterEvent::subsurface_exit,
+        "random walk exits through the same dielectric boundary contract");
+    expect_true(exit.wi.z > 0.0f, "subsurface exit refracts outside the boundary");
+
+    rt::OpenPbrCoreMaterial zero_weight;
+    zero_weight.base_weight = 0.37f;
+    zero_weight.base_color = {0.3f, 0.5f, 0.7f};
+    zero_weight.specular_roughness = 0.4f;
+    rt::OpenPbrCoreMaterial inactive = zero_weight;
+    inactive.subsurface_weight = 0.0f;
+    inactive.subsurface_color = {1.0f, 0.0f, 1.0f};
+    inactive.subsurface_radius = 50.0f;
+    inactive.subsurface_radius_scale = {0.1f, 0.9f, 0.2f};
+    inactive.subsurface_scatter_anisotropy = 0.9f;
+    const rt::OpenPbrSample baseline =
+        rt::sample_openpbr_core(zero_weight, frame, outside, 0.4f, 0.2f, 0.8f);
+    const rt::OpenPbrSample compatible =
+        rt::sample_openpbr_core(inactive, frame, outside, 0.4f, 0.2f, 0.8f);
+    expect_vec_near(compatible.wi, baseline.wi, 0.0, "zero-weight sample direction compatibility");
+    expect_vec_near(compatible.weight, baseline.weight, 0.0,
+        "zero-weight sample throughput compatibility");
+    expect_near(compatible.pdf, baseline.pdf, 0.0, "zero-weight sample PDF compatibility");
+    expect_true(compatible.event == baseline.event && compatible.valid == baseline.valid,
+        "zero-weight sample event compatibility");
+
+    rt::OpenPbrCoreMaterial zero_radius = boundary_material;
+    zero_radius.specular_weight = 0.0f;
+    zero_radius.subsurface_radius = 0.0f;
+    const rt::OpenPbrSample diffuse_limit =
+        rt::sample_openpbr_core(zero_radius, frame, outside, 0.5f, 0.25f, 0.75f);
+    expect_true(diffuse_limit.event == rt::OpenPbrScatterEvent::diffuse_reflection,
+        "zero mean-free-path uses the OpenPBR infinite-density diffuse limit");
+
+    authored.geometry_thin_walled = true;
+    authored.subsurface_weight = 1.0;
+    authored.specular_ior = 1.0;
+    authored.specular_roughness = 0.0;
+    authored.base_weight = 0.0;
+    const rt::OpenPbrCoreMaterial thin_walled =
+        rt::scene::compile_openpbr_core_material(authored).parameters;
+    expect_true(rt::openpbr_subsurface_medium(thin_walled).active == 0,
+        "thin-walled subsurface uses the sheet model instead of a fictitious volume");
+
+    const float reflection_probability =
+        rt::openpbr_subsurface_thin_walled_probability(thin_walled, false);
+    const float transmission_probability =
+        rt::openpbr_subsurface_thin_walled_probability(thin_walled, true);
+    expect_near(reflection_probability, 0.325, 1e-6,
+        "thin-wall reflection receives half of one minus anisotropy");
+    expect_near(transmission_probability, 0.675, 1e-6,
+        "thin-wall transmission receives half of one plus anisotropy");
+
+    const rt::OpenPbrVec3 reflected {0.0f, 0.0f, 1.0f};
+    const rt::OpenPbrVec3 transmitted {0.0f, 0.0f, -1.0f};
+    const rt::OpenPbrEvaluation thin_reflection =
+        rt::evaluate_openpbr_core(thin_walled, frame, outside, reflected);
+    const rt::OpenPbrEvaluation thin_transmission =
+        rt::evaluate_openpbr_core(thin_walled, frame, outside, transmitted);
+    expect_vec_near(thin_reflection.value,
+        rt::openpbr_mul(thin_walled.subsurface_color,
+            reflection_probability * rt::kOpenPbrInvPi),
+        2e-6, "thin-wall reflection follows the OpenPBR diffuse-sheet equation");
+    expect_vec_near(thin_transmission.value,
+        rt::openpbr_mul(thin_walled.subsurface_color,
+            transmission_probability * rt::kOpenPbrInvPi),
+        2e-6, "thin-wall transmission follows the OpenPBR diffuse-sheet equation");
+    expect_near(thin_reflection.pdf, reflection_probability * rt::kOpenPbrInvPi, 2e-6,
+        "thin-wall reflection PDF matches its hemisphere probability");
+    expect_near(thin_transmission.pdf, transmission_probability * rt::kOpenPbrInvPi, 2e-6,
+        "thin-wall transmission PDF matches its hemisphere probability");
+
+    const rt::OpenPbrSample thin_reflection_sample =
+        rt::sample_openpbr_core(thin_walled, frame, outside, 0.1f, 0.25f, 0.75f);
+    const rt::OpenPbrSample thin_transmission_sample =
+        rt::sample_openpbr_core(thin_walled, frame, outside, 0.9f, 0.25f, 0.75f);
+    expect_true(thin_reflection_sample.valid != 0 && thin_reflection_sample.delta == 0
+                    && thin_reflection_sample.event
+                           == rt::OpenPbrScatterEvent::diffuse_reflection
+                    && thin_reflection_sample.wi.z > 0.0f,
+        "thin-wall subsurface samples diffuse reflection in the positive hemisphere");
+    expect_true(thin_transmission_sample.valid != 0 && thin_transmission_sample.delta == 0
+                    && thin_transmission_sample.event
+                           == rt::OpenPbrScatterEvent::thin_walled_transmission
+                    && thin_transmission_sample.wi.z < 0.0f,
+        "thin-wall subsurface samples diffuse transmission in the negative hemisphere");
+    expect_vec_near(thin_reflection_sample.weight, thin_walled.subsurface_color, 2e-6,
+        "thin-wall reflection sampling is energy matched");
+    expect_vec_near(thin_transmission_sample.weight, thin_walled.subsurface_color, 2e-6,
+        "thin-wall transmission sampling is energy matched");
+
+    rt::OpenPbrCoreMaterial ignored_radius = thin_walled;
+    ignored_radius.subsurface_radius = 37.0f;
+    ignored_radius.subsurface_radius_scale = {0.05f, 0.7f, 1.0f};
+    const rt::OpenPbrSample ignored_radius_sample =
+        rt::sample_openpbr_core(ignored_radius, frame, outside, 0.9f, 0.25f, 0.75f);
+    expect_vec_near(ignored_radius_sample.wi, thin_transmission_sample.wi, 0.0,
+        "thin-wall subsurface radius does not change sampling");
+    expect_vec_near(ignored_radius_sample.weight, thin_transmission_sample.weight, 0.0,
+        "thin-wall subsurface radius does not change throughput");
+    expect_near(ignored_radius_sample.pdf, thin_transmission_sample.pdf, 0.0,
+        "thin-wall subsurface radius does not change PDF");
+}
+
 void test_anisotropy_rotates_with_tangent() {
     rt::OpenPbrCoreMaterial material;
     material.base_weight = 1.0f;
@@ -822,6 +1019,7 @@ int main() {
     test_thin_film_reference_semantics();
     test_dispersion_reference_semantics();
     test_openpbr_reference_parameter_semantics();
+    test_subsurface_reference_semantics();
     test_anisotropy_rotates_with_tangent();
     test_opacity_thin_walled_and_emission();
     return 0;

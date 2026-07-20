@@ -1,6 +1,9 @@
+#include "common/camera.h"
+#include "common/hittable_list.h"
 #include "common/interval.h"
 #include "common/material.h"
 #include "common/ray.h"
+#include "common/sphere.h"
 #include "realtime/camera_rig.h"
 #include "realtime/frame_convention.h"
 #include "realtime/gpu/optix_renderer.h"
@@ -8,6 +11,8 @@
 #include "scene/cpu_scene_adapter.h"
 #include "scene/realtime_scene_adapter.h"
 #include "test_support.h"
+
+#include <tbb/global_control.h>
 
 namespace {
 
@@ -151,9 +156,68 @@ rt::RadianceFrame render_openpbr_direct_light(bool openpbr_light) {
     return renderer.render_radiance(scene.pack(), make_test_rig().pack(), profile, 0);
 }
 
+rt::RadianceFrame render_subsurface_sphere() {
+    rt::SceneDescription scene;
+    scene.background = Eigen::Vector3d::Ones();
+    rt::OpenPbrCoreMaterial parameters;
+    parameters.base_weight = 0.0f;
+    parameters.specular_roughness = 0.0f;
+    parameters.subsurface_weight = 1.0f;
+    parameters.subsurface_color = {0.95f, 0.7f, 0.45f};
+    parameters.subsurface_radius = 2.0f;
+    parameters.subsurface_radius_scale = {1.0f, 0.5f, 0.25f};
+    parameters.subsurface_scatter_anisotropy = 0.35f;
+    const int material = scene.add_material(rt::OpenPbrMaterialDesc {
+        .compiled = rt::OpenPbrCompiledMaterial {.parameters = parameters},
+    });
+    scene.add_sphere(rt::SpherePrimitive {material,
+        rt::legacy_renderer_to_world(Eigen::Vector3d {0.0, 0.0, -3.0}), 1.0, false});
+
+    rt::RenderProfile profile = rt::RenderProfile::realtime_default();
+    profile.samples_per_pixel = 32;
+    profile.max_bounces = 12;
+    profile.rr_start_bounce = 13;
+    rt::OptixRenderer renderer;
+    return renderer.render_radiance(scene.pack(), make_test_rig().pack(), profile, 0);
+}
+
+cv::Mat render_cpu_subsurface_sphere() {
+    rt::OpenPbrCoreMaterial parameters;
+    parameters.base_weight = 0.0f;
+    parameters.specular_ior = 1.0f;
+    parameters.specular_roughness = 0.0f;
+    parameters.subsurface_weight = 1.0f;
+    parameters.subsurface_color = {0.95f, 0.7f, 0.45f};
+    parameters.subsurface_radius = 2.0f;
+    parameters.subsurface_radius_scale = {1.0f, 0.5f, 0.25f};
+    parameters.subsurface_scatter_anisotropy = 0.35f;
+
+    HittableList world;
+    world.add(pro::make_proxy_shared<Hittable, Sphere>(Vec3d {0.0, 0.0, -3.0}, 1.0,
+        pro::make_proxy_shared<Material, OpenPbrSurfaceMaterial>(
+            rt::OpenPbrCompiledMaterial {.parameters = parameters},
+            std::vector<pro::proxy<Texture>> {})));
+    pro::proxy<Hittable> world_as_hittable = &world;
+
+    Camera camera;
+    camera.aspect_ratio = 1.0;
+    camera.image_width = 16;
+    camera.samples_per_pixel = 64;
+    camera.max_depth = 16;
+    camera.background = Vec3d::Ones();
+    camera.vfov = 45.0;
+    camera.lookfrom = Vec3d::Zero();
+    camera.lookat = {0.0, 0.0, -3.0};
+    camera.vup = {0.0, 1.0, 0.0};
+    camera.defocus_angle = 0.0;
+    camera.render(world_as_hittable);
+    return camera.img;
+}
+
 } // namespace
 
 int main() {
+    tbb::global_control render_threads(tbb::global_control::max_allowed_parallelism, 1);
     const OpenPbrReferenceScene reference = make_reference_scene();
 
     const rt::scene::CpuSceneAdapterResult cpu =
@@ -191,5 +255,71 @@ int main() {
         "OpenPBR direct response uses the shared BSDF instead of base-color fallback");
     expect_true(center_pixel_luminance(render_openpbr_direct_light(true)) > 0.01,
         "OpenPBR emissive geometry participates in direct lighting");
+
+    rt::OpenPbrCoreMaterial subsurface_parameters;
+    subsurface_parameters.base_weight = 0.0f;
+    subsurface_parameters.specular_roughness = 0.0f;
+    subsurface_parameters.subsurface_weight = 1.0f;
+    subsurface_parameters.subsurface_color = {0.9f, 0.6f, 0.3f};
+    subsurface_parameters.subsurface_radius = 1.0f;
+    subsurface_parameters.subsurface_scatter_anisotropy = 0.35f;
+    const OpenPbrSurfaceMaterial subsurface_material {
+        rt::OpenPbrCompiledMaterial {.parameters = subsurface_parameters}, {}};
+    const Ray entering_ray {Vec3d {0.0, 0.0, 1.0}, Vec3d {0.0, 0.0, -1.0}};
+    HitRecord entry_hit;
+    entry_hit.p = Vec3d::Zero();
+    entry_hit.u = 0.0;
+    entry_hit.v = 0.0;
+    entry_hit.set_face_normal(entering_ray, Vec3d {0.0, 0.0, 1.0});
+    ScatterRecord entry_scatter;
+    bool entered = false;
+    for (int attempt = 0; attempt < 128 && !entered; ++attempt) {
+        entered = subsurface_material.scatter(entering_ray, entry_hit, entry_scatter)
+                  && entry_scatter.skip_pdf_ray.subsurface_medium().active != 0;
+    }
+    expect_true(entered, "CPU OpenPBR production material enters random-walk medium state");
+    expect_true(entry_scatter.skip_pdf_ray.subsurface_owner() == &subsurface_material,
+        "CPU random-walk ray retains its material owner");
+
+    const OpenPbrSurfaceMaterial other_subsurface_material {
+        rt::OpenPbrCompiledMaterial {.parameters = subsurface_parameters}, {}};
+    ScatterRecord wrong_owner_scatter;
+    expect_true(!other_subsurface_material.scatter(
+                    entry_scatter.skip_pdf_ray, entry_hit, wrong_owner_scatter),
+        "CPU random walk cannot cross a different OpenPBR material boundary");
+
+    const Ray exiting_ray {Vec3d::Zero(), Vec3d {0.0, 0.0, 1.0}, 0.0,
+        entry_scatter.skip_pdf_ray.subsurface_medium(),
+        entry_scatter.skip_pdf_ray.subsurface_owner()};
+    HitRecord exit_hit;
+    exit_hit.p = Vec3d {0.0, 0.0, 1.0};
+    exit_hit.u = 0.0;
+    exit_hit.v = 0.0;
+    exit_hit.set_face_normal(exiting_ray, Vec3d {0.0, 0.0, 1.0});
+    ScatterRecord exit_scatter;
+    bool exited = false;
+    for (int attempt = 0; attempt < 128 && !exited; ++attempt) {
+        exited = subsurface_material.scatter(exiting_ray, exit_hit, exit_scatter)
+                 && exit_scatter.skip_pdf_ray.subsurface_medium().active == 0;
+    }
+    expect_true(exited, "CPU OpenPBR production material exits random-walk medium state");
+    expect_true(exit_scatter.skip_pdf_ray.subsurface_owner() == nullptr,
+        "CPU random-walk material owner clears on exit");
+
+    const Eigen::Vector3d subsurface_gpu = center_pixel_rgb(render_subsurface_sphere());
+    expect_true(subsurface_gpu.allFinite() && (subsurface_gpu.array() >= 0.0).all(),
+        "GPU random-walk subsurface render remains finite and non-negative");
+    expect_true(subsurface_gpu.maxCoeff() > 0.01,
+        "GPU random-walk subsurface transports environment energy through a closed sphere");
+    expect_true(subsurface_gpu.maxCoeff() <= 1.25,
+        "GPU random-walk subsurface stays within the finite white-furnace bound");
+    const cv::Mat subsurface_cpu = render_cpu_subsurface_sphere();
+    expect_true(!subsurface_cpu.empty(), "CPU random-walk subsurface render produces an image");
+    const cv::Vec3b subsurface_cpu_center =
+        subsurface_cpu.at<cv::Vec3b>(subsurface_cpu.rows / 2, subsurface_cpu.cols / 2);
+    expect_true(std::max({subsurface_cpu_center[0], subsurface_cpu_center[1],
+                    subsurface_cpu_center[2]})
+                    > 0,
+        "CPU random-walk subsurface transports white-environment energy through a closed sphere");
     return 0;
 }

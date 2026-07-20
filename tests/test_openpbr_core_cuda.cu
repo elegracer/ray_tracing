@@ -11,7 +11,7 @@
 
 namespace {
 
-constexpr int kCaseCount = 8;
+constexpr int kCaseCount = 10;
 
 struct CoreCase {
     rt::OpenPbrCoreMaterial material {};
@@ -32,6 +32,9 @@ struct CoreOutput {
     rt::OpenPbrVec3 decoded_srgb {};
     rt::OpenPbrVec3 thin_film_reflectance {};
     rt::OpenPbrVec3 dispersion_ior {};
+    rt::OpenPbrSubsurfaceMedium subsurface_medium {};
+    rt::OpenPbrSubsurfaceSegment subsurface_segment {};
+    rt::OpenPbrVec3 phase_direction {};
 };
 
 void check_cuda(cudaError_t error, const char* operation) {
@@ -78,6 +81,11 @@ __global__ void evaluate_cases(const CoreCase* cases, CoreOutput* outputs) {
         rt::openpbr_dielectric_reflectance(test_case.material, 0.75f, true, test_case.context);
     outputs[index].dispersion_ior =
         rt::openpbr_dispersion_ior(test_case.material, test_case.context);
+    outputs[index].subsurface_medium = rt::openpbr_subsurface_medium(test_case.material);
+    outputs[index].subsurface_segment = rt::openpbr_sample_subsurface_segment(
+        outputs[index].subsurface_medium, 0.7f, 0.37f, test_case.context);
+    outputs[index].phase_direction = rt::openpbr_sample_henyey_greenstein(
+        {0.0f, 0.0f, 1.0f}, outputs[index].subsurface_medium.anisotropy, 0.31f, 0.73f);
 }
 
 void expect_vec_near(const rt::OpenPbrVec3& actual, const rt::OpenPbrVec3& expected,
@@ -182,6 +190,32 @@ std::array<CoreCase, kCaseCount> make_cases() {
     cases[7].u_lobe = 0.92f;
     cases[7].u1 = 0.33f;
     cases[7].u2 = 0.71f;
+
+    cases[8].material.subsurface_weight = 1.0f;
+    cases[8].material.subsurface_color = {0.8f, 0.5f, 0.2f};
+    cases[8].material.subsurface_radius = 2.0f;
+    cases[8].material.subsurface_radius_scale = {1.0f, 0.5f, 0.25f};
+    cases[8].material.subsurface_scatter_anisotropy = 0.35f;
+    cases[8].material.specular_roughness = 0.0f;
+    cases[8].context.path_throughput = {0.2f, 0.5f, 0.3f};
+    cases[8].wi = rt::openpbr_normalize({0.1f, -0.05f, 1.0f});
+    cases[8].u_lobe = 0.5f;
+    cases[8].u1 = 0.25f;
+    cases[8].u2 = 0.75f;
+
+    cases[9].material.base_weight = 0.0f;
+    cases[9].material.specular_ior = 1.0f;
+    cases[9].material.specular_roughness = 0.0f;
+    cases[9].material.subsurface_weight = 1.0f;
+    cases[9].material.subsurface_color = {0.8f, 0.5f, 0.2f};
+    cases[9].material.subsurface_radius = 37.0f;
+    cases[9].material.subsurface_radius_scale = {0.05f, 0.7f, 1.0f};
+    cases[9].material.subsurface_scatter_anisotropy = 0.35f;
+    cases[9].material.geometry_thin_walled = 1;
+    cases[9].wi = rt::openpbr_normalize({0.1f, -0.05f, -1.0f});
+    cases[9].u_lobe = 0.9f;
+    cases[9].u1 = 0.25f;
+    cases[9].u2 = 0.75f;
     return cases;
 }
 
@@ -211,6 +245,11 @@ int main() {
                 cases[index].material, 0.75f, true, cases[index].context);
         expected[index].dispersion_ior =
             rt::openpbr_dispersion_ior(cases[index].material, cases[index].context);
+        expected[index].subsurface_medium = rt::openpbr_subsurface_medium(cases[index].material);
+        expected[index].subsurface_segment = rt::openpbr_sample_subsurface_segment(
+            expected[index].subsurface_medium, 0.7f, 0.37f, cases[index].context);
+        expected[index].phase_direction = rt::openpbr_sample_henyey_greenstein({0.0f, 0.0f, 1.0f},
+            expected[index].subsurface_medium.anisotropy, 0.31f, 0.73f);
     }
 
     CoreCase* device_cases = nullptr;
@@ -263,6 +302,29 @@ int main() {
                 prefix + " thin-film reflectance");
             expect_vec_near(actual[index].dispersion_ior, expected[index].dispersion_ior, 3e-6,
                 prefix + " dispersion IOR");
+            expect_true(actual[index].subsurface_medium.active
+                            == expected[index].subsurface_medium.active,
+                prefix + " subsurface medium state");
+            expect_vec_near(actual[index].subsurface_medium.extinction,
+                expected[index].subsurface_medium.extinction, 3e-6,
+                prefix + " subsurface extinction");
+            expect_vec_near(actual[index].subsurface_medium.single_scattering_albedo,
+                expected[index].subsurface_medium.single_scattering_albedo, 3e-6,
+                prefix + " subsurface single-scattering albedo");
+            expect_relative(actual[index].subsurface_medium.anisotropy,
+                expected[index].subsurface_medium.anisotropy, 3e-6,
+                prefix + " subsurface anisotropy");
+            expect_true(actual[index].subsurface_segment.scattered
+                            == expected[index].subsurface_segment.scattered,
+                prefix + " subsurface segment event");
+            expect_relative(actual[index].subsurface_segment.distance,
+                expected[index].subsurface_segment.distance, 3e-6,
+                prefix + " subsurface segment distance");
+            expect_vec_near(actual[index].subsurface_segment.weight,
+                expected[index].subsurface_segment.weight, 3e-5,
+                prefix + " subsurface segment weight");
+            expect_vec_near(actual[index].phase_direction, expected[index].phase_direction, 3e-6,
+                prefix + " HG phase direction");
         }
 
         cudaFree(device_outputs);
