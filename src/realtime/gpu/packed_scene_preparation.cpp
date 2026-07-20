@@ -3,6 +3,7 @@
 #include <opencv2/opencv.hpp>
 
 #include <array>
+#include <cmath>
 #include <type_traits>
 
 namespace rt {
@@ -143,6 +144,119 @@ PackedTexture pack_texture(const TextureDesc& texture, std::vector<Eigen::Vector
     return packed;
 }
 
+float luminance(const Eigen::Vector3f& value) {
+    return std::max(0.0f, 0.2126f * value.x() + 0.7152f * value.y() + 0.0722f * value.z());
+}
+
+Eigen::Vector3f average_texture(const GpuPreparedScene& scene, int texture_index, int depth = 0) {
+    if (texture_index < 0 || texture_index >= static_cast<int>(scene.textures.size())
+        || depth >= 8) {
+        return Eigen::Vector3f::Zero();
+    }
+    const PackedTexture& texture = scene.textures[static_cast<std::size_t>(texture_index)];
+    if (texture.type == 0) {
+        return texture.color.cwiseMax(0.0f);
+    }
+    if (texture.type == 1) {
+        return 0.5f
+               * (average_texture(scene, texture.even_texture, depth + 1)
+                   + average_texture(scene, texture.odd_texture, depth + 1));
+    }
+    if (texture.type == 2 && texture.image_width > 0 && texture.image_height > 0) {
+        const int count = texture.image_width * texture.image_height;
+        if (texture.image_offset < 0
+            || texture.image_offset + count > static_cast<int>(scene.image_texels.size())) {
+            return Eigen::Vector3f::Zero();
+        }
+        Eigen::Vector3f sum = Eigen::Vector3f::Zero();
+        for (int i = 0; i < count; ++i) {
+            sum += scene.image_texels[static_cast<std::size_t>(texture.image_offset + i)];
+        }
+        return (sum / static_cast<float>(count)).cwiseMax(0.0f);
+    }
+    if (texture.type == 3) {
+        return Eigen::Vector3f::Constant(0.5f);
+    }
+    return Eigen::Vector3f::Zero();
+}
+
+float material_emission_luminance(const GpuPreparedScene& scene, int material_index) {
+    if (material_index < 0 || material_index >= static_cast<int>(scene.materials.size())) {
+        return 0.0f;
+    }
+    const MaterialSample& material = scene.materials[static_cast<std::size_t>(material_index)];
+    if (material.type == 3) {
+        return luminance(average_texture(scene, material.emission_texture));
+    }
+    if (material.type != 5 || material.openpbr_index < 0
+        || material.openpbr_index >= static_cast<int>(scene.openpbr_materials.size())) {
+        return 0.0f;
+    }
+
+    OpenPbrCoreMaterial parameters =
+        scene.openpbr_materials[static_cast<std::size_t>(material.openpbr_index)].parameters;
+    const OpenPbrColorTextureBinding& binding =
+        scene.openpbr_materials[static_cast<std::size_t>(material.openpbr_index)]
+            .color_textures.emission_color;
+    if (binding.texture_index >= 0) {
+        const Eigen::Vector3f sampled = average_texture(scene, binding.texture_index);
+        openpbr_apply_color_input(parameters, OpenPbrColorInput::emission_color,
+            {sampled.x(), sampled.y(), sampled.z()}, binding.source_color_space);
+    }
+    return openpbr_luminance(emission_openpbr_core(parameters));
+}
+
+void append_light(std::vector<PackedLight>& lights, PackedLightType type, int primitive_index,
+    float weight) {
+    if (!std::isfinite(weight) || weight <= 1e-12f) {
+        return;
+    }
+    lights.push_back(PackedLight {
+        .type = type,
+        .primitive_index = primitive_index,
+        .selection_pdf = weight,
+    });
+}
+
+void build_light_distribution(GpuPreparedScene& prepared) {
+    constexpr float kPi = 3.14159265358979323846f;
+    for (std::size_t i = 0; i < prepared.spheres.size(); ++i) {
+        const PackedSphere& sphere = prepared.spheres[i];
+        const float area = 4.0f * kPi * sphere.radius * sphere.radius;
+        append_light(prepared.lights, PackedLightType::sphere, static_cast<int>(i),
+            area * material_emission_luminance(prepared, sphere.material_index));
+    }
+    for (std::size_t i = 0; i < prepared.quads.size(); ++i) {
+        const PackedQuad& quad = prepared.quads[i];
+        const float area = quad.edge_u.cross(quad.edge_v).norm();
+        append_light(prepared.lights, PackedLightType::quad, static_cast<int>(i),
+            area * material_emission_luminance(prepared, quad.material_index));
+    }
+    for (std::size_t i = 0; i < prepared.triangles.size(); ++i) {
+        const PackedTriangle& triangle = prepared.triangles[i];
+        const float area =
+            0.5f * (triangle.p1 - triangle.p0).cross(triangle.p2 - triangle.p0).norm();
+        append_light(prepared.lights, PackedLightType::triangle, static_cast<int>(i),
+            area * material_emission_luminance(prepared, triangle.material_index));
+    }
+    append_light(prepared.lights, PackedLightType::environment, -1,
+        4.0f * kPi * luminance(prepared.background));
+
+    float total_weight = 0.0f;
+    for (const PackedLight& light : prepared.lights) {
+        total_weight += light.selection_pdf;
+    }
+    float cdf = 0.0f;
+    for (PackedLight& light : prepared.lights) {
+        light.selection_pdf /= total_weight;
+        cdf += light.selection_pdf;
+        light.cdf = cdf;
+    }
+    if (!prepared.lights.empty()) {
+        prepared.lights.back().cdf = 1.0f;
+    }
+}
+
 } // namespace
 
 GpuPreparedScene prepare_gpu_scene(const PackedScene& scene) {
@@ -178,6 +292,8 @@ GpuPreparedScene prepare_gpu_scene(const PackedScene& scene) {
     for (const TextureDesc& texture : scene.textures) {
         prepared.textures.push_back(pack_texture(texture, prepared.image_texels));
     }
+
+    build_light_distribution(prepared);
 
     return prepared;
 }

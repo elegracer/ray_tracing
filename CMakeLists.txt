@@ -465,6 +465,14 @@ target_sources(test_openpbr_core
 target_link_libraries(test_openpbr_core PRIVATE core)
 add_test(NAME test_openpbr_core COMMAND test_openpbr_core)
 
+add_executable(test_light_sampling)
+target_sources(test_light_sampling
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_light_sampling.cpp
+)
+target_link_libraries(test_light_sampling PRIVATE core)
+add_test(NAME test_light_sampling COMMAND test_light_sampling)
+
 add_executable(test_shared_scene_builders)
 target_sources(test_shared_scene_builders
     PRIVATE

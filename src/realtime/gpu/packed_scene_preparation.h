@@ -19,6 +19,7 @@ struct GpuPreparedScene {
     std::vector<Eigen::Vector3f> image_texels;
     std::vector<MaterialSample> materials;
     std::vector<OpenPbrCompiledMaterial> openpbr_materials;
+    std::vector<PackedLight> lights;
 };
 
 GpuPreparedScene prepare_gpu_scene(const PackedScene& scene);

@@ -50,6 +50,7 @@ void DeviceSceneBuffers::upload(const GpuPreparedScene& scene) {
     upload_vector(image_texels_, scene.image_texels);
     upload_vector(materials_, scene.materials);
     upload_vector(openpbr_materials_, scene.openpbr_materials);
+    upload_vector(lights_, scene.lights);
 
     sphere_count_ = static_cast<int>(scene.spheres.size());
     quad_count_ = static_cast<int>(scene.quads.size());
@@ -59,6 +60,7 @@ void DeviceSceneBuffers::upload(const GpuPreparedScene& scene) {
     image_texel_count_ = static_cast<int>(scene.image_texels.size());
     material_count_ = static_cast<int>(scene.materials.size());
     openpbr_material_count_ = static_cast<int>(scene.openpbr_materials.size());
+    light_count_ = static_cast<int>(scene.lights.size());
 }
 
 void DeviceSceneBuffers::reset() {
@@ -70,6 +72,7 @@ void DeviceSceneBuffers::reset() {
     free_device_ptr(image_texels_);
     free_device_ptr(materials_);
     free_device_ptr(openpbr_materials_);
+    free_device_ptr(lights_);
     spheres_ = nullptr;
     quads_ = nullptr;
     triangles_ = nullptr;
@@ -78,6 +81,7 @@ void DeviceSceneBuffers::reset() {
     image_texels_ = nullptr;
     materials_ = nullptr;
     openpbr_materials_ = nullptr;
+    lights_ = nullptr;
     sphere_count_ = 0;
     quad_count_ = 0;
     triangle_count_ = 0;
@@ -86,6 +90,7 @@ void DeviceSceneBuffers::reset() {
     image_texel_count_ = 0;
     material_count_ = 0;
     openpbr_material_count_ = 0;
+    light_count_ = 0;
 }
 
 DeviceSceneView DeviceSceneBuffers::view() const {
@@ -98,6 +103,7 @@ DeviceSceneView DeviceSceneBuffers::view() const {
         .image_texels = image_texels_,
         .materials = materials_,
         .openpbr_materials = openpbr_materials_,
+        .lights = lights_,
         .sphere_count = sphere_count_,
         .quad_count = quad_count_,
         .triangle_count = triangle_count_,
@@ -106,6 +112,7 @@ DeviceSceneView DeviceSceneBuffers::view() const {
         .image_texel_count = image_texel_count_,
         .material_count = material_count_,
         .openpbr_material_count = openpbr_material_count_,
+        .light_count = light_count_,
     };
 }
 

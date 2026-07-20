@@ -129,6 +129,18 @@ int main() {
     expect_true(prepared.openpbr_materials.size() == 1, "OpenPBR sidecar count");
     expect_near(prepared.openpbr_materials[0].parameters.base_color.x, 0.25, 1e-6,
         "OpenPBR base color");
+    expect_true(prepared.lights.size() == 2, "emissive quad and environment light count");
+    expect_true(prepared.lights[0].type == rt::PackedLightType::quad, "quad light type");
+    expect_true(prepared.lights[0].primitive_index == 0, "quad light index");
+    expect_true(prepared.lights[1].type == rt::PackedLightType::environment,
+        "environment light type");
+    expect_true(prepared.lights[0].selection_pdf > 0.0f,
+        "quad light has positive selection probability");
+    expect_true(prepared.lights[1].selection_pdf > 0.0f,
+        "environment light has positive selection probability");
+    expect_near(prepared.lights[0].selection_pdf + prepared.lights[1].selection_pdf, 1.0, 1e-6,
+        "light selection probabilities normalize");
+    expect_near(prepared.lights.back().cdf, 1.0, 1e-6, "light CDF closes exactly");
     expect_true(openpbr == 5, "OpenPBR material index");
     expect_true(sizeof(rt::MaterialSample) <= 24,
         "legacy material samples remain compact after OpenPBR integration");

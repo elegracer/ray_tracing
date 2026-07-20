@@ -27,6 +27,7 @@ private:
     Eigen::Vector3f* image_texels_ = nullptr;
     MaterialSample* materials_ = nullptr;
     OpenPbrCompiledMaterial* openpbr_materials_ = nullptr;
+    PackedLight* lights_ = nullptr;
     int sphere_count_ = 0;
     int quad_count_ = 0;
     int triangle_count_ = 0;
@@ -35,6 +36,7 @@ private:
     int image_texel_count_ = 0;
     int material_count_ = 0;
     int openpbr_material_count_ = 0;
+    int light_count_ = 0;
 };
 
 } // namespace rt

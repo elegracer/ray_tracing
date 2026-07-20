@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/light_sampling.h"
 #include "common/openpbr_core.h"
 #include "realtime/camera_rig.h"
 #include "realtime/gpu/frame_types.h"
@@ -37,6 +38,7 @@ struct DeviceSceneView {
     Eigen::Vector3f* image_texels = nullptr;
     MaterialSample* materials = nullptr;
     OpenPbrCompiledMaterial* openpbr_materials = nullptr;
+    PackedLight* lights = nullptr;
     int sphere_count = 0;
     int quad_count = 0;
     int triangle_count = 0;
@@ -45,6 +47,7 @@ struct DeviceSceneView {
     int image_texel_count = 0;
     int material_count = 0;
     int openpbr_material_count = 0;
+    int light_count = 0;
 };
 
 struct DevicePinhole32Params {
