@@ -6,7 +6,8 @@ namespace rt {
 
 namespace {
 
-int ensure_constant_texture(std::vector<TextureDesc>& textures, int texture_index, const Eigen::Vector3d& color) {
+int ensure_constant_texture(std::vector<TextureDesc>& textures, int texture_index,
+    const Eigen::Vector3d& color) {
     if (texture_index >= 0) {
         return texture_index;
     }
@@ -14,7 +15,7 @@ int ensure_constant_texture(std::vector<TextureDesc>& textures, int texture_inde
     return static_cast<int>(textures.size()) - 1;
 }
 
-}  // namespace
+} // namespace
 
 int SceneDescription::add_texture(const TextureDesc& texture) {
     textures_.push_back(texture);
@@ -27,9 +28,11 @@ int SceneDescription::add_material(const MaterialDesc& material) {
         [&](auto& value) {
             using T = std::decay_t<decltype(value)>;
             if constexpr (std::is_same_v<T, LambertianMaterial>) {
-                value.albedo_texture = ensure_constant_texture(textures_, value.albedo_texture, value.albedo);
+                value.albedo_texture =
+                    ensure_constant_texture(textures_, value.albedo_texture, value.albedo);
             } else if constexpr (std::is_same_v<T, MetalMaterial>) {
-                value.albedo_texture = ensure_constant_texture(textures_, value.albedo_texture, value.albedo);
+                value.albedo_texture =
+                    ensure_constant_texture(textures_, value.albedo_texture, value.albedo);
             } else if constexpr (std::is_same_v<T, DiffuseLightMaterial>) {
                 value.emission_texture =
                     ensure_constant_texture(textures_, value.emission_texture, value.emission);
@@ -56,6 +59,10 @@ void SceneDescription::add_medium(const HomogeneousMediumPrimitive& medium) {
     media_.push_back(medium);
 }
 
+void SceneDescription::add_analytic_light(const AnalyticLightDesc& light) {
+    analytic_lights_.push_back(light);
+}
+
 const std::vector<TrianglePrimitive>& SceneDescription::triangles() const {
     return triangles_;
 }
@@ -68,6 +75,7 @@ PackedScene SceneDescription::pack() const {
         .quad_count = static_cast<int>(quads_.size()),
         .triangle_count = static_cast<int>(triangles_.size()),
         .medium_count = static_cast<int>(media_.size()),
+        .analytic_light_count = static_cast<int>(analytic_lights_.size()),
         .background = background,
         .textures = textures_,
         .materials = materials_,
@@ -75,7 +83,8 @@ PackedScene SceneDescription::pack() const {
         .quads = quads_,
         .triangles = triangles_,
         .media = media_,
+        .analytic_lights = analytic_lights_,
     };
 }
 
-}  // namespace rt
+} // namespace rt

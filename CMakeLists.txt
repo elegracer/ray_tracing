@@ -139,6 +139,9 @@ target_sources(core
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/offline_shared_scene_renderer.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/offline_shared_scene_renderer.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/common/openpbr_core.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/common/analytic_light.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/analytic_light_compiler.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/analytic_light_compiler.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/cpu_scene_adapter.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/obj_mtl_importer.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/cpu_scene_adapter.h
@@ -472,6 +475,14 @@ target_sources(test_light_sampling
 )
 target_link_libraries(test_light_sampling PRIVATE core)
 add_test(NAME test_light_sampling COMMAND test_light_sampling)
+
+add_executable(test_analytic_light_compiler)
+target_sources(test_analytic_light_compiler
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_analytic_light_compiler.cpp
+)
+target_link_libraries(test_analytic_light_compiler PRIVATE realtime_gpu)
+add_test(NAME test_analytic_light_compiler COMMAND test_analytic_light_compiler)
 
 add_executable(test_shared_scene_builders)
 target_sources(test_shared_scene_builders

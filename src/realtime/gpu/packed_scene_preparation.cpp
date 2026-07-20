@@ -9,6 +9,33 @@
 namespace rt {
 namespace {
 
+PackedLightVector3 pack_light_vector(const Eigen::Vector3d& value) {
+    return {static_cast<float>(value.x()), static_cast<float>(value.y()),
+        static_cast<float>(value.z())};
+}
+
+PackedAnalyticLight pack_analytic_light(const AnalyticLightDesc& light) {
+    return PackedAnalyticLight {
+        .type = static_cast<PackedAnalyticLightType>(light.type),
+        .position = pack_light_vector(light.position),
+        .basis_x = pack_light_vector(light.local_to_world_linear.col(0)),
+        .basis_y = pack_light_vector(light.local_to_world_linear.col(1)),
+        .basis_z = pack_light_vector(light.local_to_world_linear.col(2)),
+        .radiance = pack_light_vector(light.radiance),
+        .radius = static_cast<float>(light.radius),
+        .width = static_cast<float>(light.width),
+        .height = static_cast<float>(light.height),
+        .length = static_cast<float>(light.length),
+        .world_area = static_cast<float>(light.world_area),
+        .cos_theta_max = static_cast<float>(light.cos_theta_max),
+        .selection_pdf = static_cast<float>(light.selection_pdf),
+        .cdf = static_cast<float>(light.cdf),
+        .delta = light.delta ? 1 : 0,
+        .treat_as_point = light.treat_as_point ? 1 : 0,
+        .treat_as_line = light.treat_as_line ? 1 : 0,
+    };
+}
+
 PackedSphere pack_sphere(const SpherePrimitive& sphere) {
     return PackedSphere {
         .center = sphere.center.cast<float>(),
@@ -291,6 +318,11 @@ GpuPreparedScene prepare_gpu_scene(const PackedScene& scene) {
     prepared.textures.reserve(scene.textures.size());
     for (const TextureDesc& texture : scene.textures) {
         prepared.textures.push_back(pack_texture(texture, prepared.image_texels));
+    }
+
+    prepared.analytic_lights.reserve(scene.analytic_lights.size());
+    for (const AnalyticLightDesc& light : scene.analytic_lights) {
+        prepared.analytic_lights.push_back(pack_analytic_light(light));
     }
 
     build_light_distribution(prepared);

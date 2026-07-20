@@ -26,6 +26,41 @@ struct PackedLight {
     float cdf = 0.0f;
 };
 
+enum class PackedAnalyticLightType : int {
+    sphere = 0,
+    disk = 1,
+    rect = 2,
+    cylinder = 3,
+    distant = 4,
+    dome = 5,
+};
+
+struct PackedLightVector3 {
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+};
+
+struct PackedAnalyticLight {
+    PackedAnalyticLightType type = PackedAnalyticLightType::sphere;
+    PackedLightVector3 position;
+    PackedLightVector3 basis_x;
+    PackedLightVector3 basis_y;
+    PackedLightVector3 basis_z;
+    PackedLightVector3 radiance;
+    float radius = 0.5f;
+    float width = 1.0f;
+    float height = 1.0f;
+    float length = 1.0f;
+    float world_area = 0.0f;
+    float cos_theta_max = 1.0f;
+    float selection_pdf = 0.0f;
+    float cdf = 0.0f;
+    int delta = 0;
+    int treat_as_point = 0;
+    int treat_as_line = 0;
+};
+
 RT_LIGHT_HD RT_LIGHT_INLINE float light_uniform_sphere_pdf() {
     return 0.07957747154594767f;
 }

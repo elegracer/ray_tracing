@@ -1,5 +1,6 @@
 #include "scene/realtime_scene_adapter.h"
 
+#include "scene/analytic_light_compiler.h"
 #include "scene/openpbr_core_adapter.h"
 #include "scene/scene_ir_validator.h"
 
@@ -210,7 +211,11 @@ rt::SceneDescription adapt_to_realtime_openpbr(const SceneIR& compatibility_scen
     const SceneIRv2& scene_v2) {
     const auto materials = compile_openpbr_core_material_table(scene_v2,
         compatibility_scene.materials().size(), compatibility_scene.textures().size());
-    return adapt_to_realtime_impl(compatibility_scene, &materials);
+    rt::SceneDescription result = adapt_to_realtime_impl(compatibility_scene, &materials);
+    for (const AnalyticLightDesc& light : compile_analytic_lights(scene_v2)) {
+        result.add_analytic_light(light);
+    }
+    return result;
 }
 
 } // namespace rt::scene

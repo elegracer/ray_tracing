@@ -1,5 +1,6 @@
 #include "scene/cpu_scene_adapter.h"
 
+#include "scene/analytic_light_compiler.h"
 #include "common/common.h"
 #include "common/constant_medium.h"
 #include "common/hittable.h"
@@ -240,7 +241,9 @@ CpuSceneAdapterResult adapt_to_cpu_openpbr(const SceneIR& compatibility_scene,
     const SceneIRv2& scene_v2) {
     const auto materials = compile_openpbr_core_material_table(scene_v2,
         compatibility_scene.materials().size(), compatibility_scene.textures().size());
-    return adapt_to_cpu_impl(compatibility_scene, &materials);
+    CpuSceneAdapterResult result = adapt_to_cpu_impl(compatibility_scene, &materials);
+    result.analytic_lights = compile_analytic_lights(scene_v2);
+    return result;
 }
 
 } // namespace rt::scene

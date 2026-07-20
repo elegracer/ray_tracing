@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/analytic_light.h"
 #include "common/openpbr_core.h"
 
 #include <Eigen/Core>
@@ -103,6 +104,7 @@ struct PackedScene {
     int quad_count = 0;
     int triangle_count = 0;
     int medium_count = 0;
+    int analytic_light_count = 0;
     Eigen::Vector3d background = Eigen::Vector3d::Zero();
     std::vector<TextureDesc> textures;
     std::vector<MaterialDesc> materials;
@@ -110,6 +112,7 @@ struct PackedScene {
     std::vector<QuadPrimitive> quads;
     std::vector<TrianglePrimitive> triangles;
     std::vector<HomogeneousMediumPrimitive> media;
+    std::vector<AnalyticLightDesc> analytic_lights;
 };
 
 class SceneDescription {
@@ -120,6 +123,7 @@ public:
     void add_quad(const QuadPrimitive& quad);
     void add_triangle(const TrianglePrimitive& triangle);
     void add_medium(const HomogeneousMediumPrimitive& medium);
+    void add_analytic_light(const AnalyticLightDesc& light);
     const std::vector<TrianglePrimitive>& triangles() const;
     PackedScene pack() const;
 
@@ -132,6 +136,7 @@ private:
     std::vector<QuadPrimitive> quads_;
     std::vector<TrianglePrimitive> triangles_;
     std::vector<HomogeneousMediumPrimitive> media_;
+    std::vector<AnalyticLightDesc> analytic_lights_;
 };
 
 } // namespace rt
