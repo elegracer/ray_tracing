@@ -74,6 +74,12 @@ endif()
 option(OPTION_A "..." ON)
 option(ENABLE_GUI_VIEWER "Build the interactive GLFW/OpenGL viewer" ON)
 option(RT_ENABLE_OPENUSD "Build the official OpenUSD stage importer" OFF)
+option(RT_ENABLE_PUBLIC_ACCEPTANCE_PROBES
+    "Run version-pinned public USD and OpenPBR product acceptance probes" OFF)
+
+if(RT_ENABLE_PUBLIC_ACCEPTANCE_PROBES AND NOT RT_ENABLE_OPENUSD)
+    message(FATAL_ERROR "RT_ENABLE_PUBLIC_ACCEPTANCE_PROBES requires RT_ENABLE_OPENUSD=ON")
+endif()
 
 if(RT_ENABLE_OPENUSD)
     find_package(pxr CONFIG REQUIRED)
@@ -101,6 +107,31 @@ if(ENABLE_GUI_VIEWER)
 endif()
 
 enable_testing()
+
+set(RT_PUBLIC_ACCEPTANCE_ASSET_ROOT
+    "${CMAKE_CURRENT_SOURCE_DIR}/.cache/public-acceptance-assets"
+    CACHE PATH "Local cache for version-pinned public USD and OpenPBR acceptance assets")
+set(RT_PUBLIC_ACCEPTANCE_ASSET_SCRIPT
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/acceptance/public_assets.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/tests/acceptance/public_assets.lock.cmake")
+add_custom_target(fetch_public_acceptance_assets
+    COMMAND ${CMAKE_COMMAND}
+        -DMODE=fetch
+        -DROOT=${RT_PUBLIC_ACCEPTANCE_ASSET_ROOT}
+        -P ${RT_PUBLIC_ACCEPTANCE_ASSET_SCRIPT}
+    COMMENT "Fetching version-pinned public USD and OpenPBR acceptance assets"
+    VERBATIM
+)
+add_custom_target(verify_public_acceptance_assets
+    COMMAND ${CMAKE_COMMAND}
+        -DMODE=verify
+        -DROOT=${RT_PUBLIC_ACCEPTANCE_ASSET_ROOT}
+        -P ${RT_PUBLIC_ACCEPTANCE_ASSET_SCRIPT}
+    COMMENT "Verifying public USD and OpenPBR acceptance assets"
+    VERBATIM
+)
+add_test(NAME test_public_acceptance_asset_lock
+    COMMAND ${CMAKE_COMMAND} -DMODE=lock -P ${RT_PUBLIC_ACCEPTANCE_ASSET_SCRIPT})
 
 # OpenUSD publishes a C++17 ABI and its generated schema headers are not
 # compatible with libstdc++ constrained-pair checks under C++20/23. Keep the
@@ -450,6 +481,30 @@ target_sources(test_openusd_stage_importer
 target_link_libraries(test_openusd_stage_importer PRIVATE core)
 add_test(NAME test_openusd_stage_importer COMMAND test_openusd_stage_importer
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/openusd/composed_stage.usda)
+
+add_executable(test_public_usd_scene_import)
+target_sources(test_public_usd_scene_import
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_public_usd_scene_import.cpp
+)
+target_link_libraries(test_public_usd_scene_import PRIVATE core)
+if(RT_ENABLE_PUBLIC_ACCEPTANCE_PROBES)
+    string(CONCAT public_usd_acceptance_stage
+        "${RT_PUBLIC_ACCEPTANCE_ASSET_ROOT}/"
+        "${RT_PUBLIC_ACCEPTANCE_ASSET_usd_wg_vehicles_CACHE_DIR}/"
+        "${RT_PUBLIC_ACCEPTANCE_ASSET_usd_wg_vehicles_ENTRYPOINT}")
+    add_test(NAME test_public_acceptance_asset_integrity
+        COMMAND ${CMAKE_COMMAND}
+            -DMODE=verify
+            -DROOT=${RT_PUBLIC_ACCEPTANCE_ASSET_ROOT}
+            -P ${RT_PUBLIC_ACCEPTANCE_ASSET_SCRIPT})
+    add_test(NAME test_public_usd_scene_import COMMAND test_public_usd_scene_import
+        ${public_usd_acceptance_stage})
+    set_tests_properties(
+        test_public_acceptance_asset_integrity
+        test_public_usd_scene_import
+        PROPERTIES LABELS "acceptance;public-assets")
+endif()
 
 add_executable(test_openusd_stage_exporter)
 target_sources(test_openusd_stage_exporter

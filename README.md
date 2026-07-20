@@ -77,6 +77,29 @@ address, filter, fallback, checker tiling, literal, reuse, and cycle semantics a
 NodeGraph interfaces, multiple sources, scalar/vector connections, and fields outside the
 declared SceneIR subset remain fail-closed.
 
+### Public USD and OpenPBR acceptance corpus
+
+The final product acceptance corpus is locked to the ASWF USD Working Group
+`Vehicles` scene and all official OpenPBR `v1.1.1` MaterialX examples. The
+assets stay outside Git history in `.cache/public-acceptance-assets`; exact
+source revisions, licenses, tree identities, and representative SHA-256 values
+are tracked under `tests/acceptance`.
+
+```bash
+cmake --build build-clang-vcpkg-settings --target fetch_public_acceptance_assets
+cmake --build build-clang-vcpkg-settings --target verify_public_acceptance_assets
+```
+
+This fetch/integrity gate does not by itself satisfy renderer acceptance. The
+USD stage must import through the product path, the OpenPBR materials must
+compile without silent fallback, and deterministic realtime linear renders
+must pass the `VAL-02` reference comparisons.
+
+Set `RT_ENABLE_PUBLIC_ACCEPTANCE_PROBES=ON` together with
+`RT_ENABLE_OPENUSD=ON` to register the real public Vehicles importer probe in
+CTest. It is separate from the default green compatibility suite until every
+required schema and the downstream realtime render path are implemented.
+
 ## GUI Viewer
 
 Build and run the default interactive viewer with:
