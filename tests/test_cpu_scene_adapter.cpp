@@ -296,8 +296,14 @@ int main() {
     const rt::scene::CpuSceneAdapterResult adapted_transformed_emissive =
         rt::scene::adapt_to_cpu(transformed_emissive_scene);
     expect_true(adapted_transformed_emissive.world.has_value(), "transformed emissive should adapt to world");
-    expect_true(!adapted_transformed_emissive.lights.has_value(),
-        "transformed emissive should not be added to lights");
+    expect_true(adapted_transformed_emissive.lights.has_value(),
+        "transformed emissive should participate in direct-light sampling");
+    const Vec3d transformed_light_origin {0.5, 0.5, 2.0};
+    const Vec3d transformed_light_direction {0.0, 1.0, -2.0};
+    expect_true(adapted_transformed_emissive.lights->pdf_value(
+                    transformed_light_origin, transformed_light_direction)
+                    > 0.0,
+        "transformed emissive should expose a finite solid-angle PDF");
 
     return 0;
 }
