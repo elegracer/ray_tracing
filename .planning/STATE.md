@@ -11,10 +11,10 @@ See: .planning/PROJECT.md (updated 2026-07-19)
 
 Phase: 5 of 6 — Scalable Lighting And GPU Scheduling
 Plan: Add explicit light distributions, solid-angle PDFs, MIS, ReSTIR DI, persistent launch data, and measured AS update/refit/instancing paths
-Status: Active milestone, LIGHT-01 unbiased direct-lighting baseline complete; LIGHT-02 open
-Last activity: 2026-07-21 - Closed LIGHT-01 analytic-light execution across CPU and GPU
+Status: Active milestone, LIGHT-01 and LIGHT-02 unbiased direct-lighting baseline and quantitative gates complete
+Last activity: 2026-07-21 - Closed LIGHT-02 CPU/GPU quantitative light-estimator gates
 
-Progress: Phase 4 complete; VAL-02 and LIGHT-01 are green; Phase 5 estimator agreement and ReSTIR DI remain open
+Progress: Phase 4 complete; VAL-02, LIGHT-01, and LIGHT-02 are green; Phase 5 ReSTIR DI and persistent GPU scheduling remain open
 
 ## VAL-02 Public Corpus Evidence
 
@@ -138,7 +138,9 @@ The SceneIR v2 execution compiler now lowers visible render-purpose sphere, disk
 
 The GPU execution path uploads that sidecar, samples all six light types, intersects finite light surfaces, traces finite/infinite visibility, adds dome/distant miss radiance, and weights light and BSDF hits with the power heuristic (`4de4921`). The CPU path now consumes the same compiled table through a deterministic sampler with matching CDF, cone/area PDFs, one-sided finite intersections, infinite radiance, visibility rays, and MIS. Its material contract evaluates arbitrary direct directions for Lambertian, isotropic, and OpenPBR surfaces while delta legacy materials remain explicit. Focused gates cover adapter-to-sampler consumption, PDF equality, balanced MIS, every light type on both production integrators, finite shadow occlusion, OpenPBR direct response, and dome miss images. The OpenUSD/public configuration passes 69/69 tests and the default dependency-off configuration passes 65/65 tests.
 
-LIGHT-01 is complete. LIGHT-02 remains open until broader CPU/GPU normalized-PDF, furnace/finite-energy, finite-radiance, and estimator-agreement gates establish a shared quantitative tolerance rather than only the current focused production cases.
+LIGHT-02 adds deterministic quantitative gates rather than extending the earlier non-black image checks. A 262,144-direction Fibonacci integration plus 65,536 shape samples verifies that finite-light directional PDF mass and explicit null-event mass sum to `1.00000` for sphere, `1.00003` for disk, `1.00000` for rect, and `1.00911` for cylinder. The cylinder result deliberately accounts for its one-sided rejected surface samples instead of pretending the continuous density alone is normalized. Dome and non-delta distant PDFs integrate exactly over their sphere/cone measures, while delta distant lights are checked as a discrete measure. A CUDA device gate executes the production shared sphere, cone, area-Jacobian, power-heuristic, and analytic-light CDF functions; all normalization identities are `1` and the 10,000-sample CDF counts are exactly `2000/3000/5000`.
+
+The production CPU and OptiX integrators render the same one-pixel receiver, mapped camera, unit-radiance light, 16,384-sample budget, and one-bounce light-only estimator for all six analytic-light types. CPU/GPU linear estimates agree within the declared `max(0.004, 5%)` tolerance; observed absolute differences range from `0.00007` to `0.00755`. Every estimate is finite, non-negative, and below the `0.54` unit-radiance energy ceiling. The unit dome furnace returns `0.50266` on CPU and `0.49511` on GPU for an expected `0.5`. The four focused light/OpenPBR tests pass, both new physical GPU gates pass three consecutive repeat runs, and the complete default Clang/CUDA/OptiX suite passes 68/68. The OpenUSD/public-probe configuration passes 72/72, regenerates all 10 camera outputs and 20 EXR/PNG files, and reads back `reference_gate_passed=true` with zero linear and perceptual error. LIGHT-02 is complete; ReSTIR DI may now be compared against this quantified unbiased baseline.
 
 ## Performance Metrics
 
@@ -189,7 +191,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- Complete LIGHT-02 with CPU/GPU normalized-PDF, furnace/finite-energy, finite-radiance, and estimator-agreement gates before ReSTIR DI.
+- Implement and measure RESTIR-01 against the quantified unbiased baseline, preserving valid temporal reuse and equal-quality comparisons.
 
 ### Blockers/Concerns
 
@@ -201,7 +203,7 @@ Recent decisions affecting current work:
 - CUDA memory telemetry is device-global rather than per-process; concurrent GPU workloads can perturb baseline and peak values.
 - OpenUSD is an optional system SDK dependency with verified OFF/ON paths; supported direct MaterialX color3 graphs compile, coat/fuzz/thin-film/dispersion/subsurface constants execute, and connected coat/fuzz/subsurface colors, NodeGraph interfaces, and fields outside the declared SceneIR subset remain fail-closed.
 - Dispersion currently uses fixed C/d/F RGB anchors. Stochastic wavelengths from measured sensor sensitivity curves remain a later spectral-quality extension; the current model is path-consistent but three-band.
-- Emissive geometry, the constant environment, and six SceneIR v2 analytic light types now execute with explicit distributions, solid-angle PDFs, visibility, miss radiance, and MIS on CPU/GPU. LIGHT-02 still requires broader quantitative estimator-agreement and energy gates before ReSTIR DI.
+- Emissive geometry, the constant environment, and six SceneIR v2 analytic light types now execute with explicit distributions, solid-angle PDFs, visibility, miss radiance, and MIS on CPU/GPU. LIGHT-02 quantitative normalization, furnace, finite-energy/radiance, and CPU/GPU agreement gates are green; ReSTIR DI must preserve those bounds.
 - The current `gpt-5.6-*` Codex IDE route still returns HTTP 404 from the built-in web tool. This is not a renderer delivery blocker: bounded public research uses direct read-only HTTP against official primary sources and records the pinned source revision. Do not spend renderer goal turns repairing host search unless the user explicitly reopens that task.
 
 ## Deferred Items
@@ -218,5 +220,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-07-21
-Stopped at: LIGHT-01 analytic-light execution is closed across CPU/GPU; next complete LIGHT-02 quantitative agreement gates
+Stopped at: LIGHT-02 quantitative CPU/GPU light-estimator gates are closed; next implement and measure RESTIR-01
 Resume file: .planning/milestones/v2.0-REQUIREMENTS.md

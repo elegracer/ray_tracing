@@ -28,4 +28,4 @@ Baseline: `.planning/v2.0-BASELINE.json`
 
 ## Immediate Next Step
 
-Close LIGHT-02 with CPU/GPU PDF normalization, furnace/finite-energy, finite-radiance, and estimator-agreement gates before any ReSTIR DI reuse.
+Implement RESTIR-01 against the now-quantified unbiased CPU/GPU light estimator, then require equal-quality many-light image and performance evidence without invalid temporal reuse.

@@ -555,6 +555,15 @@ target_sources(test_light_sampling
 target_link_libraries(test_light_sampling PRIVATE core)
 add_test(NAME test_light_sampling COMMAND test_light_sampling)
 
+add_executable(test_analytic_light_quantitative)
+target_sources(test_analytic_light_quantitative
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_analytic_light_quantitative.cpp
+)
+target_link_libraries(test_analytic_light_quantitative PRIVATE realtime_gpu)
+add_test(NAME test_analytic_light_quantitative COMMAND test_analytic_light_quantitative)
+set_tests_properties(test_analytic_light_quantitative PROPERTIES LABELS "physical;gpu")
+
 add_executable(test_analytic_light_compiler)
 target_sources(test_analytic_light_compiler
     PRIVATE
@@ -726,6 +735,19 @@ target_include_directories(test_openpbr_core_cuda PRIVATE ${CMAKE_CURRENT_SOURCE
 target_link_libraries(test_openpbr_core_cuda PRIVATE CUDA::cudart)
 add_test(NAME test_openpbr_core_cuda COMMAND test_openpbr_core_cuda)
 set_tests_properties(test_openpbr_core_cuda PROPERTIES SKIP_RETURN_CODE 77)
+
+add_executable(test_light_sampling_cuda)
+target_sources(test_light_sampling_cuda
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_light_sampling_cuda.cu
+)
+target_include_directories(test_light_sampling_cuda PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(test_light_sampling_cuda PRIVATE CUDA::cudart)
+add_test(NAME test_light_sampling_cuda COMMAND test_light_sampling_cuda)
+set_tests_properties(test_light_sampling_cuda PROPERTIES
+    LABELS "physical;gpu"
+    SKIP_RETURN_CODE 77
+)
 
 add_executable(test_device_scene_buffers)
 target_sources(test_device_scene_buffers
