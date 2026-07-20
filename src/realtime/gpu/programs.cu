@@ -29,6 +29,8 @@ struct HitInfo {
     float ior = 1.0f;
     int openpbr_index = -1;
     int material_type = 0;
+    int primitive_type = -1;
+    int primitive_index = -1;
     bool front_face = true;
 };
 
@@ -38,14 +40,34 @@ struct PathState {
     OpenPbrTransportContext openpbr_context {};
     OpenPbrSubsurfaceMedium subsurface_medium {};
     int subsurface_material_index = -1;
+    float3 previous_scatter_position = make_float3(0.0f, 0.0f, 0.0f);
+    float3 previous_scatter_normal = make_float3(0.0f, 0.0f, 1.0f);
+    float previous_bsdf_pdf = 0.0f;
+    int previous_material_type = -1;
+    int previous_primitive_type = -1;
+    int previous_primitive_index = -1;
+    bool previous_scatter_valid = false;
+    bool previous_scatter_delta = true;
     Ray ray {};
     bool alive = true;
+};
+
+struct DirectLightSample {
+    float3 position = make_float3(0.0f, 0.0f, 0.0f);
+    float3 normal = make_float3(0.0f, 0.0f, 1.0f);
+    float3 direction = make_float3(0.0f, 0.0f, 1.0f);
+    float3 emission = make_float3(0.0f, 0.0f, 0.0f);
+    float distance = 0.0f;
+    float pdf = 0.0f;
+    int material_index = -1;
+    bool infinite = false;
+    bool valid = false;
 };
 
 __device__ PathState trace_primary_ray(const LaunchParams& params, int x, int y);
 __device__ float3 scene_background(const LaunchParams& params);
 __device__ void accumulate_direct_light(const LaunchParams& params, const HitInfo& hit,
-    PathState& state);
+    std::uint32_t& rng, bool bsdf_technique_available, PathState& state);
 __device__ void sample_bsdf(const LaunchParams& params, const HitInfo& hit, std::uint32_t& rng,
     PathState& state);
 
@@ -53,7 +75,6 @@ namespace {
 
 constexpr float kRayEpsilon = 1e-3f;
 constexpr float kRayFar = 1e30f;
-constexpr float kShadowScale = 0.8f;
 constexpr float kPi = 3.14159265358979323846f;
 constexpr int kTextureResolveDepth = 8;
 constexpr double kCameraEpsilon = 1e-12;
@@ -462,14 +483,107 @@ __device__ float3 camera_origin(const DeviceActiveCamera& camera) {
         static_cast<float>(camera.origin[2]));
 }
 
-__device__ float3 sample_sphere_light_point(const PackedSphere& sphere,
-    const float3& surface_point) {
-    const float3 center = vector3f_to_float3(sphere.center);
-    float3 to_surface = sub3(surface_point, center);
-    if (length_sq3(to_surface) <= 1e-8f) {
-        to_surface = make_float3(0.0f, 1.0f, 0.0f);
+__device__ float3 sample_uniform_cone_direction(const float3& axis, float cos_theta_max, float u0,
+    float u1) {
+    const float cos_theta = 1.0f - u0 * (1.0f - cos_theta_max);
+    const float sin_theta = sqrtf(fmaxf(0.0f, 1.0f - cos_theta * cos_theta));
+    const float phi = 2.0f * kPi * u1;
+    const float3 helper =
+        fabsf(axis.x) > 0.9f ? make_float3(0.0f, 1.0f, 0.0f) : make_float3(1.0f, 0.0f, 0.0f);
+    const float3 tangent = normalize3(cross3(helper, axis));
+    const float3 bitangent = cross3(axis, tangent);
+    return normalize3(add3(mul3(axis, cos_theta),
+        add3(mul3(tangent, sin_theta * cosf(phi)), mul3(bitangent, sin_theta * sinf(phi)))));
+}
+
+__device__ const PackedLight* find_packed_light(const DeviceSceneView& scene, PackedLightType type,
+    int primitive_index) {
+    for (int i = 0; i < scene.light_count; ++i) {
+        const PackedLight& light = scene.lights[i];
+        if (light.type == type && light.primitive_index == primitive_index) {
+            return &light;
+        }
     }
-    return add3(center, mul3(normalize3(to_surface), sphere.radius));
+    return nullptr;
+}
+
+__device__ float effective_light_selection_pdf(const DeviceSceneView& scene,
+    const PackedLight& light, int excluded_primitive_type, int excluded_primitive_index) {
+    const PackedLight* excluded =
+        excluded_primitive_type < 0
+            ? nullptr
+            : find_packed_light(scene, static_cast<PackedLightType>(excluded_primitive_type),
+                  excluded_primitive_index);
+    if (excluded == &light) {
+        return 0.0f;
+    }
+    const float eligible_probability = excluded == nullptr ? 1.0f : 1.0f - excluded->selection_pdf;
+    return eligible_probability > 1e-8f ? light.selection_pdf / eligible_probability : 0.0f;
+}
+
+__device__ float conditional_light_pdf_for_hit(const DeviceSceneView& scene,
+    const PackedLight& light, const float3& origin, const float3& direction, const HitInfo* hit) {
+    if (light.type == PackedLightType::environment) {
+        return light_uniform_sphere_pdf();
+    }
+    if (hit == nullptr || !hit->hit || hit->primitive_type != static_cast<int>(light.type)
+        || hit->primitive_index != light.primitive_index || !hit->front_face) {
+        return 0.0f;
+    }
+
+    if (light.type == PackedLightType::sphere) {
+        const PackedSphere& sphere = scene.spheres[light.primitive_index];
+        const float distance_squared = length_sq3(sub3(vector3f_to_float3(sphere.center), origin));
+        const float radius_squared = sphere.radius * sphere.radius;
+        if (distance_squared <= radius_squared) {
+            return 0.0f;
+        }
+        const float cos_theta_max = sqrtf(fmaxf(0.0f, 1.0f - radius_squared / distance_squared));
+        return light_uniform_cone_pdf(cos_theta_max);
+    }
+
+    const float distance_squared = length_sq3(sub3(hit->position, origin));
+    const float abs_cosine = fmaxf(dot3(hit->geometric_normal, mul3(direction, -1.0f)), 0.0f);
+    if (light.type == PackedLightType::quad) {
+        const PackedQuad& quad = scene.quads[light.primitive_index];
+        const float area =
+            length3(cross3(vector3f_to_float3(quad.edge_u), vector3f_to_float3(quad.edge_v)));
+        return light_area_to_solid_angle_pdf(area, distance_squared, abs_cosine);
+    }
+    const PackedTriangle& triangle = scene.triangles[light.primitive_index];
+    const float area =
+        0.5f
+        * length3(cross3(sub3(vector3f_to_float3(triangle.p1), vector3f_to_float3(triangle.p0)),
+            sub3(vector3f_to_float3(triangle.p2), vector3f_to_float3(triangle.p0))));
+    return light_area_to_solid_angle_pdf(area, distance_squared, abs_cosine);
+}
+
+__device__ float emission_mis_weight(const DeviceSceneView& scene, const PathState& state,
+    const HitInfo* hit, bool environment) {
+    if (!state.previous_scatter_valid || state.previous_scatter_delta) {
+        return 1.0f;
+    }
+    if (!environment && (hit == nullptr || hit->primitive_type < 0)) {
+        return 1.0f;
+    }
+    const PackedLight* light =
+        environment ? find_packed_light(scene, PackedLightType::environment, -1)
+                    : find_packed_light(scene, static_cast<PackedLightType>(hit->primitive_type),
+                          hit->primitive_index);
+    if (light == nullptr) {
+        return 1.0f;
+    }
+    const float3 direction = normalize3(state.ray.direction);
+    const float conditional_pdf =
+        environment ? (state.previous_material_type == 4
+                              ? light_uniform_sphere_pdf()
+                              : fmaxf(dot3(state.previous_scatter_normal, direction), 0.0f) / kPi)
+                    : conditional_light_pdf_for_hit(scene, *light, state.previous_scatter_position,
+                          direction, hit);
+    const float selection_pdf = effective_light_selection_pdf(scene, *light,
+        state.previous_primitive_type, state.previous_primitive_index);
+    const float light_pdf = selection_pdf * conditional_pdf;
+    return light_power_heuristic(state.previous_bsdf_pdf, light_pdf);
 }
 
 __device__ float reflectance(float cosine, float refraction_index) {
@@ -488,8 +602,8 @@ __device__ void set_face_normal(const Ray& ray, const float3& outward_normal, Hi
     hit.shading_normal = hit.front_face ? outward_normal : mul3(outward_normal, -1.0f);
 }
 
-__device__ const OpenPbrCompiledMaterial* resolve_openpbr_material(
-    const DeviceSceneView& scene, int openpbr_index) {
+__device__ const OpenPbrCompiledMaterial* resolve_openpbr_material(const DeviceSceneView& scene,
+    int openpbr_index) {
     if (openpbr_index < 0 || openpbr_index >= scene.openpbr_material_count
         || scene.openpbr_materials == nullptr) {
         return nullptr;
@@ -497,8 +611,8 @@ __device__ const OpenPbrCompiledMaterial* resolve_openpbr_material(
     return &scene.openpbr_materials[openpbr_index];
 }
 
-__device__ const OpenPbrCompiledMaterial* resolve_openpbr_material(
-    const DeviceSceneView& scene, const MaterialSample& material) {
+__device__ const OpenPbrCompiledMaterial* resolve_openpbr_material(const DeviceSceneView& scene,
+    const MaterialSample& material) {
     return material.type == 5 ? resolve_openpbr_material(scene, material.openpbr_index) : nullptr;
 }
 
@@ -508,10 +622,9 @@ __device__ void evaluate_openpbr_color_binding(const DeviceSceneView& scene,
     if (binding.texture_index < 0) {
         return;
     }
-    const float3 sampled =
-        evaluate_texture(scene, binding.texture_index, tex_u, tex_v, position);
-    openpbr_apply_color_input(
-        parameters, input, to_openpbr_vec3(sampled), binding.source_color_space);
+    const float3 sampled = evaluate_texture(scene, binding.texture_index, tex_u, tex_v, position);
+    openpbr_apply_color_input(parameters, input, to_openpbr_vec3(sampled),
+        binding.source_color_space);
 }
 
 __device__ OpenPbrCoreMaterial evaluate_openpbr_scattering_material(const DeviceSceneView& scene,
@@ -577,21 +690,6 @@ __device__ void populate_material(const DeviceSceneView& scene, int material_ind
     }
 }
 
-__device__ bool material_is_emissive(const DeviceSceneView& scene, const MaterialSample& material) {
-    if (material.type == 3) {
-        return true;
-    }
-    const OpenPbrCompiledMaterial* compiled = resolve_openpbr_material(scene, material);
-    if (compiled == nullptr || compiled->parameters.emission_luminance <= 0.0f) {
-        return false;
-    }
-    if (compiled->color_textures.emission_color.texture_index >= 0) {
-        return true;
-    }
-    const OpenPbrVec3 emission = emission_openpbr_core(compiled->parameters);
-    return emission.x > 0.0f || emission.y > 0.0f || emission.z > 0.0f;
-}
-
 __device__ float3 evaluate_material_emission(const DeviceSceneView& scene,
     const MaterialSample& material, float tex_u, float tex_v, const float3& position) {
     if (material.type == 5) {
@@ -608,9 +706,19 @@ __device__ float3 evaluate_material_emission(const DeviceSceneView& scene,
 }
 
 __device__ float3 direct_material_response(const DeviceSceneView& scene, const HitInfo& hit,
-    const PathState& state, const float3& light_direction, float legacy_directional_pdf) {
+    const PathState& state, const float3& light_direction, float& bsdf_pdf) {
+    bsdf_pdf = 0.0f;
+    if (hit.material_type == 0) {
+        const float cosine = fmaxf(dot3(hit.shading_normal, light_direction), 0.0f);
+        bsdf_pdf = cosine / kPi;
+        return mul3(hit.base_color, bsdf_pdf);
+    }
+    if (hit.material_type == 4) {
+        bsdf_pdf = light_uniform_sphere_pdf();
+        return mul3(hit.base_color, bsdf_pdf);
+    }
     if (hit.material_type != 5) {
-        return mul3(hit.base_color, legacy_directional_pdf);
+        return make_float3(0.0f, 0.0f, 0.0f);
     }
     const OpenPbrCompiledMaterial* compiled = resolve_openpbr_material(scene, hit.openpbr_index);
     if (compiled == nullptr) {
@@ -624,7 +732,180 @@ __device__ float3 direct_material_response(const DeviceSceneView& scene, const H
         to_openpbr_vec3(mul3(normalize3(state.ray.direction), -1.0f)),
         to_openpbr_vec3(light_direction), openpbr_context_for(state));
     const float cosine = fabsf(dot3(hit.shading_normal, light_direction));
+    bsdf_pdf = evaluation.pdf;
     return mul3(from_openpbr_vec3(evaluation.value), cosine);
+}
+
+__device__ DirectLightSample sample_direct_light(const DeviceSceneView& scene,
+    const float3& environment, const HitInfo& receiver, std::uint32_t& rng) {
+    DirectLightSample sample {};
+    const float3 surface_point = receiver.position;
+    const PackedLight* excluded =
+        receiver.primitive_type < 0
+            ? nullptr
+            : find_packed_light(scene, static_cast<PackedLightType>(receiver.primitive_type),
+                  receiver.primitive_index);
+    const float eligible_probability = excluded == nullptr ? 1.0f : 1.0f - excluded->selection_pdf;
+    if (eligible_probability <= 1e-8f) {
+        return sample;
+    }
+    int light_index = -1;
+    if (excluded == nullptr) {
+        light_index = sample_packed_light(scene.lights, scene.light_count, random_float01(rng));
+    } else {
+        const float target = random_float01(rng) * eligible_probability;
+        float accumulated = 0.0f;
+        for (int i = 0; i < scene.light_count; ++i) {
+            if (&scene.lights[i] == excluded) {
+                continue;
+            }
+            accumulated += scene.lights[i].selection_pdf;
+            if (target < accumulated) {
+                light_index = i;
+                break;
+            }
+        }
+        if (light_index < 0) {
+            for (int i = scene.light_count - 1; i >= 0; --i) {
+                if (&scene.lights[i] != excluded) {
+                    light_index = i;
+                    break;
+                }
+            }
+        }
+    }
+    if (light_index < 0) {
+        return sample;
+    }
+    const PackedLight& light = scene.lights[light_index];
+    const float selection_pdf = light.selection_pdf / eligible_probability;
+    if (selection_pdf <= 0.0f) {
+        return sample;
+    }
+
+    if (light.type == PackedLightType::environment) {
+        if (receiver.material_type == 4) {
+            sample.direction = random_unit_vector(rng);
+            sample.pdf = selection_pdf * light_uniform_sphere_pdf();
+        } else {
+            sample.direction = add3(receiver.shading_normal, random_unit_vector(rng));
+            if (near_zero3(sample.direction)) {
+                sample.direction = receiver.shading_normal;
+            }
+            sample.direction = normalize3(sample.direction);
+            const float cosine = fmaxf(dot3(receiver.shading_normal, sample.direction), 0.0f);
+            sample.pdf = selection_pdf * cosine / kPi;
+        }
+        sample.emission = environment;
+        sample.distance = kRayFar;
+        sample.infinite = true;
+        sample.valid = sample.pdf > 0.0f;
+        return sample;
+    }
+
+    float tex_u = 0.0f;
+    float tex_v = 0.0f;
+    float conditional_pdf = 0.0f;
+    if (light.type == PackedLightType::sphere) {
+        if (light.primitive_index < 0 || light.primitive_index >= scene.sphere_count) {
+            return sample;
+        }
+        const PackedSphere& sphere = scene.spheres[light.primitive_index];
+        const float3 center = vector3f_to_float3(sphere.center);
+        const float3 to_center = sub3(center, surface_point);
+        const float distance_squared = length_sq3(to_center);
+        const float radius_squared = sphere.radius * sphere.radius;
+        if (distance_squared <= radius_squared * (1.0f + 1e-6f)) {
+            return sample;
+        }
+        const float cos_theta_max = sqrtf(fmaxf(0.0f, 1.0f - radius_squared / distance_squared));
+        sample.direction = sample_uniform_cone_direction(normalize3(to_center), cos_theta_max,
+            random_float01(rng), random_float01(rng));
+        const float3 oc = sub3(surface_point, center);
+        const float half_b = dot3(oc, sample.direction);
+        const float discriminant = half_b * half_b - (length_sq3(oc) - radius_squared);
+        if (discriminant <= 0.0f) {
+            return sample;
+        }
+        sample.distance = -half_b - sqrtf(discriminant);
+        if (sample.distance <= kRayEpsilon) {
+            return sample;
+        }
+        sample.position = add3(surface_point, mul3(sample.direction, sample.distance));
+        sample.normal = normalize3(sub3(sample.position, center));
+        sphere_uv(sample.normal, tex_u, tex_v);
+        sample.material_index = sphere.material_index;
+        conditional_pdf = light_uniform_cone_pdf(cos_theta_max);
+    } else if (light.type == PackedLightType::quad) {
+        if (light.primitive_index < 0 || light.primitive_index >= scene.quad_count) {
+            return sample;
+        }
+        const PackedQuad& quad = scene.quads[light.primitive_index];
+        const float3 origin = vector3f_to_float3(quad.origin);
+        const float3 edge_u = vector3f_to_float3(quad.edge_u);
+        const float3 edge_v = vector3f_to_float3(quad.edge_v);
+        tex_u = random_float01(rng);
+        tex_v = random_float01(rng);
+        sample.position = add3(origin, add3(mul3(edge_u, tex_u), mul3(edge_v, tex_v)));
+        const float3 area_normal = cross3(edge_u, edge_v);
+        const float area = length3(area_normal);
+        if (area <= 1e-12f) {
+            return sample;
+        }
+        sample.normal = div3(area_normal, area);
+        sample.material_index = quad.material_index;
+        const float3 to_light = sub3(sample.position, surface_point);
+        const float distance_squared = length_sq3(to_light);
+        if (distance_squared <= 1e-12f) {
+            return DirectLightSample {};
+        }
+        sample.distance = sqrtf(distance_squared);
+        sample.direction = div3(to_light, sample.distance);
+        const float abs_cosine = dot3(sample.normal, mul3(sample.direction, -1.0f));
+        conditional_pdf = light_area_to_solid_angle_pdf(area, distance_squared, abs_cosine);
+    } else {
+        if (light.primitive_index < 0 || light.primitive_index >= scene.triangle_count) {
+            return sample;
+        }
+        const PackedTriangle& triangle = scene.triangles[light.primitive_index];
+        const float3 p0 = vector3f_to_float3(triangle.p0);
+        const float3 p1 = vector3f_to_float3(triangle.p1);
+        const float3 p2 = vector3f_to_float3(triangle.p2);
+        float w0 = 0.0f;
+        float w1 = 0.0f;
+        float w2 = 0.0f;
+        sample_uniform_triangle(random_float01(rng), random_float01(rng), w0, w1, w2);
+        sample.position = add3(mul3(p0, w0), add3(mul3(p1, w1), mul3(p2, w2)));
+        tex_u = w1;
+        tex_v = w2;
+        const float3 area_normal = cross3(sub3(p1, p0), sub3(p2, p0));
+        const float double_area = length3(area_normal);
+        if (double_area <= 1e-12f) {
+            return sample;
+        }
+        sample.normal = div3(area_normal, double_area);
+        sample.material_index = triangle.material_index;
+        const float3 to_light = sub3(sample.position, surface_point);
+        const float distance_squared = length_sq3(to_light);
+        if (distance_squared <= 1e-12f) {
+            return DirectLightSample {};
+        }
+        sample.distance = sqrtf(distance_squared);
+        sample.direction = div3(to_light, sample.distance);
+        const float abs_cosine = dot3(sample.normal, mul3(sample.direction, -1.0f));
+        conditional_pdf =
+            light_area_to_solid_angle_pdf(0.5f * double_area, distance_squared, abs_cosine);
+    }
+
+    if (conditional_pdf <= 0.0f || sample.material_index < 0
+        || sample.material_index >= scene.material_count) {
+        return DirectLightSample {};
+    }
+    sample.emission = evaluate_material_emission(scene, scene.materials[sample.material_index],
+        tex_u, tex_v, sample.position);
+    sample.pdf = selection_pdf * conditional_pdf;
+    sample.valid = sample.pdf > 0.0f && max_component3(sample.emission) > 0.0f;
+    return sample;
 }
 
 __device__ bool hit_medium_boundary(const PackedMedium& medium, const Ray& ray, float t_min,
@@ -816,6 +1097,8 @@ __device__ HitInfo intersect_scene(const DeviceSceneView& scene, const Ray& ray,
         if (!candidate_hit) {
             continue;
         }
+        candidate.primitive_type = static_cast<int>(PackedLightType::sphere);
+        candidate.primitive_index = i;
         populate_material(scene, sphere.material_index, candidate);
         closest = candidate.t;
         hit = candidate;
@@ -830,6 +1113,8 @@ __device__ HitInfo intersect_scene(const DeviceSceneView& scene, const Ray& ray,
         if (!candidate_hit) {
             continue;
         }
+        candidate.primitive_type = static_cast<int>(PackedLightType::quad);
+        candidate.primitive_index = i;
         populate_material(scene, quad.material_index, candidate);
         closest = candidate.t;
         hit = candidate;
@@ -844,6 +1129,8 @@ __device__ HitInfo intersect_scene(const DeviceSceneView& scene, const Ray& ray,
         if (!candidate_hit) {
             continue;
         }
+        candidate.primitive_type = static_cast<int>(PackedLightType::triangle);
+        candidate.primitive_index = i;
         populate_material(scene, triangle.material_index, candidate);
         closest = candidate.t;
         hit = candidate;
@@ -994,23 +1281,23 @@ __global__ void radiance_kernel(const LaunchParams* params_ptr) {
         for (int bounce = 0; bounce < max_bounces && state.alive; ++bounce) {
             HitInfo hit = intersect_scene(params.scene, state.ray, kRayEpsilon, kRayFar, &rng);
             if (!hit.hit) {
-                state.radiance =
-                    add3(state.radiance, mul3(state.throughput, scene_background(params)));
+                const float weight = emission_mis_weight(params.scene, state, nullptr, true);
+                state.radiance = add3(state.radiance,
+                    mul3(state.throughput, mul3(scene_background(params), weight)));
                 state.alive = false;
                 break;
             }
             if (state.subsurface_medium.active != 0) {
-                if (hit.material_type != 5
-                    || hit.openpbr_index != state.subsurface_material_index || hit.front_face) {
+                if (hit.material_type != 5 || hit.openpbr_index != state.subsurface_material_index
+                    || hit.front_face) {
                     state.alive = false;
                     break;
                 }
                 const float ray_length = sqrtf(length_sq3(state.ray.direction));
-                const OpenPbrSubsurfaceSegment segment = openpbr_sample_subsurface_segment(
-                    state.subsurface_medium, hit.t * ray_length, random_float01(rng),
-                    openpbr_context_for(state));
-                state.throughput =
-                    mul3(state.throughput, from_openpbr_vec3(segment.weight));
+                const OpenPbrSubsurfaceSegment segment =
+                    openpbr_sample_subsurface_segment(state.subsurface_medium, hit.t * ray_length,
+                        random_float01(rng), openpbr_context_for(state));
+                state.throughput = mul3(state.throughput, from_openpbr_vec3(segment.weight));
                 if (segment.scattered != 0) {
                     const float3 incident = normalize3(state.ray.direction);
                     const OpenPbrVec3 direction = openpbr_sample_henyey_greenstein(
@@ -1021,6 +1308,7 @@ __global__ void radiance_kernel(const LaunchParams* params_ptr) {
                     state.ray.direction = from_openpbr_vec3(direction);
                     state.ray.origin =
                         add3(state.ray.origin, mul3(state.ray.direction, kRayEpsilon));
+                    state.previous_scatter_valid = false;
                     continue;
                 }
             }
@@ -1031,8 +1319,15 @@ __global__ void radiance_kernel(const LaunchParams* params_ptr) {
                 captured_aux = true;
             }
 
-            state.radiance = add3(state.radiance, mul3(state.throughput, hit.emission));
-            accumulate_direct_light(params, hit, state);
+            const float emission_weight = emission_mis_weight(params.scene, state, &hit, false);
+            state.radiance =
+                add3(state.radiance, mul3(state.throughput, mul3(hit.emission, emission_weight)));
+            const bool bsdf_technique_available = bounce + 1 < max_bounces;
+            accumulate_direct_light(params, hit, rng, bsdf_technique_available, state);
+            if (!bsdf_technique_available) {
+                state.alive = false;
+                break;
+            }
             sample_bsdf(params, hit, rng, state);
             if (state.alive && bounce >= params.rr_start_bounce) {
                 apply_russian_roulette(state, rng);
@@ -1206,137 +1501,48 @@ __device__ float3 scene_background(const LaunchParams& params) {
 }
 
 __device__ void accumulate_direct_light(const LaunchParams& params, const HitInfo& hit,
-    PathState& state) {
-    if (hit.material_type == 3) {
+    std::uint32_t& rng, bool bsdf_technique_available, PathState& state) {
+    if (hit.material_type == 3 || params.scene.light_count <= 0) {
         return;
     }
 
-    const float3 surface_point = add3(hit.position, mul3(hit.shading_normal, kRayEpsilon * 2.0f));
-    float3 direct = make_float3(0.0f, 0.0f, 0.0f);
-
-    for (int i = 0; i < params.scene.sphere_count; ++i) {
-        const PackedSphere& sphere = params.scene.spheres[i];
-        if (sphere.material_index < 0 || sphere.material_index >= params.scene.material_count) {
-            continue;
-        }
-        const MaterialSample& material = params.scene.materials[sphere.material_index];
-        if (!material_is_emissive(params.scene, material)) {
-            continue;
-        }
-        const float3 light_pos = sample_sphere_light_point(sphere, surface_point);
-        const float3 center = vector3f_to_float3(sphere.center);
-        float light_u = 0.0f;
-        float light_v = 0.0f;
-        sphere_uv(normalize3(sub3(light_pos, center)), light_u, light_v);
-        const float3 emission =
-            evaluate_material_emission(params.scene, material, light_u, light_v, light_pos);
-        const float3 to_light = sub3(light_pos, surface_point);
-        const float dist_sq = fmaxf(length_sq3(to_light), 1e-6f);
-        const float dist = sqrtf(dist_sq);
-        const float3 light_dir = div3(to_light, dist);
-        const bool isotropic = hit.material_type == 4;
-        const float n_dot_l =
-            isotropic ? (1.0f / (4.0f * kPi)) : fmaxf(dot3(hit.shading_normal, light_dir), 0.0f);
-        if (!isotropic && n_dot_l <= 0.0f) {
-            continue;
-        }
-        Ray shadow_ray {};
-        shadow_ray.origin = surface_point;
-        shadow_ray.direction = light_dir;
-        if (is_occluded(params.scene, shadow_ray, dist - kRayEpsilon)) {
-            continue;
-        }
-        const float attenuation = kShadowScale / dist_sq;
-        direct = add3(direct, mul3(mul3(emission, direct_material_response(params.scene, hit, state,
-                                                      light_dir, n_dot_l)),
-                                  attenuation));
+    const DirectLightSample light =
+        sample_direct_light(params.scene, scene_background(params), hit, rng);
+    if (!light.valid) {
+        return;
     }
 
-    for (int i = 0; i < params.scene.quad_count; ++i) {
-        const PackedQuad& quad = params.scene.quads[i];
-        if (quad.material_index < 0 || quad.material_index >= params.scene.material_count) {
-            continue;
-        }
-        const MaterialSample& material = params.scene.materials[quad.material_index];
-        if (!material_is_emissive(params.scene, material)) {
-            continue;
-        }
-        const float3 origin = vector3f_to_float3(quad.origin);
-        const float3 edge_u = vector3f_to_float3(quad.edge_u);
-        const float3 edge_v = vector3f_to_float3(quad.edge_v);
-        const float3 light_pos = add3(origin, mul3(add3(edge_u, edge_v), 0.5f));
-        const float3 emission =
-            evaluate_material_emission(params.scene, material, 0.5f, 0.5f, light_pos);
-        const float3 to_light = sub3(light_pos, surface_point);
-        const float dist_sq = fmaxf(length_sq3(to_light), 1e-6f);
-        const float dist = sqrtf(dist_sq);
-        const float3 light_dir = div3(to_light, dist);
-        const float3 light_normal = normalize3(cross3(edge_u, edge_v));
-        if (dot3(light_normal, light_dir) >= 0.0f) {
-            continue;
-        }
-        const bool isotropic = hit.material_type == 4;
-        const float n_dot_l =
-            isotropic ? (1.0f / (4.0f * kPi)) : fmaxf(dot3(hit.shading_normal, light_dir), 0.0f);
-        if (!isotropic && n_dot_l <= 0.0f) {
-            continue;
-        }
-        Ray shadow_ray {};
-        shadow_ray.origin = surface_point;
-        shadow_ray.direction = light_dir;
-        if (is_occluded(params.scene, shadow_ray, dist - kRayEpsilon)) {
-            continue;
-        }
-        const float attenuation = kShadowScale / dist_sq;
-        direct = add3(direct, mul3(mul3(emission, direct_material_response(params.scene, hit, state,
-                                                      light_dir, n_dot_l)),
-                                  attenuation));
+    float bsdf_pdf = 0.0f;
+    const float3 response =
+        direct_material_response(params.scene, hit, state, light.direction, bsdf_pdf);
+    if (max_component3(response) <= 0.0f) {
+        return;
     }
 
-    for (int i = 0; i < params.scene.triangle_count; ++i) {
-        const PackedTriangle& triangle = params.scene.triangles[i];
-        if (triangle.material_index < 0 || triangle.material_index >= params.scene.material_count) {
-            continue;
-        }
-        const MaterialSample& material = params.scene.materials[triangle.material_index];
-        if (!material_is_emissive(params.scene, material)) {
-            continue;
-        }
-        const float3 p0 = vector3f_to_float3(triangle.p0);
-        const float3 p1 = vector3f_to_float3(triangle.p1);
-        const float3 p2 = vector3f_to_float3(triangle.p2);
-        const float3 edge1 = sub3(p1, p0);
-        const float3 edge2 = sub3(p2, p0);
-        const float3 light_pos = div3(add3(add3(p0, p1), p2), 3.0f);
-        const float3 emission =
-            evaluate_material_emission(params.scene, material, 1.0f / 3.0f, 1.0f / 3.0f, light_pos);
-        const float3 to_light = sub3(light_pos, surface_point);
-        const float dist_sq = fmaxf(length_sq3(to_light), 1e-6f);
-        const float dist = sqrtf(dist_sq);
-        const float3 light_dir = div3(to_light, dist);
-        const float3 light_normal = normalize3(cross3(edge1, edge2));
-        if (dot3(light_normal, light_dir) >= 0.0f) {
-            continue;
-        }
-        const bool isotropic = hit.material_type == 4;
-        const float n_dot_l =
-            isotropic ? (1.0f / (4.0f * kPi)) : fmaxf(dot3(hit.shading_normal, light_dir), 0.0f);
-        if (!isotropic && n_dot_l <= 0.0f) {
-            continue;
-        }
-        Ray shadow_ray {};
-        shadow_ray.origin = surface_point;
-        shadow_ray.direction = light_dir;
-        if (is_occluded(params.scene, shadow_ray, dist - kRayEpsilon)) {
-            continue;
-        }
-        const float attenuation = kShadowScale / dist_sq;
-        direct = add3(direct, mul3(mul3(emission, direct_material_response(params.scene, hit, state,
-                                                      light_dir, n_dot_l)),
-                                  attenuation));
+    Ray shadow_ray {};
+    shadow_ray.origin = add3(hit.position, mul3(light.direction, kRayEpsilon * 2.0f));
+    shadow_ray.direction = light.direction;
+    const float max_t = light.infinite ? kRayFar : light.distance - kRayEpsilon * 3.0f;
+    if (max_t <= kRayEpsilon || is_occluded(params.scene, shadow_ray, max_t)) {
+        return;
     }
 
+    const float mis_weight =
+        bsdf_technique_available ? light_power_heuristic(light.pdf, bsdf_pdf) : 1.0f;
+    const float3 direct = mul3(mul3(light.emission, response), mis_weight / light.pdf);
     state.radiance = add3(state.radiance, mul3(state.throughput, direct));
+}
+
+__device__ void record_scatter_for_mis(PathState& state, const HitInfo& hit, float bsdf_pdf,
+    bool delta) {
+    state.previous_scatter_position = hit.position;
+    state.previous_scatter_normal = hit.shading_normal;
+    state.previous_bsdf_pdf = bsdf_pdf;
+    state.previous_material_type = hit.material_type;
+    state.previous_primitive_type = hit.primitive_type;
+    state.previous_primitive_index = hit.primitive_index;
+    state.previous_scatter_valid = true;
+    state.previous_scatter_delta = delta;
 }
 
 __device__ void sample_bsdf(const LaunchParams& params, const HitInfo& hit, std::uint32_t& rng,
@@ -1358,6 +1564,8 @@ __device__ void sample_bsdf(const LaunchParams& params, const HitInfo& hit, std:
         state.ray.origin = add3(hit.position, mul3(hit.shading_normal, kRayEpsilon));
         state.ray.direction = normalize3(scatter_dir);
         state.throughput = mul3(state.throughput, hit.base_color);
+        const float cosine = fmaxf(dot3(hit.shading_normal, state.ray.direction), 0.0f);
+        record_scatter_for_mis(state, hit, cosine / kPi, false);
         return;
     }
 
@@ -1372,6 +1580,7 @@ __device__ void sample_bsdf(const LaunchParams& params, const HitInfo& hit, std:
         state.ray.origin = add3(hit.position, mul3(hit.shading_normal, kRayEpsilon));
         state.ray.direction = scattered;
         state.throughput = mul3(state.throughput, hit.base_color);
+        record_scatter_for_mis(state, hit, 0.0f, true);
         return;
     }
 
@@ -1391,6 +1600,7 @@ __device__ void sample_bsdf(const LaunchParams& params, const HitInfo& hit, std:
         state.ray.origin = add3(hit.position, mul3(direction, kRayEpsilon));
         state.ray.direction = normalize3(direction);
         state.throughput = mul3(state.throughput, hit.base_color);
+        record_scatter_for_mis(state, hit, 0.0f, true);
         return;
     }
 
@@ -1416,6 +1626,7 @@ __device__ void sample_bsdf(const LaunchParams& params, const HitInfo& hit, std:
         state.ray.origin = add3(hit.position, mul3(direction, kRayEpsilon));
         state.ray.direction = normalize3(direction);
         state.throughput = mul3(state.throughput, from_openpbr_vec3(sample.weight));
+        record_scatter_for_mis(state, hit, sample.pdf, sample.delta != 0);
         if (sample.event == OpenPbrScatterEvent::subsurface_entry) {
             state.subsurface_medium = openpbr_subsurface_medium(parameters);
             state.subsurface_material_index = hit.openpbr_index;
@@ -1427,9 +1638,11 @@ __device__ void sample_bsdf(const LaunchParams& params, const HitInfo& hit, std:
     }
 
     if (hit.material_type == 4) {
-        state.ray.origin = add3(hit.position, mul3(random_unit_vector(rng), kRayEpsilon));
-        state.ray.direction = random_unit_vector(rng);
+        const float3 direction = random_unit_vector(rng);
+        state.ray.origin = add3(hit.position, mul3(direction, kRayEpsilon));
+        state.ray.direction = direction;
         state.throughput = mul3(state.throughput, hit.base_color);
+        record_scatter_for_mis(state, hit, light_uniform_sphere_pdf(), false);
         return;
     }
 
