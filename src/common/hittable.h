@@ -17,7 +17,8 @@ struct Translate {
 
     bool hit(const Ray& ray, const Interval& ray_t, HitRecord& hit_rec) const {
         // Move the ray backwards by the offset
-        Ray offset_r {ray.origin() - m_offset, ray.direction(), ray.time()};
+        Ray offset_r {ray.origin() - m_offset, ray.direction(), ray.time(),
+            ray.subsurface_medium(), ray.subsurface_owner()};
 
         // Determine whether an intersection exists along the offset ray (and if so, where)
         if (!m_object->hit(offset_r, ray_t, hit_rec)) {
@@ -86,7 +87,8 @@ struct RotateY {
             ray.direction().y(),                                                       //
             (m_sin_theta * ray.direction().x()) + (m_cos_theta * ray.direction().z())};
 
-        const Ray rotated_ray {origin, direction, ray.time()};
+        const Ray rotated_ray {
+            origin, direction, ray.time(), ray.subsurface_medium(), ray.subsurface_owner()};
 
         // Determine whether an intersection exists in object space (and if so, where)
 

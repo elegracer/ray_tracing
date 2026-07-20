@@ -95,7 +95,8 @@ struct Metal {
         scatter_rec.attenuation = albedo;
         scatter_rec.pdf = nullptr;
         scatter_rec.skip_pdf = true;
-        scatter_rec.skip_pdf_ray = Ray(hit_rec.p, reflected, ray_in.time());
+        scatter_rec.skip_pdf_ray = Ray(hit_rec.p, reflected, ray_in.time(),
+            ray_in.subsurface_medium(), ray_in.subsurface_owner());
 
         return true;
     }
@@ -135,7 +136,8 @@ struct Dielectric {
                 ? reflect(unit_direction, hit_rec.normal)
                 : refract(unit_direction, hit_rec.normal, ri);
 
-        scatter_rec.skip_pdf_ray = Ray(hit_rec.p, direction, ray_in.time());
+        scatter_rec.skip_pdf_ray = Ray(hit_rec.p, direction, ray_in.time(),
+            ray_in.subsurface_medium(), ray_in.subsurface_owner());
         return true;
     }
 
@@ -175,6 +177,9 @@ struct OpenPbrSurfaceMaterial {
     }
 
     bool scatter(const Ray& ray_in, const HitRecord& hit_rec, ScatterRecord& scatter_rec) const {
+        if (ray_in.subsurface_medium().active != 0 && ray_in.subsurface_owner() != this) {
+            return false;
+        }
         const rt::OpenPbrCoreMaterial parameters =
             evaluated_scattering_parameters(hit_rec.u, hit_rec.v, hit_rec.p);
         const Vec3d outward_normal = hit_rec.front_face ? hit_rec.normal : -hit_rec.normal;
@@ -190,8 +195,17 @@ struct OpenPbrSurfaceMaterial {
         scatter_rec.attenuation = {sample.weight.x, sample.weight.y, sample.weight.z};
         scatter_rec.pdf = nullptr;
         scatter_rec.skip_pdf = true;
-        scatter_rec.skip_pdf_ray =
-            Ray(hit_rec.p, Vec3d {sample.wi.x, sample.wi.y, sample.wi.z}, ray_in.time());
+        rt::OpenPbrSubsurfaceMedium medium = ray_in.subsurface_medium();
+        const void* medium_owner = ray_in.subsurface_owner();
+        if (sample.event == rt::OpenPbrScatterEvent::subsurface_entry) {
+            medium = rt::openpbr_subsurface_medium(parameters);
+            medium_owner = this;
+        } else if (sample.event == rt::OpenPbrScatterEvent::subsurface_exit) {
+            medium = {};
+            medium_owner = nullptr;
+        }
+        scatter_rec.skip_pdf_ray = Ray(hit_rec.p,
+            Vec3d {sample.wi.x, sample.wi.y, sample.wi.z}, ray_in.time(), medium, medium_owner);
         return true;
     }
 

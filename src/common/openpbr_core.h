@@ -48,6 +48,12 @@ struct OpenPbrCoreMaterial {
     float transmission_dispersion_scale = 0.0f;
     float transmission_dispersion_abbe_number = 20.0f;
 
+    float subsurface_weight = 0.0f;
+    OpenPbrVec3 subsurface_color {0.8f, 0.8f, 0.8f};
+    float subsurface_radius = 1.0f;
+    OpenPbrVec3 subsurface_radius_scale {1.0f, 0.5f, 0.25f};
+    float subsurface_scatter_anisotropy = 0.0f;
+
     float fuzz_weight = 0.0f;
     OpenPbrVec3 fuzz_color {1.0f, 1.0f, 1.0f};
     float fuzz_roughness = 0.5f;
@@ -115,6 +121,8 @@ enum class OpenPbrScatterEvent : int {
     opacity_passthrough = 5,
     coat_reflection = 6,
     fuzz_reflection = 7,
+    subsurface_entry = 8,
+    subsurface_exit = 9,
 };
 
 struct OpenPbrEvaluation {
@@ -135,10 +143,24 @@ struct OpenPbrSample {
 
 struct OpenPbrLobeProbabilities {
     float diffuse = 0.0f;
+    float subsurface = 0.0f;
     float reflection = 0.0f;
     float transmission = 0.0f;
     float coat = 0.0f;
     float fuzz = 0.0f;
+};
+
+struct OpenPbrSubsurfaceMedium {
+    OpenPbrVec3 extinction {};
+    OpenPbrVec3 single_scattering_albedo {};
+    float anisotropy = 0.0f;
+    int active = 0;
+};
+
+struct OpenPbrSubsurfaceSegment {
+    OpenPbrVec3 weight {1.0f, 1.0f, 1.0f};
+    float distance = 0.0f;
+    int scattered = 0;
 };
 
 RT_OPENPBR_HD RT_OPENPBR_INLINE float openpbr_min(float a, float b) {
@@ -339,6 +361,140 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_transmission_at_distance(
         expf(-extinction.z * safe_distance)};
 }
 
+RT_OPENPBR_HD RT_OPENPBR_INLINE float openpbr_subsurface_single_scattering_albedo(
+    float observed_color, float anisotropy) {
+    const float color = openpbr_saturate(observed_color);
+    const float g = openpbr_clamp(anisotropy, -0.999f, 0.999f);
+    const float s = openpbr_max(0.0f,
+        4.09712f + 4.20863f * color
+            - sqrtf(openpbr_max(
+                0.0f, 9.59217f + 41.6808f * color + 17.7126f * color * color)));
+    const float s_squared = s * s;
+    return openpbr_saturate(
+        (1.0f - s_squared) / openpbr_max(1.0f - g * s_squared, 1e-6f));
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE bool openpbr_subsurface_has_finite_mfp(
+    const OpenPbrCoreMaterial& material) {
+    const float radius = openpbr_max(0.0f, material.subsurface_radius);
+    const OpenPbrVec3 scale = openpbr_clamp_nonnegative(material.subsurface_radius_scale);
+    return radius * openpbr_max(scale.x, openpbr_max(scale.y, scale.z)) > 1e-6f;
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE bool openpbr_subsurface_random_walk_enabled(
+    const OpenPbrCoreMaterial& material) {
+    return material.geometry_thin_walled == 0 && openpbr_saturate(material.subsurface_weight) > 0.0f
+           && openpbr_saturate(material.base_metalness) < 1.0f
+           && openpbr_saturate(material.transmission_weight) < 1.0f
+           && openpbr_subsurface_has_finite_mfp(material);
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE bool openpbr_subsurface_thin_walled_enabled(
+    const OpenPbrCoreMaterial& material) {
+    return material.geometry_thin_walled != 0
+           && openpbr_saturate(material.subsurface_weight) > 0.0f;
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE float openpbr_subsurface_thin_walled_probability(
+    const OpenPbrCoreMaterial& material, bool transmission) {
+    const float anisotropy =
+        openpbr_clamp(material.subsurface_scatter_anisotropy, -1.0f, 1.0f);
+    return 0.5f * (1.0f + (transmission ? anisotropy : -anisotropy));
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrSubsurfaceMedium openpbr_subsurface_medium(
+    const OpenPbrCoreMaterial& material) {
+    OpenPbrSubsurfaceMedium medium {};
+    if (!openpbr_subsurface_random_walk_enabled(material)) {
+        return medium;
+    }
+    const float radius = openpbr_max(0.0f, material.subsurface_radius);
+    const OpenPbrVec3 radius_scale =
+        openpbr_clamp_nonnegative(material.subsurface_radius_scale);
+    const OpenPbrVec3 mean_free_path {
+        openpbr_max(radius * radius_scale.x, 1e-6f),
+        openpbr_max(radius * radius_scale.y, 1e-6f),
+        openpbr_max(radius * radius_scale.z, 1e-6f),
+    };
+    medium.extinction = openpbr_reciprocal(mean_free_path);
+    const OpenPbrVec3 color = openpbr_clamp_unit(material.subsurface_color);
+    medium.single_scattering_albedo = {
+        openpbr_subsurface_single_scattering_albedo(
+            color.x, material.subsurface_scatter_anisotropy),
+        openpbr_subsurface_single_scattering_albedo(
+            color.y, material.subsurface_scatter_anisotropy),
+        openpbr_subsurface_single_scattering_albedo(
+            color.z, material.subsurface_scatter_anisotropy),
+    };
+    medium.anisotropy =
+        openpbr_clamp(material.subsurface_scatter_anisotropy, -0.999f, 0.999f);
+    medium.active = 1;
+    return medium;
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_subsurface_channel_probabilities(
+    const OpenPbrSubsurfaceMedium& medium, const OpenPbrTransportContext& context) {
+    const OpenPbrVec3 contribution = openpbr_mul(
+        openpbr_clamp_nonnegative(context.path_throughput), medium.single_scattering_albedo);
+    const float total = contribution.x + contribution.y + contribution.z;
+    return total > 1e-12f ? openpbr_div(contribution, total)
+                          : openpbr_make_vec3(1.0f / 3.0f);
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_subsurface_transmittance(
+    const OpenPbrSubsurfaceMedium& medium, float distance) {
+    const float safe_distance = openpbr_max(0.0f, distance);
+    return {expf(-medium.extinction.x * safe_distance),
+        expf(-medium.extinction.y * safe_distance),
+        expf(-medium.extinction.z * safe_distance)};
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrSubsurfaceSegment openpbr_sample_subsurface_segment(
+    const OpenPbrSubsurfaceMedium& medium, float boundary_distance, float u,
+    const OpenPbrTransportContext& context = {}) {
+    OpenPbrSubsurfaceSegment result {};
+    result.distance = openpbr_max(0.0f, boundary_distance);
+    if (medium.active == 0 || result.distance <= 0.0f) {
+        return result;
+    }
+
+    const OpenPbrVec3 probabilities =
+        openpbr_subsurface_channel_probabilities(medium, context);
+    const float choice = openpbr_clamp(u, 0.0f, 0.99999994f);
+    int channel = 2;
+    float channel_u = 0.0f;
+    float cdf = 0.0f;
+    for (int index = 0; index < 3; ++index) {
+        const float probability = openpbr_component(probabilities, index);
+        if (choice < cdf + probability || index == 2) {
+            channel = index;
+            channel_u = (choice - cdf) / openpbr_max(probability, 1e-8f);
+            break;
+        }
+        cdf += probability;
+    }
+
+    const float extinction = openpbr_component(medium.extinction, channel);
+    const float sampled_distance =
+        -logf(openpbr_max(1.0f - openpbr_saturate(channel_u), 1e-7f))
+        / openpbr_max(extinction, 1e-6f);
+    result.scattered = sampled_distance < result.distance ? 1 : 0;
+    result.distance = result.scattered != 0 ? sampled_distance : result.distance;
+
+    const OpenPbrVec3 transmittance =
+        openpbr_subsurface_transmittance(medium, result.distance);
+    if (result.scattered != 0) {
+        const OpenPbrVec3 density = openpbr_mul(medium.extinction, transmittance);
+        const float mixture_pdf = openpbr_dot(probabilities, density);
+        result.weight = openpbr_div(openpbr_mul(density, medium.single_scattering_albedo),
+            openpbr_max(mixture_pdf, 1e-12f));
+    } else {
+        const float survival_pdf = openpbr_dot(probabilities, transmittance);
+        result.weight = openpbr_div(transmittance, openpbr_max(survival_pdf, 1e-12f));
+    }
+    return result;
+}
+
 RT_OPENPBR_HD RT_OPENPBR_INLINE float openpbr_pow5(float value) {
     const float square = value * value;
     return square * square * value;
@@ -392,6 +548,22 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_to_world(const OpenPbrFrame&
     return openpbr_add(
         openpbr_add(openpbr_mul(frame.tangent, value.x), openpbr_mul(frame.bitangent, value.y)),
         openpbr_mul(frame.normal, value.z));
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_sample_henyey_greenstein(
+    const OpenPbrVec3& incident_direction, float anisotropy, float u1, float u2) {
+    const float g = openpbr_clamp(anisotropy, -0.999f, 0.999f);
+    float cosine = 1.0f - 2.0f * openpbr_saturate(u1);
+    if (fabsf(g) > 1e-3f) {
+        const float ratio = (1.0f - g * g)
+                            / openpbr_max(1.0f - g + 2.0f * g * openpbr_saturate(u1), 1e-6f);
+        cosine = openpbr_clamp((1.0f + g * g - ratio * ratio) / (2.0f * g), -1.0f, 1.0f);
+    }
+    const float sine = openpbr_safe_sqrt(1.0f - cosine * cosine);
+    const float phi = 2.0f * kOpenPbrPi * openpbr_saturate(u2);
+    const OpenPbrVec3 local {sine * cosf(phi), sine * sinf(phi), cosine};
+    return openpbr_normalize(openpbr_to_world(
+        make_openpbr_frame(openpbr_normalize(incident_direction), {}), local));
 }
 
 RT_OPENPBR_HD RT_OPENPBR_INLINE float openpbr_fresnel_dielectric(float cosine, float eta) {
@@ -1131,10 +1303,30 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrLobeProbabilities openpbr_lobe_probabilit
             openpbr_luminance(openpbr_metal_reflectance(material, outgoing_cosine));
     }
 
-    const float diffuse_score = (1.0f - metalness) * (1.0f - transmission)
-                                * openpbr_saturate(1.0f - dielectric_sampling_reflectance)
-                                * base_weight
-                                * openpbr_luminance(openpbr_clamp_unit(material.base_color));
+    const float opaque_transmission = (1.0f - metalness) * (1.0f - transmission)
+                                      * openpbr_saturate(
+                                          1.0f - dielectric_sampling_reflectance);
+    const float subsurface = openpbr_saturate(material.subsurface_weight);
+    float diffuse_score = 0.0f;
+    float subsurface_score = 0.0f;
+    if (subsurface <= 0.0f) {
+        diffuse_score = opaque_transmission * base_weight
+                        * openpbr_luminance(openpbr_clamp_unit(material.base_color));
+    } else {
+        const bool random_walk = openpbr_subsurface_random_walk_enabled(material);
+        const bool thin_walled = openpbr_subsurface_thin_walled_enabled(material);
+        const float local_subsurface = random_walk || thin_walled ? 0.0f : subsurface;
+        const OpenPbrVec3 local_diffuse_color = openpbr_add(
+            openpbr_mul(
+                openpbr_clamp_unit(material.base_color), base_weight * (1.0f - subsurface)),
+            openpbr_mul(openpbr_clamp_unit(material.subsurface_color), local_subsurface));
+        diffuse_score = opaque_transmission * openpbr_luminance(local_diffuse_color);
+        if (random_walk || thin_walled) {
+            subsurface_score = opaque_transmission * subsurface
+                               * openpbr_luminance(
+                                   openpbr_clamp_unit(material.subsurface_color));
+        }
+    }
     const float dielectric_reflection_score =
         (1.0f - metalness) * dielectric_sampling_reflectance
         * openpbr_luminance(openpbr_clamp_unit(material.specular_color));
@@ -1157,16 +1349,18 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrLobeProbabilities openpbr_lobe_probabilit
     const float substrate_score_scale =
         openpbr_saturate(1.0f - coat_score) * openpbr_saturate(1.0f - fuzz_score);
     const float scaled_diffuse_score = diffuse_score * substrate_score_scale;
+    const float scaled_subsurface_score = subsurface_score * substrate_score_scale;
     const float reflection_score =
         (dielectric_reflection_score + metal_reflection_score) * substrate_score_scale;
     const float scaled_transmission_score = transmission_score * substrate_score_scale;
-    const float total = scaled_diffuse_score + reflection_score + scaled_transmission_score
-                        + coat_score + fuzz_score;
+    const float total = scaled_diffuse_score + scaled_subsurface_score + reflection_score
+                        + scaled_transmission_score + coat_score + fuzz_score;
     if (total <= 1e-10f) {
         return {};
     }
-    return {scaled_diffuse_score / total, reflection_score / total,
-        scaled_transmission_score / total, coat_score / total, fuzz_score / total};
+    return {scaled_diffuse_score / total, scaled_subsurface_score / total,
+        reflection_score / total, scaled_transmission_score / total, coat_score / total,
+        fuzz_score / total};
 }
 
 RT_OPENPBR_HD RT_OPENPBR_INLINE float openpbr_oren_nayar_directional_albedo(float cosine,
@@ -1197,8 +1391,22 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_diffuse_value(
     }
     const float metalness = openpbr_saturate(material.base_metalness);
     const float transmission = openpbr_saturate(material.transmission_weight);
-    const float coefficient =
-        openpbr_saturate(material.base_weight) * (1.0f - metalness) * (1.0f - transmission);
+    const float subsurface = openpbr_saturate(material.subsurface_weight);
+    float local_mix = openpbr_saturate(material.base_weight);
+    OpenPbrVec3 color = openpbr_clamp_unit(material.base_color);
+    if (subsurface > 0.0f) {
+        const float base_mix = openpbr_saturate(material.base_weight) * (1.0f - subsurface);
+        const float subsurface_mix = openpbr_subsurface_random_walk_enabled(material)
+                                             || openpbr_subsurface_thin_walled_enabled(material)
+                                         ? 0.0f
+                                         : subsurface;
+        local_mix = base_mix + subsurface_mix;
+        color = openpbr_clamp_unit(openpbr_div(openpbr_add(
+            openpbr_mul(openpbr_clamp_unit(material.base_color), base_mix),
+            openpbr_mul(openpbr_clamp_unit(material.subsurface_color), subsurface_mix)),
+            openpbr_max(local_mix, 1e-8f)));
+    }
+    const float coefficient = local_mix * (1.0f - metalness) * (1.0f - transmission);
     if (coefficient <= 0.0f) {
         return {};
     }
@@ -1208,7 +1416,6 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_diffuse_value(
     const float coefficient_a = 1.0f / (1.0f + kFujiiConstant1 * sigma);
     const float s = openpbr_dot(wi, wo) - wi.z * wo.z;
     const float s_over_t = s > 0.0f ? s / openpbr_max(wi.z, wo.z) : s;
-    const OpenPbrVec3 color = openpbr_clamp_unit(material.base_color);
     const OpenPbrVec3 single_scatter =
         openpbr_mul(color, coefficient_a * (1.0f + sigma * s_over_t));
 
@@ -1226,6 +1433,20 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_diffuse_value(
         (1.0f - directional_in) * (1.0f - directional_out) / missing_average;
     const OpenPbrVec3 multi_scatter = openpbr_mul(multi_scatter_color, multi_scatter_scale);
     return openpbr_mul(openpbr_add(single_scatter, multi_scatter), coefficient * kOpenPbrInvPi);
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_thin_walled_subsurface_value(
+    const OpenPbrCoreMaterial& material, const OpenPbrVec3& wo,
+    const OpenPbrVec3& wi_same_hemisphere, bool transmission) {
+    if (!openpbr_subsurface_thin_walled_enabled(material)) {
+        return {};
+    }
+    OpenPbrCoreMaterial diffuse = material;
+    diffuse.base_weight = openpbr_saturate(material.subsurface_weight)
+                          * openpbr_subsurface_thin_walled_probability(material, transmission);
+    diffuse.base_color = openpbr_clamp_unit(material.subsurface_color);
+    diffuse.subsurface_weight = 0.0f;
+    return openpbr_diffuse_value(diffuse, wo, wi_same_hemisphere);
 }
 
 RT_OPENPBR_HD RT_OPENPBR_INLINE float openpbr_dielectric_fresnel(
@@ -1463,9 +1684,16 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrEvaluation evaluate_openpbr_core(
     if (reflection) {
         const OpenPbrVec3 substrate_attenuation = openpbr_sub(openpbr_make_vec3(1.0f),
             openpbr_dielectric_directional_albedo_rgb(material, wo.z, entering, context));
-        result.value = openpbr_mul(openpbr_diffuse_value(material, wo, wi),
-            openpbr_clamp_unit(substrate_attenuation));
+        result.value = openpbr_add(openpbr_diffuse_value(material, wo, wi),
+            openpbr_thin_walled_subsurface_value(material, wo, wi, false));
+        result.value =
+            openpbr_mul(result.value, openpbr_clamp_unit(substrate_attenuation));
         result.pdf = probabilities.diffuse * wi.z * kOpenPbrInvPi;
+        if (openpbr_subsurface_thin_walled_enabled(material)) {
+            result.pdf += probabilities.subsurface
+                          * openpbr_subsurface_thin_walled_probability(material, false) * wi.z
+                          * kOpenPbrInvPi;
+        }
 
         const OpenPbrVec3 sum = openpbr_add(wi, wo);
         if (!smooth && openpbr_length_squared(sum) > 1e-16f) {
@@ -1498,7 +1726,21 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrEvaluation evaluate_openpbr_core(
             result.pdf += probabilities.coat * openpbr_coat_reflection_pdf(material, wo, wi);
             result.pdf += probabilities.fuzz * openpbr_fuzz_pdf(material, wo, wi);
         }
-    } else if (!smooth && material.geometry_thin_walled == 0 && probabilities.transmission > 0.0f) {
+    } else if (openpbr_subsurface_thin_walled_enabled(material)
+               && probabilities.subsurface > 0.0f) {
+        const OpenPbrVec3 wi_reflected {wi.x, wi.y, -wi.z};
+        const OpenPbrVec3 substrate_attenuation = openpbr_sub(openpbr_make_vec3(1.0f),
+            openpbr_dielectric_directional_albedo_rgb(material, wo.z, true, context));
+        result.value = openpbr_thin_walled_subsurface_value(
+            material, wo, wi_reflected, true);
+        result.value = openpbr_mul(result.value,
+            openpbr_mul(openpbr_clamp_unit(substrate_attenuation),
+                openpbr_substrate_scale(material, wo.z, wi.z, true)));
+        result.pdf = probabilities.subsurface
+                     * openpbr_subsurface_thin_walled_probability(material, true) * fabsf(wi.z)
+                     * kOpenPbrInvPi;
+    } else if (!smooth && material.geometry_thin_walled == 0
+               && probabilities.transmission > 0.0f) {
         if (!openpbr_dispersion_enabled(material)) {
             const float eta = openpbr_modulated_ior(material);
             const float eta_path = entering ? eta : 1.0f / eta;
@@ -1623,6 +1865,110 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_sample_cosine_hemisphere(flo
     return {radius * cosf(phi), radius * sinf(phi), openpbr_safe_sqrt(1.0f - radius * radius)};
 }
 
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrCoreMaterial openpbr_subsurface_boundary_material(
+    const OpenPbrCoreMaterial& material) {
+    OpenPbrCoreMaterial boundary = material;
+    boundary.base_weight = 0.0f;
+    boundary.base_metalness = 0.0f;
+    boundary.transmission_weight = 1.0f;
+    boundary.transmission_color = openpbr_make_vec3(1.0f);
+    boundary.transmission_depth = 0.0f;
+    boundary.transmission_dispersion_scale = 0.0f;
+    boundary.subsurface_weight = 0.0f;
+    boundary.fuzz_weight = 0.0f;
+    boundary.coat_weight = 0.0f;
+    boundary.geometry_opacity = 1.0f;
+    return boundary;
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrSample openpbr_sample_subsurface_boundary(
+    const OpenPbrCoreMaterial& material, OpenPbrFrame frame, const OpenPbrVec3& wo_world,
+    float u_lobe, float u1, float u2, const OpenPbrTransportContext& context = {}) {
+    OpenPbrSample sample {};
+    const OpenPbrVec3 wo_normalized = openpbr_normalize(wo_world);
+    if (openpbr_length_squared(wo_normalized) <= 0.0f) {
+        return sample;
+    }
+    const OpenPbrFrame authored_frame = frame;
+    const bool entering = openpbr_dot(frame.normal, wo_normalized) >= 0.0f;
+    frame = openpbr_face_frame(frame, wo_normalized);
+    const OpenPbrVec3 wo = openpbr_to_local(frame, wo_normalized);
+    if (wo.z <= 1e-7f) {
+        return sample;
+    }
+
+    const OpenPbrLobeProbabilities probabilities =
+        openpbr_lobe_probabilities(material, wo.z, false, context);
+    const float choice = openpbr_clamp(u_lobe, 0.0f, 0.99999994f);
+    OpenPbrVec3 wi {};
+    if (choice < probabilities.reflection) {
+        if (openpbr_effectively_smooth(material)) {
+            wi = {-wo.x, -wo.y, wo.z};
+            sample.wi = openpbr_normalize(openpbr_to_world(frame, wi));
+            sample.discrete_pdf = probabilities.reflection;
+            if (sample.discrete_pdf <= 0.0f) {
+                return OpenPbrSample {};
+            }
+            sample.weight = openpbr_div(
+                openpbr_reflection_fresnel(material, wo.z, wo.z, entering, context),
+                sample.discrete_pdf);
+            sample.event = OpenPbrScatterEvent::glossy_reflection;
+            sample.delta = 1;
+            sample.valid = 1;
+            return sample;
+        }
+        const OpenPbrVec3 wm =
+            openpbr_sample_visible_normal(openpbr_roughness(material), wo, u1, u2);
+        wi = openpbr_reflect(wo, wm);
+        if (wi.z <= 1e-7f) {
+            return sample;
+        }
+        sample.event = OpenPbrScatterEvent::glossy_reflection;
+    } else {
+        const float eta = openpbr_modulated_ior(material);
+        const float material_eta_path = entering ? eta : 1.0f / eta;
+        float eta_path = 1.0f;
+        OpenPbrVec3 wm {0.0f, 0.0f, 1.0f};
+        if (!openpbr_effectively_smooth(material)) {
+            wm = openpbr_sample_visible_normal(openpbr_roughness(material), wo, u1, u2);
+        }
+        if (!openpbr_refract(wo, wm, material_eta_path, eta_path, wi)
+            || (!openpbr_effectively_smooth(material) && wi.z >= -1e-7f)) {
+            return sample;
+        }
+        if (openpbr_effectively_smooth(material)) {
+            const OpenPbrVec3 transmission = openpbr_clamp_unit(openpbr_sub(
+                openpbr_make_vec3(1.0f),
+                openpbr_dielectric_reflectance(material, wo.z, entering, context)));
+            sample.wi = openpbr_normalize(openpbr_to_world(frame, wi));
+            sample.discrete_pdf = probabilities.transmission;
+            if (sample.discrete_pdf <= 0.0f) {
+                return OpenPbrSample {};
+            }
+            sample.weight = openpbr_div(openpbr_mul(transmission, 1.0f / (eta_path * eta_path)),
+                sample.discrete_pdf);
+            sample.event = OpenPbrScatterEvent::glossy_transmission;
+            sample.delta = 1;
+            sample.valid = 1;
+            return sample;
+        }
+        sample.event = OpenPbrScatterEvent::glossy_transmission;
+    }
+
+    sample.wi = openpbr_normalize(openpbr_to_world(frame, wi));
+    const OpenPbrEvaluation evaluation =
+        evaluate_openpbr_core(material, authored_frame, wo_normalized, sample.wi, context);
+    if (evaluation.pdf <= 1e-12f) {
+        return OpenPbrSample {};
+    }
+    sample.value = evaluation.value;
+    sample.pdf = evaluation.pdf;
+    sample.weight =
+        openpbr_mul(evaluation.value, fabsf(openpbr_dot(frame.normal, sample.wi)) / evaluation.pdf);
+    sample.valid = 1;
+    return sample;
+}
+
 RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrSample sample_openpbr_core(
     const OpenPbrCoreMaterial& material, OpenPbrFrame frame, const OpenPbrVec3& wo_world,
     float u_lobe, float u1, float u2, const OpenPbrTransportContext& context = {}) {
@@ -1656,21 +2002,42 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrSample sample_openpbr_core(
         return sample;
     }
 
+
+    const float surface_choice =
+        openpbr_clamp((u_lobe - passthrough_probability) / opacity, 0.0f, 0.99999994f);
+    if (!entering && openpbr_subsurface_random_walk_enabled(material)) {
+        const OpenPbrCoreMaterial boundary = openpbr_subsurface_boundary_material(material);
+        sample = openpbr_sample_subsurface_boundary(
+            boundary, authored_frame, wo_normalized, surface_choice, u1, u2, context);
+        if (sample.valid == 0) {
+            return sample;
+        }
+        const OpenPbrVec3 scale = openpbr_substrate_scale(material, wo.z,
+            openpbr_dot(frame.normal, sample.wi), false);
+        sample.value = openpbr_mul(sample.value, openpbr_mul(scale, opacity));
+        sample.weight = openpbr_mul(sample.weight, scale);
+        sample.pdf *= opacity;
+        sample.discrete_pdf *= opacity;
+        if (sample.event == OpenPbrScatterEvent::glossy_transmission) {
+            sample.event = OpenPbrScatterEvent::subsurface_exit;
+        }
+        return sample;
+    }
+
     const bool exterior_layers = entering;
     const OpenPbrLobeProbabilities probabilities =
         openpbr_lobe_probabilities(material, wo.z, exterior_layers, context);
-    if (probabilities.diffuse + probabilities.reflection + probabilities.transmission
-            + probabilities.coat + probabilities.fuzz
+    if (probabilities.diffuse + probabilities.subsurface + probabilities.reflection
+            + probabilities.transmission + probabilities.coat + probabilities.fuzz
         <= 0.0f) {
         return sample;
     }
-    const float surface_choice =
-        openpbr_clamp((u_lobe - passthrough_probability) / opacity, 0.0f, 0.99999994f);
     OpenPbrVec3 wi {};
     const float fuzz_end = probabilities.fuzz;
     const float coat_end = fuzz_end + probabilities.coat;
     const float diffuse_end = coat_end + probabilities.diffuse;
-    const float reflection_end = diffuse_end + probabilities.reflection;
+    const float subsurface_end = diffuse_end + probabilities.subsurface;
+    const float reflection_end = subsurface_end + probabilities.reflection;
 
     if (surface_choice < fuzz_end) {
         wi = openpbr_sample_fuzz(material, wo, u1, u2);
@@ -1707,6 +2074,55 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrSample sample_openpbr_core(
     } else if (surface_choice < diffuse_end) {
         wi = openpbr_sample_cosine_hemisphere(u1, u2);
         sample.event = OpenPbrScatterEvent::diffuse_reflection;
+    } else if (surface_choice < subsurface_end) {
+        if (openpbr_subsurface_thin_walled_enabled(material)) {
+            const float conditional_choice = openpbr_clamp(
+                (surface_choice - diffuse_end) / openpbr_max(probabilities.subsurface, 1e-8f),
+                0.0f, 0.99999994f);
+            const float reflection_probability =
+                openpbr_subsurface_thin_walled_probability(material, false);
+            wi = openpbr_sample_cosine_hemisphere(u1, u2);
+            if (conditional_choice < reflection_probability) {
+                sample.event = OpenPbrScatterEvent::diffuse_reflection;
+            } else {
+                wi.z = -wi.z;
+                sample.event = OpenPbrScatterEvent::thin_walled_transmission;
+            }
+        } else {
+            const OpenPbrCoreMaterial boundary = openpbr_subsurface_boundary_material(material);
+            const OpenPbrLobeProbabilities boundary_probabilities =
+                openpbr_lobe_probabilities(boundary, wo.z, false, context);
+            if (boundary_probabilities.transmission <= 0.0f
+                || probabilities.subsurface <= 0.0f) {
+                return sample;
+            }
+            const float conditional_choice = openpbr_clamp(
+                (surface_choice - diffuse_end) / probabilities.subsurface, 0.0f, 0.99999994f);
+            const float boundary_choice = boundary_probabilities.reflection
+                                          + conditional_choice * boundary_probabilities.transmission;
+            sample = openpbr_sample_subsurface_boundary(
+                boundary, authored_frame, wo_normalized, boundary_choice, u1, u2, context);
+            if (sample.valid == 0 || sample.event != OpenPbrScatterEvent::glossy_transmission) {
+                return OpenPbrSample {};
+            }
+            const float material_scale = (1.0f - openpbr_saturate(material.base_metalness))
+                                         * (1.0f - openpbr_saturate(material.transmission_weight))
+                                         * openpbr_saturate(material.subsurface_weight);
+            const OpenPbrVec3 layer_scale = openpbr_substrate_scale(material, wo.z,
+                openpbr_dot(frame.normal, sample.wi), true);
+            const OpenPbrVec3 weight_scale = openpbr_mul(layer_scale,
+                material_scale * boundary_probabilities.transmission
+                    / openpbr_max(probabilities.subsurface, 1e-8f));
+            sample.value =
+                openpbr_mul(sample.value, openpbr_mul(layer_scale, material_scale * opacity));
+            sample.weight = openpbr_mul(sample.weight, weight_scale);
+            sample.pdf *= opacity * probabilities.subsurface
+                          / boundary_probabilities.transmission;
+            sample.discrete_pdf *= opacity * probabilities.subsurface
+                                   / boundary_probabilities.transmission;
+            sample.event = OpenPbrScatterEvent::subsurface_entry;
+            return sample;
+        }
     } else if (surface_choice < reflection_end) {
         if (openpbr_effectively_smooth(material)) {
             wi = {-wo.x, -wo.y, wo.z};

@@ -246,7 +246,37 @@ private:
 
         // If the ray hits nothing, return the background color
         if (!world->hit(ray, Interval {0.001, infinity}, hit_rec)) {
-            return background;
+            return ray.subsurface_medium().active != 0 ? Vec3d::Zero() : background;
+        }
+
+        Vec3d medium_weight = Vec3d::Ones();
+        if (ray.subsurface_medium().active != 0) {
+            if (hit_rec.front_face) {
+                return Vec3d::Zero();
+            }
+            const double ray_length = ray.direction().norm();
+            if (ray_length <= 1e-12) {
+                return Vec3d::Zero();
+            }
+            const rt::OpenPbrSubsurfaceSegment segment = rt::openpbr_sample_subsurface_segment(
+                ray.subsurface_medium(), static_cast<float>(hit_rec.t * ray_length),
+                static_cast<float>(random_double()));
+            medium_weight = {segment.weight.x, segment.weight.y, segment.weight.z};
+            if (segment.scattered != 0) {
+                const rt::OpenPbrVec3 direction = rt::openpbr_sample_henyey_greenstein(
+                    {static_cast<float>(ray.direction().x() / ray_length),
+                        static_cast<float>(ray.direction().y() / ray_length),
+                        static_cast<float>(ray.direction().z() / ray_length)},
+                    ray.subsurface_medium().anisotropy, static_cast<float>(random_double()),
+                    static_cast<float>(random_double()));
+                const Vec3d next_direction {direction.x, direction.y, direction.z};
+                const Vec3d position =
+                    ray.at(static_cast<double>(segment.distance) / ray_length);
+                const Ray scattered {position + next_direction * 1e-6, next_direction, ray.time(),
+                    ray.subsurface_medium(), ray.subsurface_owner()};
+                return medium_weight.array()
+                       * ray_color(scattered, depth - 1, world, lights).array();
+            }
         }
 
         ScatterRecord scatter_rec;
@@ -254,12 +284,14 @@ private:
             hit_rec.mat->emitted(ray, hit_rec, hit_rec.u, hit_rec.v, hit_rec.p);
 
         if (!hit_rec.mat->scatter(ray, hit_rec, scatter_rec)) {
-            return color_from_emission;
+            return medium_weight.array() * color_from_emission.array();
         }
 
         if (scatter_rec.skip_pdf) {
-            return scatter_rec.attenuation.array()
-                   * ray_color(scatter_rec.skip_pdf_ray, depth - 1, world, lights).array();
+            const Vec3d result = scatter_rec.attenuation.array()
+                                 * ray_color(scatter_rec.skip_pdf_ray, depth - 1, world, lights)
+                                       .array();
+            return medium_weight.array() * result.array();
         }
 
         Ray scattered;
@@ -268,10 +300,12 @@ private:
         if (lights.has_value()) {
             const MixturePDF mixture_pdf {scatter_rec.pdf,
                 pro::make_proxy_shared<PDF, HittablePDF>(lights, hit_rec.p)};
-            scattered = Ray {hit_rec.p, mixture_pdf.generate(), ray.time()};
+            scattered = Ray {hit_rec.p, mixture_pdf.generate(), ray.time(),
+                ray.subsurface_medium(), ray.subsurface_owner()};
             pdf_value = mixture_pdf.value(scattered.direction());
         } else {
-            scattered = Ray {hit_rec.p, scatter_rec.pdf->generate(), ray.time()};
+            scattered = Ray {hit_rec.p, scatter_rec.pdf->generate(), ray.time(),
+                ray.subsurface_medium(), ray.subsurface_owner()};
             pdf_value = scatter_rec.pdf->value(scattered.direction());
         }
 
@@ -285,6 +319,6 @@ private:
             * sample_color.array()          //
             / pdf_value;
 
-        return color_from_emission + color_from_scatter;
+        return medium_weight.array() * (color_from_emission + color_from_scatter).array();
     }
 };

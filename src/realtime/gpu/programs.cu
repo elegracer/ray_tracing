@@ -36,6 +36,8 @@ struct PathState {
     float3 throughput = make_float3(1.0f, 1.0f, 1.0f);
     float3 radiance = make_float3(0.0f, 0.0f, 0.0f);
     OpenPbrTransportContext openpbr_context {};
+    OpenPbrSubsurfaceMedium subsurface_medium {};
+    int subsurface_material_index = -1;
     Ray ray {};
     bool alive = true;
 };
@@ -997,6 +999,31 @@ __global__ void radiance_kernel(const LaunchParams* params_ptr) {
                 state.alive = false;
                 break;
             }
+            if (state.subsurface_medium.active != 0) {
+                if (hit.material_type != 5
+                    || hit.openpbr_index != state.subsurface_material_index || hit.front_face) {
+                    state.alive = false;
+                    break;
+                }
+                const float ray_length = sqrtf(length_sq3(state.ray.direction));
+                const OpenPbrSubsurfaceSegment segment = openpbr_sample_subsurface_segment(
+                    state.subsurface_medium, hit.t * ray_length, random_float01(rng),
+                    openpbr_context_for(state));
+                state.throughput =
+                    mul3(state.throughput, from_openpbr_vec3(segment.weight));
+                if (segment.scattered != 0) {
+                    const float3 incident = normalize3(state.ray.direction);
+                    const OpenPbrVec3 direction = openpbr_sample_henyey_greenstein(
+                        to_openpbr_vec3(incident), state.subsurface_medium.anisotropy,
+                        random_float01(rng), random_float01(rng));
+                    state.ray.origin = add3(state.ray.origin,
+                        mul3(state.ray.direction, segment.distance / fmaxf(ray_length, 1e-8f)));
+                    state.ray.direction = from_openpbr_vec3(direction);
+                    state.ray.origin =
+                        add3(state.ray.origin, mul3(state.ray.direction, kRayEpsilon));
+                    continue;
+                }
+            }
             if (!captured_aux && bounce == 0) {
                 sample_normal = hit.shading_normal;
                 sample_albedo = hit.base_color;
@@ -1389,6 +1416,13 @@ __device__ void sample_bsdf(const LaunchParams& params, const HitInfo& hit, std:
         state.ray.origin = add3(hit.position, mul3(direction, kRayEpsilon));
         state.ray.direction = normalize3(direction);
         state.throughput = mul3(state.throughput, from_openpbr_vec3(sample.weight));
+        if (sample.event == OpenPbrScatterEvent::subsurface_entry) {
+            state.subsurface_medium = openpbr_subsurface_medium(parameters);
+            state.subsurface_material_index = hit.openpbr_index;
+        } else if (sample.event == OpenPbrScatterEvent::subsurface_exit) {
+            state.subsurface_medium = {};
+            state.subsurface_material_index = -1;
+        }
         return;
     }
 
