@@ -66,6 +66,8 @@ void test_scene_contract_mapping() {
     authored.transmission_weight = 0.3;
     authored.transmission_color = Eigen::Vector3d {0.8, 0.9, 1.0};
     authored.transmission_depth = 2.5;
+    authored.transmission_dispersion_scale = 0.75;
+    authored.transmission_dispersion_abbe_number = 32.0;
     authored.fuzz_weight = 0.45;
     authored.fuzz_color = Eigen::Vector3d {0.7, 0.8, 0.9};
     authored.fuzz_roughness = 0.6;
@@ -97,6 +99,9 @@ void test_scene_contract_mapping() {
     expect_near(material.transmission_weight, 0.3, 1e-6, "transmission weight");
     expect_vec_near(material.transmission_color, {0.8f, 0.9f, 1.0f}, 1e-6, "transmission color");
     expect_near(material.transmission_depth, 2.5, 1e-6, "transmission depth");
+    expect_near(material.transmission_dispersion_scale, 0.75, 1e-6, "dispersion scale");
+    expect_near(material.transmission_dispersion_abbe_number, 32.0, 1e-6,
+        "dispersion Abbe number");
     expect_near(material.fuzz_weight, 0.45, 1e-6, "fuzz weight");
     expect_vec_near(material.fuzz_color, {0.7f, 0.8f, 0.9f}, 1e-6, "fuzz color");
     expect_near(material.fuzz_roughness, 0.6, 1e-6, "fuzz roughness");
@@ -272,22 +277,25 @@ void test_evaluate_sample_pdf_contract() {
 }
 
 double integrate_pdf(const rt::OpenPbrCoreMaterial& material, const rt::OpenPbrFrame& frame,
-    const rt::OpenPbrVec3& wo, std::size_t count) {
+    const rt::OpenPbrVec3& wo, std::size_t count,
+    const rt::OpenPbrTransportContext& context = {}) {
     double integral = 0.0;
     for (std::size_t index = 0; index < count; ++index) {
         const rt::OpenPbrVec3 wi = uniform_sphere(index, count);
-        integral += rt::pdf_openpbr_core(material, frame, wo, wi);
+        integral += rt::pdf_openpbr_core(material, frame, wo, wi, context);
     }
     return integral * (4.0 * static_cast<double>(rt::kOpenPbrPi)) / static_cast<double>(count);
 }
 
 rt::OpenPbrVec3 integrate_furnace(const rt::OpenPbrCoreMaterial& material,
-    const rt::OpenPbrFrame& frame, const rt::OpenPbrVec3& wo, std::size_t count) {
+    const rt::OpenPbrFrame& frame, const rt::OpenPbrVec3& wo, std::size_t count,
+    const rt::OpenPbrTransportContext& context = {}) {
     rt::OpenPbrVec3 integral {};
     const double scale = 4.0 * static_cast<double>(rt::kOpenPbrPi) / static_cast<double>(count);
     for (std::size_t index = 0; index < count; ++index) {
         const rt::OpenPbrVec3 wi = uniform_sphere(index, count);
-        const rt::OpenPbrEvaluation evaluation = rt::evaluate_openpbr_core(material, frame, wo, wi);
+        const rt::OpenPbrEvaluation evaluation =
+            rt::evaluate_openpbr_core(material, frame, wo, wi, context);
         const float cosine = std::abs(rt::openpbr_dot(frame.normal, wi));
         integral = rt::openpbr_add(integral,
             rt::openpbr_mul(evaluation.value, static_cast<float>(scale) * cosine));
@@ -546,6 +554,123 @@ void test_thin_film_reference_semantics() {
         "thin-film thin wall conserves reflection plus transmission");
 }
 
+void test_dispersion_reference_semantics() {
+    constexpr std::size_t kIntegrationSamples = 131072;
+    const rt::OpenPbrFrame frame = rt::make_openpbr_frame(kNormal, kTangent);
+    const rt::OpenPbrVec3 wo = normalized({0.6f, 0.0f, 0.8f});
+    const rt::OpenPbrTransportContext context {
+        .rgb_wavelengths_nm = {rt::kOpenPbrFraunhoferCnm, rt::kOpenPbrFraunhoferDnm,
+            rt::kOpenPbrFraunhoferFnm},
+        .path_throughput = {1.0f, 1.0f, 1.0f},
+    };
+
+    const float ior_c = rt::openpbr_dispersion_adjusted_ior(
+        1.5f, 1.0f, 20.0f, rt::kOpenPbrFraunhoferCnm);
+    const float ior_d = rt::openpbr_dispersion_adjusted_ior(
+        1.5f, 1.0f, 20.0f, rt::kOpenPbrFraunhoferDnm);
+    const float ior_f = rt::openpbr_dispersion_adjusted_ior(
+        1.5f, 1.0f, 20.0f, rt::kOpenPbrFraunhoferFnm);
+    expect_near(ior_c, 1.49248045, 2e-6, "Cauchy IOR at Fraunhofer C");
+    expect_near(ior_d, 1.5, 2e-6, "Cauchy IOR preserves authored Fraunhofer d IOR");
+    expect_near(ior_f, 1.51748045, 2e-6, "Cauchy IOR at Fraunhofer F");
+    expect_near((ior_d - 1.0f) / (ior_f - ior_c), 20.0, 2e-4,
+        "Cauchy coefficients reconstruct the authored Abbe number");
+    expect_true(rt::openpbr_dispersion_adjusted_ior(1.5f, 0.0f, 9.0f, 450.0f) == 1.5f,
+        "zero dispersion scale returns the exact authored IOR");
+
+    rt::OpenPbrCoreMaterial smooth;
+    smooth.base_weight = 0.0f;
+    smooth.specular_roughness = 0.0f;
+    smooth.specular_ior = 1.5f;
+    smooth.transmission_weight = 1.0f;
+    smooth.transmission_dispersion_scale = 1.0f;
+    smooth.transmission_dispersion_abbe_number = 20.0f;
+    expect_vec_near(rt::openpbr_dispersion_ior(smooth, context), {ior_c, ior_d, ior_f}, 2e-6,
+        "OpenPBR dispersion context resolves long, medium, and short IORs");
+
+    const rt::OpenPbrLobeProbabilities smooth_probabilities =
+        rt::openpbr_lobe_probabilities(smooth, wo.z, true, context);
+    rt::OpenPbrSample channel_samples[3];
+    for (int channel = 0; channel < 3; ++channel) {
+        const float channel_u = (static_cast<float>(channel) + 0.5f) / 3.0f;
+        channel_samples[channel] = rt::sample_openpbr_core(smooth, frame, wo,
+            smooth_probabilities.reflection + smooth_probabilities.transmission * channel_u,
+            0.2f, 0.8f, context);
+        expect_true(channel_samples[channel].valid != 0
+                        && channel_samples[channel].delta != 0
+                        && channel_samples[channel].event
+                               == rt::OpenPbrScatterEvent::glossy_transmission,
+            "smooth dispersion samples a delta transmission channel");
+        expect_near(channel_samples[channel].discrete_pdf,
+            smooth_probabilities.transmission / 3.0f, 2e-6,
+            "smooth dispersion includes channel selection in the discrete PDF");
+        for (int component = 0; component < 3; ++component) {
+            const float weight = rt::openpbr_component(channel_samples[channel].weight, component);
+            expect_true(component == channel ? weight > 0.0f : weight == 0.0f,
+                "smooth dispersion returns an unbiased one-channel delta weight");
+        }
+    }
+    const auto tangent_length = [](const rt::OpenPbrVec3& direction) {
+        return std::sqrt(direction.x * direction.x + direction.y * direction.y);
+    };
+    expect_true(tangent_length(channel_samples[0].wi) > tangent_length(channel_samples[1].wi)
+                    && tangent_length(channel_samples[1].wi)
+                           > tangent_length(channel_samples[2].wi),
+        "increasing short-wave IOR bends RGB transmission toward the normal");
+
+    rt::OpenPbrCoreMaterial rough = smooth;
+    rough.specular_roughness = 0.28f;
+    const rt::OpenPbrTransportContext weighted_context {
+        .rgb_wavelengths_nm = context.rgb_wavelengths_nm,
+        .path_throughput = {0.2f, 0.3f, 0.5f},
+    };
+    expect_vec_near(rt::openpbr_channel_probabilities(weighted_context),
+        {0.2f, 0.3f, 0.5f}, 1e-7, "path throughput controls RGB channel selection");
+    expect_near(integrate_pdf(rough, frame, wo, kIntegrationSamples, weighted_context),
+        1.0, 1.2e-2, "dispersion MIS PDF normalization");
+    const rt::OpenPbrVec3 energy =
+        integrate_furnace(rough, frame, wo, kIntegrationSamples, weighted_context);
+    expect_finite_nonnegative(energy, "dispersion furnace energy");
+    expect_true(energy.x <= 1.02f && energy.y <= 1.02f && energy.z <= 1.02f,
+        "dispersion only redistributes bounded dielectric energy");
+
+    int matched_samples = 0;
+    for (int index = 0; index < 4096; ++index) {
+        const float u_lobe = std::fmod(0.618033989f * static_cast<float>(index + 1), 1.0f);
+        const float u1 = std::fmod(0.754877666f * static_cast<float>(index + 1), 1.0f);
+        const float u2 = std::fmod(0.569840296f * static_cast<float>(index + 1), 1.0f);
+        const rt::OpenPbrSample sample =
+            rt::sample_openpbr_core(rough, frame, wo, u_lobe, u1, u2, weighted_context);
+        if (sample.valid == 0 || sample.delta != 0) {
+            continue;
+        }
+        const rt::OpenPbrEvaluation evaluation =
+            rt::evaluate_openpbr_core(rough, frame, wo, sample.wi, weighted_context);
+        expect_relative(sample.pdf, evaluation.pdf, 8e-5,
+            "dispersion sample/evaluate PDF agreement");
+        expect_vec_relative(sample.value, evaluation.value, 8e-5,
+            "dispersion sample/evaluate value agreement");
+        ++matched_samples;
+    }
+    expect_true(matched_samples > 3000,
+        "dispersion sampling produces a stable continuous population");
+
+    rt::OpenPbrCoreMaterial zero_scale = rough;
+    zero_scale.transmission_dispersion_scale = 0.0f;
+    zero_scale.transmission_dispersion_abbe_number = 9.0f;
+    rt::OpenPbrCoreMaterial legacy = zero_scale;
+    legacy.transmission_dispersion_abbe_number = 20.0f;
+    const rt::OpenPbrVec3 wi = normalized({-0.15f, 0.1f, -1.0f});
+    const rt::OpenPbrEvaluation zero_eval =
+        rt::evaluate_openpbr_core(zero_scale, frame, wo, wi, weighted_context);
+    const rt::OpenPbrEvaluation legacy_eval =
+        rt::evaluate_openpbr_core(legacy, frame, wo, wi, weighted_context);
+    expect_vec_near(zero_eval.value, legacy_eval.value, 0.0,
+        "zero dispersion scale preserves the exact legacy response");
+    expect_near(zero_eval.pdf, legacy_eval.pdf, 0.0,
+        "zero dispersion scale preserves the exact legacy PDF");
+}
+
 void test_openpbr_reference_parameter_semantics() {
     rt::OpenPbrCoreMaterial metal;
     metal.base_weight = 0.8f;
@@ -695,6 +820,7 @@ int main() {
     test_pdf_normalization_and_furnace_energy();
     test_coat_and_fuzz_reference_semantics();
     test_thin_film_reference_semantics();
+    test_dispersion_reference_semantics();
     test_openpbr_reference_parameter_semantics();
     test_anisotropy_rotates_with_tangent();
     test_opacity_thin_walled_and_emission();

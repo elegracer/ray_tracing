@@ -11,13 +11,14 @@
 
 namespace {
 
-constexpr int kCaseCount = 7;
+constexpr int kCaseCount = 8;
 
 struct CoreCase {
     rt::OpenPbrCoreMaterial material {};
     rt::OpenPbrFrame frame {};
     rt::OpenPbrVec3 wo {};
     rt::OpenPbrVec3 wi {};
+    rt::OpenPbrTransportContext context {};
     float u_lobe = 0.0f;
     float u1 = 0.0f;
     float u2 = 0.0f;
@@ -30,6 +31,7 @@ struct CoreOutput {
     rt::OpenPbrVec3 transmission_at_depth {};
     rt::OpenPbrVec3 decoded_srgb {};
     rt::OpenPbrVec3 thin_film_reflectance {};
+    rt::OpenPbrVec3 dispersion_ior {};
 };
 
 void check_cuda(cudaError_t error, const char* operation) {
@@ -63,16 +65,19 @@ __global__ void evaluate_cases(const CoreCase* cases, CoreOutput* outputs) {
     }
     const CoreCase& test_case = cases[index];
     outputs[index].evaluation =
-        rt::evaluate_openpbr_core(test_case.material, test_case.frame, test_case.wo, test_case.wi);
+        rt::evaluate_openpbr_core(
+            test_case.material, test_case.frame, test_case.wo, test_case.wi, test_case.context);
     outputs[index].sample = rt::sample_openpbr_core(test_case.material, test_case.frame,
-        test_case.wo, test_case.u_lobe, test_case.u1, test_case.u2);
+        test_case.wo, test_case.u_lobe, test_case.u1, test_case.u2, test_case.context);
     outputs[index].emission = rt::emission_openpbr_core(test_case.material);
     outputs[index].transmission_at_depth = rt::openpbr_transmission_at_distance(test_case.material,
         test_case.material.transmission_depth);
     outputs[index].decoded_srgb = rt::openpbr_source_to_linear(
         {0.04045f, 0.5f, 1.0f}, rt::OpenPbrSourceColorSpace::srgb_texture);
     outputs[index].thin_film_reflectance =
-        rt::openpbr_dielectric_reflectance(test_case.material, 0.75f, true);
+        rt::openpbr_dielectric_reflectance(test_case.material, 0.75f, true, test_case.context);
+    outputs[index].dispersion_ior =
+        rt::openpbr_dispersion_ior(test_case.material, test_case.context);
 }
 
 void expect_vec_near(const rt::OpenPbrVec3& actual, const rt::OpenPbrVec3& expected,
@@ -165,6 +170,18 @@ std::array<CoreCase, kCaseCount> make_cases() {
     cases[6].u_lobe = 0.55f;
     cases[6].u1 = 0.29f;
     cases[6].u2 = 0.83f;
+
+    cases[7].material.base_weight = 0.0f;
+    cases[7].material.specular_roughness = 0.28f;
+    cases[7].material.specular_ior = 1.5f;
+    cases[7].material.transmission_weight = 1.0f;
+    cases[7].material.transmission_dispersion_scale = 1.0f;
+    cases[7].material.transmission_dispersion_abbe_number = 20.0f;
+    cases[7].context.path_throughput = {0.2f, 0.3f, 0.5f};
+    cases[7].wi = rt::openpbr_normalize({-0.1f, 0.04f, -1.0f});
+    cases[7].u_lobe = 0.92f;
+    cases[7].u1 = 0.33f;
+    cases[7].u2 = 0.71f;
     return cases;
 }
 
@@ -180,16 +197,20 @@ int main() {
     std::array<CoreOutput, kCaseCount> expected {};
     for (int index = 0; index < kCaseCount; ++index) {
         expected[index].evaluation = rt::evaluate_openpbr_core(cases[index].material,
-            cases[index].frame, cases[index].wo, cases[index].wi);
+            cases[index].frame, cases[index].wo, cases[index].wi, cases[index].context);
         expected[index].sample = rt::sample_openpbr_core(cases[index].material, cases[index].frame,
-            cases[index].wo, cases[index].u_lobe, cases[index].u1, cases[index].u2);
+            cases[index].wo, cases[index].u_lobe, cases[index].u1, cases[index].u2,
+            cases[index].context);
         expected[index].emission = rt::emission_openpbr_core(cases[index].material);
         expected[index].transmission_at_depth = rt::openpbr_transmission_at_distance(
             cases[index].material, cases[index].material.transmission_depth);
         expected[index].decoded_srgb = rt::openpbr_source_to_linear(
             {0.04045f, 0.5f, 1.0f}, rt::OpenPbrSourceColorSpace::srgb_texture);
         expected[index].thin_film_reflectance =
-            rt::openpbr_dielectric_reflectance(cases[index].material, 0.75f, true);
+            rt::openpbr_dielectric_reflectance(
+                cases[index].material, 0.75f, true, cases[index].context);
+        expected[index].dispersion_ior =
+            rt::openpbr_dispersion_ior(cases[index].material, cases[index].context);
     }
 
     CoreCase* device_cases = nullptr;
@@ -240,6 +261,8 @@ int main() {
             expect_vec_near(actual[index].thin_film_reflectance,
                 expected[index].thin_film_reflectance, 3e-5,
                 prefix + " thin-film reflectance");
+            expect_vec_near(actual[index].dispersion_ior, expected[index].dispersion_ior, 3e-6,
+                prefix + " dispersion IOR");
         }
 
         cudaFree(device_outputs);
