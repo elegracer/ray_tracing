@@ -32,6 +32,8 @@ int main() {
     expect_near(rt::light_area_to_solid_angle_pdf(2.0f, 8.0f, 0.5f), 8.0, 1e-6,
         "area-to-solid-angle Jacobian");
     expect_near(rt::light_power_heuristic(0.25f, 0.25f), 0.5, 1e-6, "balanced power heuristic");
+    expect_near(rt::light_power_heuristic(0.2f, 0.7f) + rt::light_power_heuristic(0.7f, 0.2f), 1.0,
+        1e-6, "complementary power heuristic weights");
     expect_near(rt::light_power_heuristic(0.0f, 1.0f), 0.0, 1e-6, "zero-density technique weight");
 
     float w0 = 0.0f;

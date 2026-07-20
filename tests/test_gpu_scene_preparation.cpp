@@ -5,6 +5,8 @@
 
 #include <Eigen/Core>
 
+#include <numbers>
+
 namespace {
 
 void expect_vec3f_near(const Eigen::Vector3f& actual, const Eigen::Vector3f& expected, float tol,
@@ -157,6 +159,42 @@ int main() {
     expect_true(prepared.textures[3].image_height == 0, "missing image height");
     expect_true(prepared.textures[4].type == 3, "noise texture type");
     expect_near(prepared.textures[4].scale, 9.0, 1e-6, "noise scale");
+
+    rt::SceneDescription distribution_scene;
+    distribution_scene.background = Eigen::Vector3d::Ones();
+    const int white_light = distribution_scene.add_material(
+        rt::DiffuseLightMaterial {.emission = Eigen::Vector3d::Ones()});
+    const int dark = distribution_scene.add_material(
+        rt::LambertianMaterial {.albedo = Eigen::Vector3d::Constant(0.5)});
+    distribution_scene.add_sphere(
+        rt::SpherePrimitive {white_light, Eigen::Vector3d::Zero(), 1.0, false});
+    distribution_scene.add_sphere(
+        rt::SpherePrimitive {dark, Eigen::Vector3d {3.0, 0.0, 0.0}, 1.0, false});
+    distribution_scene.add_quad(rt::QuadPrimitive {white_light, Eigen::Vector3d::Zero(),
+        Eigen::Vector3d {2.0, 0.0, 0.0}, Eigen::Vector3d {0.0, 1.0, 0.0}, false});
+    distribution_scene.add_triangle(rt::TrianglePrimitive {
+        .material_index = white_light,
+        .p0 = Eigen::Vector3d::Zero(),
+        .p1 = Eigen::Vector3d {1.0, 0.0, 0.0},
+        .p2 = Eigen::Vector3d {0.0, 1.0, 0.0},
+    });
+    const rt::GpuPreparedScene distribution = rt::prepare_gpu_scene(distribution_scene.pack());
+    expect_true(distribution.lights.size() == 4,
+        "only three emissive primitives and the environment enter the distribution");
+    const double sphere_weight = 4.0 * std::numbers::pi;
+    const double quad_weight = 2.0;
+    const double triangle_weight = 0.5;
+    const double environment_weight = 4.0 * std::numbers::pi;
+    const double total_weight = sphere_weight + quad_weight + triangle_weight + environment_weight;
+    expect_near(distribution.lights[0].selection_pdf, sphere_weight / total_weight, 1e-6,
+        "sphere light power-area probability");
+    expect_near(distribution.lights[1].selection_pdf, quad_weight / total_weight, 1e-6,
+        "quad light power-area probability");
+    expect_near(distribution.lights[2].selection_pdf, triangle_weight / total_weight, 1e-6,
+        "triangle light power-area probability");
+    expect_near(distribution.lights[3].selection_pdf, environment_weight / total_weight, 1e-6,
+        "environment solid-angle probability");
+    expect_near(distribution.lights[3].cdf, 1.0, 1e-6, "power-area CDF closes exactly");
 
     return 0;
 }
