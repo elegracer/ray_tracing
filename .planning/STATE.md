@@ -11,10 +11,10 @@ See: .planning/PROJECT.md (updated 2026-07-19)
 
 Phase: 5 of 6 — Scalable Lighting And GPU Scheduling
 Plan: Add explicit light distributions, solid-angle PDFs, MIS, ReSTIR DI, persistent launch data, and measured AS update/refit/instancing paths
-Status: Active milestone, LIGHT-01 and LIGHT-02 unbiased direct-lighting baseline and quantitative gates complete
-Last activity: 2026-07-21 - Closed LIGHT-02 CPU/GPU quantitative light-estimator gates
+Status: Active milestone, LIGHT-01, LIGHT-02, and RESTIR-01 complete; GPU-02 remains open
+Last activity: 2026-07-21 - Closed RESTIR-01 equal-quality many-light performance and temporal-validity gates
 
-Progress: Phase 4 complete; VAL-02, LIGHT-01, and LIGHT-02 are green; Phase 5 ReSTIR DI and persistent GPU scheduling remain open
+Progress: Phase 4 complete; VAL-02, LIGHT-01, LIGHT-02, and RESTIR-01 are green; Phase 5 persistent GPU scheduling and measured AS lifecycle paths remain open
 
 ## VAL-02 Public Corpus Evidence
 
@@ -142,6 +142,10 @@ LIGHT-02 adds deterministic quantitative gates rather than extending the earlier
 
 The production CPU and OptiX integrators render the same one-pixel receiver, mapped camera, unit-radiance light, 16,384-sample budget, and one-bounce light-only estimator for all six analytic-light types. CPU/GPU linear estimates agree within the declared `max(0.004, 5%)` tolerance; observed absolute differences range from `0.00007` to `0.00755`. Every estimate is finite, non-negative, and below the `0.54` unit-radiance energy ceiling. The unit dome furnace returns `0.50266` on CPU and `0.49511` on GPU for an expected `0.5`. The four focused light/OpenPBR tests pass, both new physical GPU gates pass three consecutive repeat runs, and the complete default Clang/CUDA/OptiX suite passes 68/68. The OpenUSD/public-probe configuration passes 72/72, regenerates all 10 camera outputs and 20 EXR/PNG files, and reads back `reference_gate_passed=true` with zero linear and perceptual error. LIGHT-02 is complete; ReSTIR DI may now be compared against this quantified unbiased baseline.
 
+RESTIR-01 adds a host/device reservoir contract carrying the selected analytic-light identity, reusable shape parameters, target density, accumulated weight, candidate multiplicity, age, and exact receiving-surface identity. The realtime and balanced profiles activate it only at 16 or more analytic lights; the quality profile remains the conventional unbiased reference. Each first-bounce reservoir evaluates four candidates without visibility, traces one selected shadow ray, and combines validated previous-frame candidates with the current target density. Temporal reuse reprojects through the actual previous camera model and intrinsics, then requires matching material and primitive identity, bounded world-position error, aligned normals, and a bounded age. Scene preparation, sequence reset, resize, disocclusion, and identity changes cannot silently retain reservoir history. ReSTIR output uses its own estimator normalization rather than being averaged a second time by the legacy beauty accumulator.
+
+The fixed RTX 3090 gate renders 64 nonuniform analytic lights at 128x128 with 128 additional scene primitives to exercise the production traversal cost. A 256-spp conventional render is the reference; the comparison gives both the baseline and ReSTIR exactly 16 light candidates per pixel (`16 spp` versus `4 frames x 4 candidates`). Linear MSE is `0.021958989` for the baseline and `0.025011288` for ReSTIR, inside the declared equal-quality ratio `1.15`. Across five isolated repeats, baseline GPU render time is `0.768-0.788 ms` and ReSTIR is `0.707-0.742 ms`; the final recorded run is `0.764928 ms` versus `0.712032 ms`. Static reuse reaches all 16,384 receiver pixels, while the first frame and post-`prepare_scene` frame both report zero reused pixels. Three approved PNGs pass with zero display error and pinned, independently re-read SHA-256 values in `tests/references/restir_di/manifest.json`. The complete default suite passes 71/71; the OpenUSD/public-assets suite passes 74/74 and regenerates the existing 10-camera, 20-image bundle with zero linear/perceptual reference error. RESTIR-01 is complete.
+
 ## Performance Metrics
 
 **Velocity:**
@@ -191,7 +195,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- Implement and measure RESTIR-01 against the quantified unbiased baseline, preserving valid temporal reuse and equal-quality comparisons.
+- Close GPU-02 with persistent launch parameters/workers and measured rebuild, update/refit, and instancing paths while preserving RESTIR-01 and VAL-02.
 
 ### Blockers/Concerns
 
@@ -203,7 +207,7 @@ Recent decisions affecting current work:
 - CUDA memory telemetry is device-global rather than per-process; concurrent GPU workloads can perturb baseline and peak values.
 - OpenUSD is an optional system SDK dependency with verified OFF/ON paths; supported direct MaterialX color3 graphs compile, coat/fuzz/thin-film/dispersion/subsurface constants execute, and connected coat/fuzz/subsurface colors, NodeGraph interfaces, and fields outside the declared SceneIR subset remain fail-closed.
 - Dispersion currently uses fixed C/d/F RGB anchors. Stochastic wavelengths from measured sensor sensitivity curves remain a later spectral-quality extension; the current model is path-consistent but three-band.
-- Emissive geometry, the constant environment, and six SceneIR v2 analytic light types now execute with explicit distributions, solid-angle PDFs, visibility, miss radiance, and MIS on CPU/GPU. LIGHT-02 quantitative normalization, furnace, finite-energy/radiance, and CPU/GPU agreement gates are green; ReSTIR DI must preserve those bounds.
+- Emissive geometry, the constant environment, and six SceneIR v2 analytic light types execute with explicit distributions, solid-angle PDFs, visibility, miss radiance, and MIS on CPU/GPU. RESTIR-01 preserves the LIGHT-02 physical bounds and adds equal-candidate many-light performance plus invalid-history gates; GI/PT reuse remains evidence-gated.
 - The current `gpt-5.6-*` Codex IDE route still returns HTTP 404 from the built-in web tool. This is not a renderer delivery blocker: bounded public research uses direct read-only HTTP against official primary sources and records the pinned source revision. Do not spend renderer goal turns repairing host search unless the user explicitly reopens that task.
 
 ## Deferred Items
@@ -220,5 +224,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-07-21
-Stopped at: LIGHT-02 quantitative CPU/GPU light-estimator gates are closed; next implement and measure RESTIR-01
+Stopped at: RESTIR-01 equal-quality many-light and temporal-validity gates are closed; next close GPU-02 persistent scheduling and AS lifecycle paths
 Resume file: .planning/milestones/v2.0-REQUIREMENTS.md

@@ -28,4 +28,4 @@ Baseline: `.planning/v2.0-BASELINE.json`
 
 ## Immediate Next Step
 
-Implement RESTIR-01 against the now-quantified unbiased CPU/GPU light estimator, then require equal-quality many-light image and performance evidence without invalid temporal reuse.
+Close GPU-02 by persisting launch parameters and render workers across frames, then measure distinct acceleration-structure rebuild, update/refit, and instancing paths without regressing the completed RESTIR-01 and public USD/OpenPBR image gates.

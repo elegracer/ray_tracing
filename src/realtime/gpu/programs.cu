@@ -68,6 +68,7 @@ struct DirectLightSample {
     float distance = 0.0f;
     float pdf = 0.0f;
     int material_index = -1;
+    int light_index = -1;
     bool infinite = false;
     bool delta = false;
     bool valid = false;
@@ -79,6 +80,9 @@ __device__ void accumulate_direct_light(const LaunchParams& params, const HitInf
     std::uint32_t& rng, bool bsdf_technique_available, PathState& state);
 __device__ void accumulate_analytic_direct_light(const LaunchParams& params, const HitInfo& hit,
     std::uint32_t& rng, bool bsdf_technique_available, PathState& state);
+__device__ void accumulate_restir_analytic_direct_light(const LaunchParams& params,
+    const HitInfo& hit, int x, int y, std::uint32_t& rng, bool bsdf_technique_available,
+    PathState& state);
 __device__ void sample_bsdf(const LaunchParams& params, const HitInfo& hit, std::uint32_t& rng,
     PathState& state);
 
@@ -543,6 +547,13 @@ __device__ float3 sample_uniform_cone_direction(const float3& axis, float cos_th
     const float3 bitangent = cross3(axis, tangent);
     return normalize3(add3(mul3(axis, cos_theta),
         add3(mul3(tangent, sin_theta * cosf(phi)), mul3(bitangent, sin_theta * sinf(phi)))));
+}
+
+__device__ float3 sample_uniform_sphere_direction(float u0, float u1) {
+    const float z = 1.0f - 2.0f * u0;
+    const float radial = sqrtf(fmaxf(0.0f, 1.0f - z * z));
+    const float phi = 2.0f * kPi * u1;
+    return make_float3(radial * cosf(phi), radial * sinf(phi), z);
 }
 
 __device__ const PackedLight* find_packed_light(const DeviceSceneView& scene, PackedLightType type,
@@ -1206,22 +1217,21 @@ __device__ DirectLightSample sample_direct_light(const DeviceSceneView& scene,
     return sample;
 }
 
-__device__ DirectLightSample sample_analytic_direct_light(const DeviceSceneView& scene,
-    const HitInfo& receiver, std::uint32_t& rng) {
+__device__ DirectLightSample sample_analytic_direct_light_candidate(const DeviceSceneView& scene,
+    const HitInfo& receiver, int light_index, float u0, float u1) {
     DirectLightSample sample {};
-    const int light_index = sample_packed_analytic_light(scene.analytic_lights,
-        scene.analytic_light_count, random_float01(rng));
-    if (light_index < 0) {
+    if (light_index < 0 || light_index >= scene.analytic_light_count) {
         return sample;
     }
     const PackedAnalyticLight& light = scene.analytic_lights[light_index];
     if (light.selection_pdf <= 0.0f) {
         return sample;
     }
+    sample.light_index = light_index;
 
     sample.emission = packed_light_vector_to_float3(light.radiance);
     if (light.type == PackedAnalyticLightType::dome) {
-        sample.direction = random_unit_vector(rng);
+        sample.direction = sample_uniform_sphere_direction(u0, u1);
         sample.distance = kRayFar;
         sample.pdf = light.selection_pdf * light_uniform_sphere_pdf();
         sample.infinite = true;
@@ -1233,7 +1243,7 @@ __device__ DirectLightSample sample_analytic_direct_light(const DeviceSceneView&
         sample.direction = light.delta != 0
                                ? axis
                                : sample_uniform_cone_direction(axis, light.cos_theta_max,
-                                     random_float01(rng), random_float01(rng));
+                                     u0, u1);
         sample.distance = kRayFar;
         sample.pdf = light.selection_pdf
                      * (light.delta != 0 ? 1.0f : light_uniform_cone_pdf(light.cos_theta_max));
@@ -1265,7 +1275,7 @@ __device__ DirectLightSample sample_analytic_direct_light(const DeviceSceneView&
         }
         const float cos_theta_max = sqrtf(fmaxf(0.0f, 1.0f - radius_squared / distance_squared));
         sample.direction = sample_uniform_cone_direction(normalize3(to_center), cos_theta_max,
-            random_float01(rng), random_float01(rng));
+            u0, u1);
         AnalyticLightHit surface_hit {};
         if (!try_intersect_analytic_light(light,
                 Ray {.origin = surface_point, .direction = sample.direction}, kRayEpsilon, kRayFar,
@@ -1280,8 +1290,6 @@ __device__ DirectLightSample sample_analytic_direct_light(const DeviceSceneView&
         return sample;
     }
 
-    const float u0 = random_float01(rng);
-    const float u1 = random_float01(rng);
     if (light.type == PackedAnalyticLightType::disk) {
         const float radial = light.radius * sqrtf(u0);
         const float phi = 2.0f * kPi * u1;
@@ -1322,6 +1330,14 @@ __device__ DirectLightSample sample_analytic_direct_light(const DeviceSceneView&
     sample.pdf = light.selection_pdf * conditional_pdf;
     sample.valid = sample.pdf > 0.0f && max_component3(sample.emission) > 0.0f;
     return sample;
+}
+
+__device__ DirectLightSample sample_analytic_direct_light(const DeviceSceneView& scene,
+    const HitInfo& receiver, std::uint32_t& rng) {
+    const int light_index = sample_packed_analytic_light(scene.analytic_lights,
+        scene.analytic_light_count, random_float01(rng));
+    return sample_analytic_direct_light_candidate(scene, receiver, light_index,
+        random_float01(rng), random_float01(rng));
 }
 
 __device__ bool hit_medium_boundary(const PackedMedium& medium, const Ray& ray, float t_min,
@@ -1773,7 +1789,17 @@ __global__ void radiance_kernel(const LaunchParams* params_ptr) {
                 add3(state.radiance, mul3(state.throughput, mul3(hit.emission, emission_weight)));
             const bool bsdf_technique_available = bounce + 1 < max_bounces;
             accumulate_direct_light(params, hit, rng, bsdf_technique_available, state);
-            accumulate_analytic_direct_light(params, hit, rng, bsdf_technique_available, state);
+            const int restir_min_lights =
+                params.restir_min_analytic_lights > 0 ? params.restir_min_analytic_lights : 1;
+            const bool use_restir = params.restir_di_enabled != 0 && bounce == 0
+                                    && params.scene.analytic_light_count >= restir_min_lights;
+            if (use_restir) {
+                accumulate_restir_analytic_direct_light(
+                    params, hit, x, y, rng, bsdf_technique_available, state);
+            } else {
+                accumulate_analytic_direct_light(
+                    params, hit, rng, bsdf_technique_available, state);
+            }
             if (!bsdf_technique_available) {
                 state.alive = false;
                 break;
@@ -1854,7 +1880,9 @@ __global__ void resolve_reprojection_kernel(const LaunchParams* params_ptr) {
     const float3 prev_cam_space =
         make_float3(dot3(world_offset, bx), dot3(world_offset, by), dot3(world_offset, bz));
 
-    const float2 prev_pixel = project_camera_pixel(params.active_camera, prev_cam_space);
+    const DeviceActiveCamera& previous_camera =
+        params.previous_camera_valid != 0 ? params.previous_camera : params.active_camera;
+    const float2 prev_pixel = project_camera_pixel(previous_camera, prev_cam_space);
 
     const bool previous_pixel_finite = isfinite(prev_pixel.x) && isfinite(prev_pixel.y);
     if (params.frame.flow != nullptr && previous_pixel_finite) {
@@ -1899,10 +1927,12 @@ __global__ void resolve_reprojection_kernel(const LaunchParams* params_ptr) {
             fminf(fmaxf(current_beauty.y, 0.0f), 10.0f),
             fminf(fmaxf(current_beauty.z, 0.0f), 10.0f), 1.0f);
 
-        params.frame.beauty[pixel_index] =
-            make_float4(h_beauty.x + (clamped_current.x - h_beauty.x) * blend,
-                h_beauty.y + (clamped_current.y - h_beauty.y) * blend,
-                h_beauty.z + (clamped_current.z - h_beauty.z) * blend, 1.0f);
+        if (params.restir_di_enabled == 0) {
+            params.frame.beauty[pixel_index] =
+                make_float4(h_beauty.x + (clamped_current.x - h_beauty.x) * blend,
+                    h_beauty.y + (clamped_current.y - h_beauty.y) * blend,
+                    h_beauty.z + (clamped_current.z - h_beauty.z) * blend, 1.0f);
+        }
 
         params.frame.normal[pixel_index] =
             make_float4(h_normal.x + (current_normal.x - h_normal.x) * blend,
@@ -1948,6 +1978,86 @@ __device__ PathState trace_primary_ray(const LaunchParams& params, int x, int y)
 
 __device__ float3 scene_background(const LaunchParams& params) {
     return make_float3(params.background[0], params.background[1], params.background[2]);
+}
+
+__device__ PackedLightVector3 restir_vector(const float3& value) {
+    return PackedLightVector3 {.x = value.x, .y = value.y, .z = value.z};
+}
+
+__device__ RestirSurface restir_surface(const HitInfo& hit) {
+    return RestirSurface {
+        .position = restir_vector(hit.position),
+        .normal = restir_vector(hit.shading_normal),
+        .material_type = hit.material_type,
+        .primitive_type = hit.primitive_type,
+        .primitive_index = hit.primitive_index,
+    };
+}
+
+__device__ float restir_luminance(const float3& value) {
+    return fmaxf(0.0f, 0.2126f * value.x + 0.7152f * value.y + 0.0722f * value.z);
+}
+
+__device__ float3 restir_unshadowed_numerator(const LaunchParams& params, const HitInfo& hit,
+    const PathState& state, const DirectLightSample& light, bool bsdf_technique_available,
+    float& target_density) {
+    target_density = 0.0f;
+    if (!light.valid || light.pdf <= 0.0f) {
+        return make_float3(0.0f, 0.0f, 0.0f);
+    }
+    float bsdf_pdf = 0.0f;
+    const float3 response =
+        direct_material_response(params.scene, hit, state, light.direction, bsdf_pdf);
+    if (max_component3(response) <= 0.0f) {
+        return make_float3(0.0f, 0.0f, 0.0f);
+    }
+    const float mis_weight = light.delta || !bsdf_technique_available
+                                 ? 1.0f
+                                 : light_power_heuristic(light.pdf, bsdf_pdf);
+    const float3 numerator = mul3(mul3(light.emission, response), mis_weight);
+    target_density = restir_luminance(numerator);
+    return numerator;
+}
+
+__device__ bool restir_previous_pixel(const LaunchParams& params, const HitInfo& hit, int& index) {
+    index = -1;
+    if (params.history_length <= 0 || params.previous_camera_valid == 0
+        || params.history.restir_reservoirs == nullptr) {
+        return false;
+    }
+    const DeviceActiveCamera& camera = params.previous_camera;
+    const float3 offset = sub3(hit.position, camera_origin(camera));
+    const float3 basis_x = make_float3(static_cast<float>(camera.basis_x[0]),
+        static_cast<float>(camera.basis_x[1]), static_cast<float>(camera.basis_x[2]));
+    const float3 basis_y = make_float3(static_cast<float>(camera.basis_y[0]),
+        static_cast<float>(camera.basis_y[1]), static_cast<float>(camera.basis_y[2]));
+    const float3 basis_z = make_float3(static_cast<float>(camera.basis_z[0]),
+        static_cast<float>(camera.basis_z[1]), static_cast<float>(camera.basis_z[2]));
+    const float3 camera_point =
+        make_float3(dot3(offset, basis_x), dot3(offset, basis_y), dot3(offset, basis_z));
+    const float2 pixel = project_camera_pixel(camera, camera_point);
+    if (!isfinite(pixel.x) || !isfinite(pixel.y)) {
+        return false;
+    }
+    const int x = static_cast<int>(floorf(pixel.x));
+    const int y = static_cast<int>(floorf(pixel.y));
+    if (x < 0 || x >= params.width || y < 0 || y >= params.height) {
+        return false;
+    }
+    index = y * params.width + x;
+    return true;
+}
+
+__device__ bool restir_temporal_candidate(const LaunchParams& params, const HitInfo& hit,
+    RestirReservoir& previous) {
+    int previous_index = -1;
+    if (!restir_previous_pixel(params, hit, previous_index)) {
+        return false;
+    }
+    previous = params.history.restir_reservoirs[previous_index];
+    const float position_tolerance = fmaxf(0.005f, 0.01f * hit.t);
+    return restir_temporal_surface_valid(restir_surface(hit), previous, position_tolerance, 0.95f,
+        params.restir_max_history_age);
 }
 
 __device__ void accumulate_direct_light(const LaunchParams& params, const HitInfo& hit,
@@ -2013,6 +2123,77 @@ __device__ void accumulate_analytic_direct_light(const LaunchParams& params, con
                                  ? 1.0f
                                  : light_power_heuristic(light.pdf, bsdf_pdf);
     const float3 direct = mul3(mul3(light.emission, response), mis_weight / light.pdf);
+    state.radiance = add3(state.radiance, mul3(state.throughput, direct));
+}
+
+__device__ void accumulate_restir_analytic_direct_light(const LaunchParams& params,
+    const HitInfo& hit, int x, int y, std::uint32_t& rng, bool bsdf_technique_available,
+    PathState& state) {
+    if (hit.material_type == 3 || params.scene.analytic_light_count <= 0
+        || params.frame.restir_reservoirs == nullptr) {
+        return;
+    }
+
+    RestirReservoir reservoir {};
+    const int requested_candidates =
+        params.restir_initial_candidates > 0 ? params.restir_initial_candidates : 1;
+    const int candidate_count = requested_candidates < 32 ? requested_candidates : 32;
+    for (int candidate_index = 0; candidate_index < candidate_count; ++candidate_index) {
+        const int light_index = sample_packed_analytic_light(params.scene.analytic_lights,
+            params.scene.analytic_light_count, random_float01(rng));
+        const RestirCandidate candidate {
+            .light_index = light_index,
+            .sample_u0 = random_float01(rng),
+            .sample_u1 = random_float01(rng),
+        };
+        const DirectLightSample light = sample_analytic_direct_light_candidate(params.scene, hit,
+            candidate.light_index, candidate.sample_u0, candidate.sample_u1);
+        float target_density = 0.0f;
+        restir_unshadowed_numerator(
+            params, hit, state, light, bsdf_technique_available, target_density);
+        const float candidate_weight = light.pdf > 0.0f ? target_density / light.pdf : 0.0f;
+        restir_update(reservoir, candidate, target_density, candidate_weight, 1,
+            random_float01(rng));
+    }
+
+    if (params.restir_temporal_reuse != 0) {
+        RestirReservoir previous {};
+        if (restir_temporal_candidate(params, hit, previous)) {
+            const DirectLightSample light = sample_analytic_direct_light_candidate(params.scene, hit,
+                previous.selected.light_index, previous.selected.sample_u0,
+                previous.selected.sample_u1);
+            float target_density = 0.0f;
+            restir_unshadowed_numerator(
+                params, hit, state, light, bsdf_technique_available, target_density);
+            restir_merge_temporal(reservoir, previous, target_density,
+                params.restir_max_temporal_candidates, random_float01(rng));
+        }
+    }
+
+    reservoir.surface = restir_surface(hit);
+    restir_finalize(reservoir);
+    params.frame.restir_reservoirs[y * params.width + x] = reservoir;
+    if (reservoir.valid == 0) {
+        return;
+    }
+
+    const DirectLightSample light = sample_analytic_direct_light_candidate(params.scene, hit,
+        reservoir.selected.light_index, reservoir.selected.sample_u0, reservoir.selected.sample_u1);
+    float target_density = 0.0f;
+    const float3 numerator = restir_unshadowed_numerator(
+        params, hit, state, light, bsdf_technique_available, target_density);
+    if (!light.valid || target_density <= 0.0f) {
+        return;
+    }
+
+    Ray shadow_ray {};
+    shadow_ray.origin = add3(hit.position, mul3(light.direction, kRayEpsilon * 2.0f));
+    shadow_ray.direction = light.direction;
+    const float max_t = light.infinite ? kRayFar : light.distance - kRayEpsilon * 3.0f;
+    if (max_t <= kRayEpsilon || is_occluded(params.scene, shadow_ray, max_t)) {
+        return;
+    }
+    const float3 direct = mul3(numerator, reservoir.estimator_weight);
     state.radiance = add3(state.radiance, mul3(state.throughput, direct));
 }
 

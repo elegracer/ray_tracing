@@ -555,6 +555,12 @@ target_sources(test_light_sampling
 target_link_libraries(test_light_sampling PRIVATE core)
 add_test(NAME test_light_sampling COMMAND test_light_sampling)
 
+add_executable(test_restir_di)
+target_sources(test_restir_di PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_restir_di.cpp)
+target_link_libraries(test_restir_di PRIVATE core)
+add_test(NAME test_restir_di COMMAND test_restir_di)
+set_tests_properties(test_restir_di PROPERTIES LABELS "physical;restir")
+
 add_executable(test_analytic_light_quantitative)
 target_sources(test_analytic_light_quantitative
     PRIVATE
@@ -675,6 +681,31 @@ target_link_libraries(realtime_gpu PUBLIC
     CUDA::cuda_driver
     dl
 )
+
+add_executable(render_restir_acceptance
+    ${CMAKE_CURRENT_SOURCE_DIR}/utils/render_restir_acceptance.cpp)
+target_link_libraries(render_restir_acceptance PRIVATE realtime_gpu core)
+add_test(NAME test_restir_di_render_acceptance COMMAND render_restir_acceptance
+    --output-dir ${CMAKE_CURRENT_BINARY_DIR}/restir-acceptance
+    --reference-dir ${CMAKE_CURRENT_SOURCE_DIR}/tests/references/restir_di)
+set_tests_properties(test_restir_di_render_acceptance PROPERTIES
+    LABELS "acceptance;gpu;physical;restir"
+    RUN_SERIAL TRUE
+    TIMEOUT 300)
+add_test(NAME test_restir_reference_integrity
+    COMMAND ${CMAKE_COMMAND}
+        -DREFERENCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/references/restir_di
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/verify_restir_references.cmake)
+set_tests_properties(test_restir_reference_integrity PROPERTIES
+    LABELS "acceptance;restir")
+add_custom_target(approve_restir_di_references
+    COMMAND render_restir_acceptance
+        --output-dir ${CMAKE_CURRENT_BINARY_DIR}/restir-acceptance
+        --reference-dir ${CMAKE_CURRENT_SOURCE_DIR}/tests/references/restir_di
+        --approve-references
+    DEPENDS render_restir_acceptance
+    COMMENT "Rendering and approving deterministic ReSTIR DI references"
+    VERBATIM)
 
 if(RT_ENABLE_PUBLIC_ACCEPTANCE_PROBES)
     add_executable(render_public_acceptance

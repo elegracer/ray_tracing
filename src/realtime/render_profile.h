@@ -12,6 +12,12 @@ struct RenderProfile {
     int rr_start_bounce = 3;
     double accumulation_reset_rotation_deg = 2.0;
     double accumulation_reset_translation = 0.05;
+    bool enable_restir_di = false;
+    int restir_initial_candidates = 4;
+    bool restir_temporal_reuse = true;
+    int restir_max_history_age = 20;
+    int restir_max_temporal_candidates = 64;
+    int restir_min_analytic_lights = 16;
 
     static RenderProfile quality() {
         return RenderProfile{
@@ -21,6 +27,7 @@ struct RenderProfile {
             .rr_start_bounce = 6,
             .accumulation_reset_rotation_deg = 0.5,
             .accumulation_reset_translation = 0.01,
+            .enable_restir_di = false,
         };
     }
 
@@ -32,6 +39,7 @@ struct RenderProfile {
             .rr_start_bounce = 3,
             .accumulation_reset_rotation_deg = 1.0,
             .accumulation_reset_translation = 0.02,
+            .enable_restir_di = true,
         };
     }
 
@@ -43,6 +51,7 @@ struct RenderProfile {
             .rr_start_bounce = 2,
             .accumulation_reset_rotation_deg = 2.0,
             .accumulation_reset_translation = 0.05,
+            .enable_restir_di = true,
         };
     }
 

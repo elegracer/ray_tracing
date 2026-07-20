@@ -9,6 +9,8 @@ namespace rt {
 
 struct LaunchHistoryState {
     DeviceFrameBuffers buffers {};
+    DeviceActiveCamera previous_camera {};
+    int previous_camera_valid = 0;
     int history_length = 0;
     double prev_origin[3] {};
     double prev_basis_x[3] {};

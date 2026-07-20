@@ -2,6 +2,7 @@
 
 #include "common/light_sampling.h"
 #include "common/openpbr_core.h"
+#include "common/restir_di.h"
 #include "realtime/camera_rig.h"
 #include "realtime/gpu/frame_types.h"
 
@@ -27,6 +28,7 @@ struct DeviceFrameBuffers {
     float* depth = nullptr;
     float2* flow = nullptr;
     float* flow_trustworthiness = nullptr;
+    RestirReservoir* restir_reservoirs = nullptr;
 };
 
 struct DeviceSceneView {
@@ -102,8 +104,18 @@ struct LaunchParams {
     int rr_start_bounce = 3;
     int mode = 0;
 
+    // --- ReSTIR DI ---
+    int restir_di_enabled = 0;
+    int restir_initial_candidates = 1;
+    int restir_temporal_reuse = 0;
+    int restir_max_history_age = 0;
+    int restir_max_temporal_candidates = 0;
+    int restir_min_analytic_lights = 0;
+
     // --- temporal reprojection ---
     DeviceFrameBuffers history {};
+    DeviceActiveCamera previous_camera {};
+    int previous_camera_valid = 0;
     double prev_origin[3] {};
     double prev_basis_x[3] {};
     double prev_basis_y[3] {};

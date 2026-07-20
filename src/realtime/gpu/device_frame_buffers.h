@@ -41,6 +41,8 @@ class DeviceFrameBufferSet {
     int history_width_ = 0;
     int history_height_ = 0;
     int history_length_ = 0;
+    DeviceActiveCamera previous_camera_ {};
+    int previous_camera_valid_ = 0;
     double prev_origin_[3] {};
     double prev_basis_x_[3] {};
     double prev_basis_y_[3] {};

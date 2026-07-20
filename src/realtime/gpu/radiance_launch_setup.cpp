@@ -88,8 +88,21 @@ LaunchParams make_radiance_launch_params(const PackedScene& scene, const DeviceS
     params.max_bounces = profile.max_bounces;
     params.rr_start_bounce = profile.rr_start_bounce;
     params.mode = 1;
+    params.restir_initial_candidates = profile.restir_initial_candidates;
+    params.restir_temporal_reuse = profile.restir_temporal_reuse ? 1 : 0;
+    params.restir_max_history_age = profile.restir_max_history_age;
+    params.restir_max_temporal_candidates = profile.restir_max_temporal_candidates;
+    params.restir_min_analytic_lights = profile.restir_min_analytic_lights;
+    const int restir_min_lights =
+        profile.restir_min_analytic_lights > 0 ? profile.restir_min_analytic_lights : 1;
+    params.restir_di_enabled = profile.enable_restir_di
+            && static_cast<int>(scene.analytic_lights.size()) >= restir_min_lights
+        ? 1
+        : 0;
 
     params.history = history.buffers;
+    params.previous_camera = history.previous_camera;
+    params.previous_camera_valid = history.previous_camera_valid;
     params.history_length = history.history_length;
     for (int i = 0; i < 3; ++i) {
         params.prev_origin[i] = history.prev_origin[i];
@@ -104,6 +117,8 @@ LaunchParams make_radiance_launch_params(const PackedScene& scene, const DeviceS
 LaunchHistoryState capture_launch_history(const LaunchParams& params) {
     LaunchHistoryState history {};
     history.buffers = params.history;
+    history.previous_camera = params.active_camera;
+    history.previous_camera_valid = 1;
     history.history_length = params.history_length == 0 ? 1 : params.history_length + 1;
     const DeviceActiveCamera& cam = params.active_camera;
     for (int i = 0; i < 3; ++i) {

@@ -7,7 +7,13 @@ bool render_profiles_equal(const RenderProfile& lhs, const RenderProfile& rhs) {
     return lhs.samples_per_pixel == rhs.samples_per_pixel && lhs.max_bounces == rhs.max_bounces
         && lhs.enable_denoise == rhs.enable_denoise && lhs.rr_start_bounce == rhs.rr_start_bounce
         && lhs.accumulation_reset_rotation_deg == rhs.accumulation_reset_rotation_deg
-        && lhs.accumulation_reset_translation == rhs.accumulation_reset_translation;
+        && lhs.accumulation_reset_translation == rhs.accumulation_reset_translation
+        && lhs.enable_restir_di == rhs.enable_restir_di
+        && lhs.restir_initial_candidates == rhs.restir_initial_candidates
+        && lhs.restir_temporal_reuse == rhs.restir_temporal_reuse
+        && lhs.restir_max_history_age == rhs.restir_max_history_age
+        && lhs.restir_max_temporal_candidates == rhs.restir_max_temporal_candidates
+        && lhs.restir_min_analytic_lights == rhs.restir_min_analytic_lights;
 }
 
 }  // namespace

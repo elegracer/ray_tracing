@@ -29,6 +29,7 @@ void free_frame_buffers(DeviceFrameBuffers& frame) {
     free_device_ptr(frame.depth);
     free_device_ptr(frame.flow);
     free_device_ptr(frame.flow_trustworthiness);
+    free_device_ptr(frame.restir_reservoirs);
     frame = DeviceFrameBuffers {};
 }
 
@@ -45,6 +46,8 @@ void allocate_frame_buffers(DeviceFrameBuffers& frame, std::size_t pixel_count) 
     RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&frame.flow), pixel_count * sizeof(float2)));
     RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&frame.flow_trustworthiness),
         pixel_count * sizeof(float)));
+    RT_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&frame.restir_reservoirs),
+        pixel_count * sizeof(RestirReservoir)));
 }
 
 } // namespace
@@ -99,6 +102,8 @@ void DeviceFrameBufferSet::reset_history() {
     history_width_ = 0;
     history_height_ = 0;
     history_length_ = 0;
+    previous_camera_ = DeviceActiveCamera {};
+    previous_camera_valid_ = 0;
 }
 
 const DeviceFrameBuffers& DeviceFrameBufferSet::history() const {
@@ -116,6 +121,8 @@ int DeviceFrameBufferSet::history_height() const {
 LaunchHistoryState DeviceFrameBufferSet::history_state() const {
     LaunchHistoryState state {};
     state.buffers = history_;
+    state.previous_camera = previous_camera_;
+    state.previous_camera_valid = previous_camera_valid_;
     state.history_length = history_length_;
     for (int i = 0; i < 3; ++i) {
         state.prev_origin[i] = prev_origin_[i];
@@ -128,6 +135,8 @@ LaunchHistoryState DeviceFrameBufferSet::history_state() const {
 
 void DeviceFrameBufferSet::apply_history_state(const LaunchHistoryState& state) {
     history_length_ = state.history_length;
+    previous_camera_ = state.previous_camera;
+    previous_camera_valid_ = state.previous_camera_valid;
     for (int i = 0; i < 3; ++i) {
         prev_origin_[i] = state.prev_origin[i];
         prev_basis_x_[i] = state.prev_basis_x[i];
@@ -138,6 +147,7 @@ void DeviceFrameBufferSet::apply_history_state(const LaunchHistoryState& state) 
 
 void DeviceFrameBufferSet::reset_accumulation() {
     history_length_ = 0;
+    previous_camera_valid_ = 0;
 }
 
 void DeviceFrameBufferSet::copy_frame_to_history(cudaStream_t stream) {
@@ -149,6 +159,8 @@ void DeviceFrameBufferSet::copy_frame_to_history(cudaStream_t stream) {
         cudaMemcpyDeviceToDevice, stream));
     RT_CUDA_CHECK(cudaMemcpyAsync(history_.depth, frame_.depth, pixel_count * sizeof(float),
         cudaMemcpyDeviceToDevice, stream));
+    RT_CUDA_CHECK(cudaMemcpyAsync(history_.restir_reservoirs, frame_.restir_reservoirs,
+        pixel_count * sizeof(RestirReservoir), cudaMemcpyDeviceToDevice, stream));
 }
 
 } // namespace rt

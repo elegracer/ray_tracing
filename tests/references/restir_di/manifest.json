@@ -1,0 +1,35 @@
+{
+  "schema_version": "restir_di_reference_manifest_v0",
+  "scene": {
+    "resolution": [128, 128],
+    "analytic_light_count": 64,
+    "inert_geometry_sphere_count": 128,
+    "camera_model": "pinhole32",
+    "reference_spp": 256,
+    "baseline_spp": 16,
+    "restir_frames": 4,
+    "restir_candidates_per_frame": 4
+  },
+  "gates": {
+    "equal_quality_mse_ratio_limit": 1.15,
+    "reference_max_display_error": 2,
+    "restir_render_ms_must_be_less_than_baseline": true,
+    "first_temporal_reuse_pixels": 0,
+    "final_temporal_reuse_pixels_must_be_positive": true,
+    "reset_temporal_reuse_pixels": 0
+  },
+  "images": [
+    {
+      "path": "reference.png",
+      "sha256": "b4ab7ab57f982df78d36ffe683857ff45073211842634d6986489dd025c678a9"
+    },
+    {
+      "path": "baseline.png",
+      "sha256": "5b46e0c249b8ca36f6e42906dec1c373493b0d4645ab9f9311d1f1ebb6b7f05e"
+    },
+    {
+      "path": "restir.png",
+      "sha256": "9a0fd4390833b71492148d99dd15d924f79485363f7943e8da377c91d74b99c1"
+    }
+  ]
+}

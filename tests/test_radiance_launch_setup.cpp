@@ -11,6 +11,7 @@ int main() {
     scene.media.resize(5);
     scene.textures.resize(6);
     scene.materials.resize(7);
+    scene.analytic_lights.resize(10);
 
     rt::DeviceSceneView scene_view {};
     scene_view.spheres = reinterpret_cast<rt::PackedSphere*>(0x10);
@@ -35,6 +36,12 @@ int main() {
     profile.samples_per_pixel = 9;
     profile.max_bounces = 10;
     profile.rr_start_bounce = 3;
+    profile.enable_restir_di = true;
+    profile.restir_initial_candidates = 7;
+    profile.restir_temporal_reuse = true;
+    profile.restir_max_history_age = 12;
+    profile.restir_max_temporal_candidates = 48;
+    profile.restir_min_analytic_lights = 10;
 
     rt::DeviceFrameBuffers frame {};
     frame.beauty = reinterpret_cast<float4*>(0x80);
@@ -50,6 +57,9 @@ int main() {
 
     rt::LaunchHistoryState history_state {};
     history_state.buffers = history;
+    history_state.previous_camera = rt::make_device_active_camera(camera);
+    history_state.previous_camera.origin[0] = 10.0;
+    history_state.previous_camera_valid = 1;
     history_state.history_length = 4;
     history_state.prev_origin[0] = 10.0;
     history_state.prev_origin[1] = 11.0;
@@ -68,6 +78,18 @@ int main() {
     expect_true(params.max_bounces == 10, "max bounces");
     expect_true(params.rr_start_bounce == 3, "rr start");
     expect_true(params.mode == 1, "mode");
+    expect_true(params.restir_di_enabled == 1, "ReSTIR enabled");
+    expect_true(params.restir_initial_candidates == 7, "ReSTIR candidate count");
+    expect_true(params.restir_temporal_reuse == 1, "ReSTIR temporal reuse");
+    expect_true(params.restir_max_history_age == 12, "ReSTIR history age");
+    expect_true(params.restir_max_temporal_candidates == 48, "ReSTIR temporal M clamp");
+    expect_true(params.restir_min_analytic_lights == 10, "ReSTIR many-light threshold");
+    rt::PackedScene sparse_scene = scene;
+    sparse_scene.analytic_lights.resize(9);
+    const rt::LaunchParams sparse_params = rt::make_radiance_launch_params(
+        sparse_scene, scene_view, rig, profile, 0, 42, frame, history_state);
+    expect_true(sparse_params.restir_di_enabled == 0,
+        "ReSTIR stays off below the configured many-light threshold");
     expect_near(params.background[0], 0.1, 1e-6, "background r");
     expect_near(params.background[1], 0.2, 1e-6, "background g");
     expect_near(params.background[2], 0.3, 1e-6, "background b");
@@ -96,11 +118,16 @@ int main() {
 
     expect_true(params.history.beauty == history.beauty, "history beauty");
     expect_true(params.history_length == 4, "history length");
+    expect_true(params.previous_camera_valid == 1, "previous camera valid");
+    expect_near(params.previous_camera.origin[0], 10.0, 1e-12, "previous camera origin");
     expect_near(params.prev_origin[1], 11.0, 1e-12, "prev origin");
     expect_near(params.prev_basis_y[1], 1.0, 1e-12, "prev basis y");
 
     const rt::LaunchHistoryState next_history = rt::capture_launch_history(params);
     expect_true(next_history.history_length == 5, "next history length increments");
+    expect_true(next_history.previous_camera_valid == 1, "captured previous camera valid");
+    expect_near(next_history.previous_camera.origin[0], 1.0, 1e-12,
+        "captured previous camera origin");
     expect_near(next_history.prev_origin[2], 3.0, 1e-12, "next prev origin");
     expect_near(next_history.prev_basis_z[2], 1.0, 1e-12, "next prev basis z");
 

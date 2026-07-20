@@ -10,6 +10,7 @@
 #include <optix_function_table_definition.h>
 #include <optix_stubs.h>
 
+#include <algorithm>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -157,6 +158,34 @@ void OptixRenderer::reset_sequence(std::uint32_t sample_stream) {
     reset_accumulation();
 }
 
+RestirDiagnostics OptixRenderer::restir_diagnostics() const {
+    RestirDiagnostics diagnostics {};
+    const std::size_t pixel_count = static_cast<std::size_t>(frame_buffers_.frame_width())
+                                    * static_cast<std::size_t>(frame_buffers_.frame_height());
+    diagnostics.pixel_count = static_cast<int>(pixel_count);
+    const RestirReservoir* device_reservoirs = frame_buffers_.frame().restir_reservoirs;
+    if (pixel_count == 0 || device_reservoirs == nullptr) {
+        return diagnostics;
+    }
+
+    std::vector<RestirReservoir> reservoirs(pixel_count);
+    RT_CUDA_CHECK(cudaMemcpy(reservoirs.data(), device_reservoirs,
+        pixel_count * sizeof(RestirReservoir), cudaMemcpyDeviceToHost));
+    for (const RestirReservoir& reservoir : reservoirs) {
+        if (reservoir.valid == 0) {
+            continue;
+        }
+        ++diagnostics.active_reservoir_count;
+        if (reservoir.temporal_candidate_count > 0) {
+            ++diagnostics.temporal_reuse_count;
+        }
+        diagnostics.max_candidate_count =
+            std::max(diagnostics.max_candidate_count, reservoir.candidate_count);
+        diagnostics.max_age = std::max(diagnostics.max_age, reservoir.age);
+    }
+    return diagnostics;
+}
+
 void OptixRenderer::build_or_refit_accels(const PackedScene& scene) {
     const PrimitiveCounts counts = primitive_counts(scene);
     if (counts.sphere_count == 0 && counts.quad_count == 0 && counts.triangle_count == 0
@@ -203,6 +232,8 @@ void OptixRenderer::launch_radiance_pipeline(const PackedScene& scene, const Pac
         RT_CUDA_CHECK(cudaMemsetAsync(params.frame.flow, 0, pixel_count * sizeof(float2), stream_));
         RT_CUDA_CHECK(cudaMemsetAsync(params.frame.flow_trustworthiness, 0,
             pixel_count * sizeof(float), stream_));
+        RT_CUDA_CHECK(cudaMemsetAsync(params.frame.restir_reservoirs, 0,
+            pixel_count * sizeof(RestirReservoir), stream_));
         launch_radiance_kernel(params, stream_);
         launch_resolve_kernel(params, stream_);
         frame_buffers_.apply_history_state(capture_launch_history(params));

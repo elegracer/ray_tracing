@@ -37,6 +37,14 @@ struct ProfiledDeviceRadianceFrame {
     RadianceTiming timing;
 };
 
+struct RestirDiagnostics {
+    int pixel_count = 0;
+    int active_reservoir_count = 0;
+    int temporal_reuse_count = 0;
+    int max_candidate_count = 0;
+    int max_age = 0;
+};
+
 class OptixRenderer {
 public:
     OptixRenderer();
@@ -46,6 +54,7 @@ public:
     void prepare_scene(const PackedScene& scene);
     void reset_accumulation();
     void reset_sequence(std::uint32_t sample_stream);
+    RestirDiagnostics restir_diagnostics() const;
     RadianceFrame render_radiance(const PackedScene& scene, const PackedCameraRig& rig,
         const RenderProfile& profile, int camera_index);
     // The view remains valid until this renderer launches another frame or releases its resources.
