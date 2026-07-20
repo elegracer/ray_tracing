@@ -177,6 +177,8 @@ target_sources(core
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/offline_shared_scene_renderer.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/common/openpbr_core.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/common/analytic_light.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/common/cpu_analytic_light.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/common/cpu_analytic_light.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/analytic_light_compiler.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/analytic_light_compiler.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/cpu_scene_adapter.cpp

@@ -11,10 +11,10 @@ See: .planning/PROJECT.md (updated 2026-07-19)
 
 Phase: 5 of 6 — Scalable Lighting And GPU Scheduling
 Plan: Add explicit light distributions, solid-angle PDFs, MIS, ReSTIR DI, persistent launch data, and measured AS update/refit/instancing paths
-Status: Active milestone, Phase 5 unbiased direct-lighting baseline in progress
-Last activity: 2026-07-21 - Closed VAL-02 with the pinned public USD/OpenPBR image bundle
+Status: Active milestone, LIGHT-01 unbiased direct-lighting baseline complete; LIGHT-02 open
+Last activity: 2026-07-21 - Closed LIGHT-01 analytic-light execution across CPU and GPU
 
-Progress: Phase 4 complete; VAL-02 public acceptance is green; Phase 5 emissive/environment baseline is green, with analytic-light execution and estimator agreement still open
+Progress: Phase 4 complete; VAL-02 and LIGHT-01 are green; Phase 5 estimator agreement and ReSTIR DI remain open
 
 ## VAL-02 Public Corpus Evidence
 
@@ -136,7 +136,9 @@ The CPU reference path now includes its constant environment in the BSDF/direct-
 
 The SceneIR v2 execution compiler now lowers visible render-purpose sphere, disk, rect, cylinder, distant, and dome lights into one normalized analytic-light CDF carried by both the CPU adapter and realtime scene. GPU preparation packs the same positions, affine bases, radiance, world-space areas, distant cones, delta flags, and selection probabilities without tessellating lights into many primitive entries. Exposure, world-space `normalize`, and the OpenUSD blackbody color-temperature transform are applied once at the authored-to-runtime boundary. Textured rect/dome lights, non-default diffuse/specular overrides, and non-similarity sphere/cylinder transforms fail explicitly until their execution semantics exist. The default build and CTest pass 65/65; implementation and gates are in `83037bb`.
 
-LIGHT-01 remains open because the compiled analytic-light sidecar is not yet consumed by CPU ray integration or uploaded to the GPU direct-light kernel. The next slice must sample the six light types, trace finite/infinite visibility, evaluate dome/distant miss radiance, and apply matched light/BSDF MIS before marking the requirement complete. LIGHT-02 also remains open until normalized-PDF, furnace/finite-energy, and estimator-agreement gates cover both backends rather than only the current focused cases.
+The GPU execution path uploads that sidecar, samples all six light types, intersects finite light surfaces, traces finite/infinite visibility, adds dome/distant miss radiance, and weights light and BSDF hits with the power heuristic (`4de4921`). The CPU path now consumes the same compiled table through a deterministic sampler with matching CDF, cone/area PDFs, one-sided finite intersections, infinite radiance, visibility rays, and MIS. Its material contract evaluates arbitrary direct directions for Lambertian, isotropic, and OpenPBR surfaces while delta legacy materials remain explicit. Focused gates cover adapter-to-sampler consumption, PDF equality, balanced MIS, every light type on both production integrators, finite shadow occlusion, OpenPBR direct response, and dome miss images. The OpenUSD/public configuration passes 69/69 tests and the default dependency-off configuration passes 65/65 tests.
+
+LIGHT-01 is complete. LIGHT-02 remains open until broader CPU/GPU normalized-PDF, furnace/finite-energy, finite-radiance, and estimator-agreement gates establish a shared quantitative tolerance rather than only the current focused production cases.
 
 ## Performance Metrics
 
@@ -187,7 +189,6 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- Consume the compiled sphere/disk/rect/cylinder/distant/dome table in CPU/GPU sampling, visibility, miss-radiance, and matched-MIS paths, then close LIGHT-01 with production image gates.
 - Complete LIGHT-02 with CPU/GPU normalized-PDF, furnace/finite-energy, finite-radiance, and estimator-agreement gates before ReSTIR DI.
 
 ### Blockers/Concerns
@@ -200,7 +201,7 @@ Recent decisions affecting current work:
 - CUDA memory telemetry is device-global rather than per-process; concurrent GPU workloads can perturb baseline and peak values.
 - OpenUSD is an optional system SDK dependency with verified OFF/ON paths; supported direct MaterialX color3 graphs compile, coat/fuzz/thin-film/dispersion/subsurface constants execute, and connected coat/fuzz/subsurface colors, NodeGraph interfaces, and fields outside the declared SceneIR subset remain fail-closed.
 - Dispersion currently uses fixed C/d/F RGB anchors. Stochastic wavelengths from measured sensor sensitivity curves remain a later spectral-quality extension; the current model is path-consistent but three-band.
-- Emissive geometry and the constant environment now use explicit distributions, solid-angle PDFs, visibility, and MIS. SceneIR v2 analytic/dome lights compile into matched CPU/realtime/GPU sidecars but do not yet execute in either integrator; LIGHT-01 stays open until sampling, visibility, miss radiance, and MIS are gated.
+- Emissive geometry, the constant environment, and six SceneIR v2 analytic light types now execute with explicit distributions, solid-angle PDFs, visibility, miss radiance, and MIS on CPU/GPU. LIGHT-02 still requires broader quantitative estimator-agreement and energy gates before ReSTIR DI.
 - The current `gpt-5.6-*` Codex IDE route still returns HTTP 404 from the built-in web tool. This is not a renderer delivery blocker: bounded public research uses direct read-only HTTP against official primary sources and records the pinned source revision. Do not spend renderer goal turns repairing host search unless the user explicitly reopens that task.
 
 ## Deferred Items
@@ -217,5 +218,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-07-21
-Stopped at: VAL-02 public USD/OpenPBR acceptance is closed; next resume Phase 5 analytic-light sampling, visibility, miss radiance, and MIS
+Stopped at: LIGHT-01 analytic-light execution is closed across CPU/GPU; next complete LIGHT-02 quantitative agreement gates
 Resume file: .planning/milestones/v2.0-REQUIREMENTS.md

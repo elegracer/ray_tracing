@@ -2,6 +2,7 @@
 #include "common/hittable_list.h"
 #include "common/interval.h"
 #include "common/material.h"
+#include "common/quad.h"
 #include "common/ray.h"
 #include "common/sphere.h"
 #include "realtime/camera_rig.h"
@@ -244,6 +245,112 @@ rt::RadianceFrame render_analytic_dome_miss() {
     return renderer.render_radiance(scene.pack(), make_test_rig().pack(), profile, 0);
 }
 
+rt::AnalyticLightDesc make_cpu_analytic_light(rt::AnalyticLightType type) {
+    const Eigen::Vector3d receiver {0.0, 0.0, -4.0};
+    const Eigen::Vector3d center {0.0, 1.5, -2.5};
+    const Eigen::Vector3d direction = (center - receiver).normalized();
+
+    rt::AnalyticLightDesc light;
+    light.type = type;
+    light.position = center;
+    light.radiance = Eigen::Vector3d::Constant(1.5);
+    light.selection_pdf = 1.0;
+    light.cdf = 1.0;
+    if (type == rt::AnalyticLightType::distant) {
+        light.local_to_world_linear.col(2) = direction;
+        light.cos_theta_max = 1.0;
+        light.delta = true;
+    } else if (type == rt::AnalyticLightType::sphere) {
+        light.radius = 0.5;
+        light.world_area = 4.0 * std::numbers::pi * light.radius * light.radius;
+    } else if (type == rt::AnalyticLightType::cylinder) {
+        light.local_to_world_linear.col(0) = -direction;
+        light.local_to_world_linear.col(1) = Eigen::Vector3d::UnitX();
+        light.local_to_world_linear.col(2) =
+            light.local_to_world_linear.col(0).cross(light.local_to_world_linear.col(1));
+        light.radius = 0.5;
+        light.length = 1.0;
+        light.world_area = 2.0 * std::numbers::pi * light.radius * light.length;
+    } else if (type == rt::AnalyticLightType::disk || type == rt::AnalyticLightType::rect) {
+        light.local_to_world_linear.col(0) = Eigen::Vector3d::UnitX();
+        light.local_to_world_linear.col(1) = direction.cross(Eigen::Vector3d::UnitX());
+        light.local_to_world_linear.col(2) = direction;
+        if (type == rt::AnalyticLightType::disk) {
+            light.radius = 0.5;
+            light.world_area = std::numbers::pi * light.radius * light.radius;
+        } else {
+            light.width = 1.0;
+            light.height = 1.0;
+            light.world_area = 1.0;
+        }
+    }
+    return light;
+}
+
+Eigen::Vector3d center_display_rgb(const cv::Mat& image) {
+    const cv::Vec3b bgr = image.at<cv::Vec3b>(image.rows / 2, image.cols / 2);
+    return {static_cast<double>(bgr[2]) / 255.0, static_cast<double>(bgr[1]) / 255.0,
+        static_cast<double>(bgr[0]) / 255.0};
+}
+
+double render_cpu_analytic_direct_light(rt::AnalyticLightType type, bool occluded) {
+    const pro::proxy<Material> receiver_material =
+        pro::make_proxy_shared<Material, Lambertion>(Vec3d {0.8, 0.8, 0.8});
+    HittableList world;
+    world.add(pro::make_proxy_shared<Hittable, Quad>(Vec3d {-2.0, -2.0, -4.0},
+        Vec3d {4.0, 0.0, 0.0}, Vec3d {0.0, 4.0, 0.0}, receiver_material));
+    if (occluded) {
+        world.add(pro::make_proxy_shared<Hittable, Sphere>(Vec3d {0.0, 0.75, -3.25}, 0.7,
+            receiver_material));
+    }
+    const pro::proxy<Hittable> world_proxy = &world;
+
+    Camera camera;
+    camera.aspect_ratio = 1.0;
+    camera.image_width = 16;
+    camera.samples_per_pixel = type == rt::AnalyticLightType::distant ? 1 : 64;
+    camera.max_depth = 2;
+    camera.background = Vec3d::Zero();
+    camera.vfov = 45.0;
+    camera.lookfrom = Vec3d::Zero();
+    camera.lookat = {0.0, 0.0, -4.0};
+    camera.vup = {0.0, 1.0, 0.0};
+    camera.defocus_angle = 0.0;
+    camera.focus_dist = 4.0;
+    camera.render(world_proxy, {}, {make_cpu_analytic_light(type)});
+    return center_display_rgb(camera.img).mean();
+}
+
+Eigen::Vector3d render_cpu_analytic_dome_miss() {
+    const pro::proxy<Material> offscreen_material =
+        pro::make_proxy_shared<Material, Lambertion>(Vec3d {0.5, 0.5, 0.5});
+    HittableList world;
+    world.add(pro::make_proxy_shared<Hittable, Sphere>(Vec3d {100.0, 100.0, 100.0}, 1.0,
+        offscreen_material));
+    const pro::proxy<Hittable> world_proxy = &world;
+
+    rt::AnalyticLightDesc dome;
+    dome.type = rt::AnalyticLightType::dome;
+    dome.radiance = Eigen::Vector3d {0.25, 0.5, 1.0};
+    dome.selection_pdf = 1.0;
+    dome.cdf = 1.0;
+
+    Camera camera;
+    camera.aspect_ratio = 1.0;
+    camera.image_width = 8;
+    camera.samples_per_pixel = 1;
+    camera.max_depth = 1;
+    camera.background = Vec3d::Zero();
+    camera.vfov = 45.0;
+    camera.lookfrom = Vec3d::Zero();
+    camera.lookat = {0.0, 0.0, -1.0};
+    camera.vup = {0.0, 1.0, 0.0};
+    camera.defocus_angle = 0.0;
+    camera.focus_dist = 1.0;
+    camera.render(world_proxy, {}, {dome});
+    return center_display_rgb(camera.img);
+}
+
 rt::RadianceFrame render_subsurface_sphere() {
     rt::SceneDescription scene;
     scene.background = Eigen::Vector3d::Ones();
@@ -323,6 +430,10 @@ int main() {
     expect_vec3_near(scatter.attenuation, Vec3d {decoded_base.x, decoded_base.y, decoded_base.z},
         1e-5, "CPU OpenPBR connected diffuse throughput");
     expect_vec3_near(emitted, Vec3d {1.0, 0.5, 0.25}, 1e-6, "CPU OpenPBR emission");
+    double direct_pdf = 0.0;
+    const Vec3d direct_response = hit.mat->evaluate_direct(primary, hit, hit.normal, direct_pdf);
+    expect_true(direct_pdf > 0.0 && direct_response.maxCoeff() > 0.0,
+        "CPU OpenPBR evaluates a finite direct-light response for analytic NEE");
     const Vec3d cpu_reference = emitted + scatter.attenuation;
 
     rt::SceneDescription gpu_scene =
@@ -370,6 +481,27 @@ int main() {
     const Eigen::Vector3d dome_rgb = center_pixel_rgb(render_analytic_dome_miss());
     expect_vec3_near(dome_rgb, Eigen::Vector3d {0.25, 0.5, 1.0}, 5e-4,
         "analytic dome contributes miss radiance");
+    expect_true(render_cpu_analytic_direct_light(rt::AnalyticLightType::sphere, false) > 0.01,
+        "analytic sphere light reaches the production CPU integrator");
+    expect_true(render_cpu_analytic_direct_light(rt::AnalyticLightType::disk, false) > 0.01,
+        "analytic disk light reaches the production CPU integrator");
+    const double cpu_rect_unoccluded =
+        render_cpu_analytic_direct_light(rt::AnalyticLightType::rect, false);
+    const double cpu_rect_occluded =
+        render_cpu_analytic_direct_light(rt::AnalyticLightType::rect, true);
+    expect_true(cpu_rect_unoccluded > 0.01,
+        "analytic rect light reaches the production CPU integrator");
+    expect_true(cpu_rect_occluded < cpu_rect_unoccluded * 0.25,
+        "analytic rect light respects CPU finite shadow visibility");
+    expect_true(render_cpu_analytic_direct_light(rt::AnalyticLightType::cylinder, false) > 0.01,
+        "analytic cylinder light reaches the production CPU integrator");
+    expect_true(render_cpu_analytic_direct_light(rt::AnalyticLightType::distant, false) > 0.01,
+        "analytic distant light reaches the production CPU integrator");
+    expect_true(render_cpu_analytic_direct_light(rt::AnalyticLightType::dome, false) > 0.01,
+        "analytic dome light reaches the production CPU direct-light integrator");
+    expect_vec3_near(render_cpu_analytic_dome_miss(),
+        Eigen::Vector3d {std::sqrt(0.25), std::sqrt(0.5), 1.0}, 1.0 / 128.0,
+        "analytic dome contributes CPU display-space miss radiance");
 
     rt::OpenPbrCoreMaterial subsurface_parameters;
     subsurface_parameters.base_weight = 0.0f;

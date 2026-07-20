@@ -1,3 +1,4 @@
+#include "common/cpu_analytic_light.h"
 #include "realtime/gpu/packed_scene_preparation.h"
 #include "scene/analytic_light_compiler.h"
 #include "scene/cpu_scene_adapter.h"
@@ -159,6 +160,9 @@ int main() {
         rt::scene::adapt_to_cpu_openpbr(compatibility, scene);
     expect_true(cpu.analytic_lights.size() == lights.size(),
         "CPU adapter carries the analytic-light table");
+    const rt::CpuAnalyticLightSampler cpu_sampler {cpu.analytic_lights};
+    expect_true(cpu_sampler.sample(Eigen::Vector3d::Zero(), 0.0, 0.25, 0.75).valid,
+        "CPU adapter output is directly consumable by the production analytic-light sampler");
     const rt::PackedScene realtime =
         rt::scene::adapt_to_realtime_openpbr(compatibility, scene).pack();
     expect_true(realtime.analytic_light_count == static_cast<int>(lights.size()),

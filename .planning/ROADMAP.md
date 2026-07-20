@@ -28,4 +28,4 @@ Baseline: `.planning/v2.0-BASELINE.json`
 
 ## Immediate Next Step
 
-Compile supported SceneIR v2 sphere/disk/rect/cylinder/distant/dome lights into the production CPU/GPU sampling tables, then close LIGHT-01 with analytic-light visibility and matched light/BSDF MIS gates before any ReSTIR DI reuse.
+Close LIGHT-02 with CPU/GPU PDF normalization, furnace/finite-energy, finite-radiance, and estimator-agreement gates before any ReSTIR DI reuse.

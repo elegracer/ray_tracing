@@ -1,3 +1,4 @@
+#include "common/cpu_analytic_light.h"
 #include "common/light_sampling.h"
 #include "common/hittable.h"
 #include "common/pdf.h"
@@ -65,6 +66,82 @@ int main() {
         "analytic CDF upper clamp");
     expect_true(rt::sample_packed_analytic_light(nullptr, 0, 0.5f) == -1,
         "empty analytic distribution");
+
+    rt::AnalyticLightDesc cpu_sphere;
+    cpu_sphere.type = rt::AnalyticLightType::sphere;
+    cpu_sphere.position = {0.0, 0.0, -4.0};
+    cpu_sphere.radiance = Eigen::Vector3d::Ones();
+    cpu_sphere.radius = 0.5;
+    cpu_sphere.world_area = 4.0 * std::numbers::pi * cpu_sphere.radius * cpu_sphere.radius;
+    cpu_sphere.selection_pdf = 1.0;
+    cpu_sphere.cdf = 1.0;
+    const rt::CpuAnalyticLightSampler cpu_sphere_sampler {{cpu_sphere}};
+    const rt::CpuAnalyticLightSample cpu_sphere_sample =
+        cpu_sphere_sampler.sample(Eigen::Vector3d::Zero(), 0.5, 0.25, 0.75);
+    expect_true(cpu_sphere_sample.valid && cpu_sphere_sample.pdf > 0.0,
+        "CPU analytic sphere produces a finite solid-angle sample");
+    rt::CpuAnalyticLightHit cpu_sphere_hit;
+    expect_true(
+        cpu_sphere_sampler.intersect(Ray {Eigen::Vector3d::Zero(), cpu_sphere_sample.direction},
+            Interval {0.001, infinity}, cpu_sphere_hit),
+        "CPU analytic sphere sample intersects its emissive surface");
+    const double cpu_sphere_pdf = cpu_sphere_sampler.pdf_for_hit(cpu_sphere_hit,
+        Eigen::Vector3d::Zero(), cpu_sphere_sample.direction);
+    expect_near(cpu_sphere_pdf, cpu_sphere_sample.pdf, 1e-10,
+        "CPU analytic sphere sampling and hit PDFs match");
+    expect_near(cpu_sphere_sampler.emission_mis_weight(cpu_sphere_hit, Eigen::Vector3d::Zero(),
+                    cpu_sphere_sample.direction, cpu_sphere_pdf, true, false),
+        0.5, 1e-12, "CPU analytic sphere uses the matched power heuristic");
+
+    rt::AnalyticLightDesc cpu_rect;
+    cpu_rect.type = rt::AnalyticLightType::rect;
+    cpu_rect.position = {0.0, 0.0, -4.0};
+    cpu_rect.local_to_world_linear.col(0) = Eigen::Vector3d::UnitX();
+    cpu_rect.local_to_world_linear.col(1) = -Eigen::Vector3d::UnitY();
+    cpu_rect.radiance = Eigen::Vector3d::Ones();
+    cpu_rect.width = 2.0;
+    cpu_rect.height = 2.0;
+    cpu_rect.world_area = 4.0;
+    cpu_rect.selection_pdf = 1.0;
+    cpu_rect.cdf = 1.0;
+    const rt::CpuAnalyticLightSampler cpu_rect_sampler {{cpu_rect}};
+    const rt::CpuAnalyticLightSample cpu_rect_sample =
+        cpu_rect_sampler.sample(Eigen::Vector3d::Zero(), 0.5, 0.5, 0.5);
+    expect_true(cpu_rect_sample.valid, "CPU analytic rect produces a visible area sample");
+    expect_near(cpu_rect_sample.pdf, 4.0, 1e-12,
+        "CPU analytic rect applies the area-to-solid-angle Jacobian");
+    rt::CpuAnalyticLightHit cpu_rect_hit;
+    expect_true(cpu_rect_sampler.intersect(Ray {Eigen::Vector3d::Zero(), cpu_rect_sample.direction},
+                    Interval {0.001, infinity}, cpu_rect_hit),
+        "CPU analytic rect sample intersects its one-sided surface");
+
+    rt::AnalyticLightDesc cpu_distant;
+    cpu_distant.type = rt::AnalyticLightType::distant;
+    cpu_distant.local_to_world_linear.col(2) = -Eigen::Vector3d::UnitZ();
+    cpu_distant.radiance = Eigen::Vector3d {0.25, 0.5, 1.0};
+    cpu_distant.selection_pdf = 0.25;
+    cpu_distant.cdf = 0.25;
+    cpu_distant.delta = true;
+    rt::AnalyticLightDesc cpu_dome;
+    cpu_dome.type = rt::AnalyticLightType::dome;
+    cpu_dome.radiance = Eigen::Vector3d {0.5, 0.25, 0.125};
+    cpu_dome.selection_pdf = 0.75;
+    cpu_dome.cdf = 1.0;
+    const rt::CpuAnalyticLightSampler cpu_infinite_sampler {{cpu_distant, cpu_dome}};
+    const rt::CpuAnalyticLightSample cpu_distant_sample =
+        cpu_infinite_sampler.sample(Eigen::Vector3d::Zero(), 0.1, 0.2, 0.3);
+    expect_true(cpu_distant_sample.valid && cpu_distant_sample.delta && cpu_distant_sample.infinite,
+        "CPU delta distant light reports a discrete infinite sample");
+    expect_vec3_near(
+        cpu_infinite_sampler.infinite_radiance(-Eigen::Vector3d::UnitZ(), 0.0, false, false),
+        cpu_distant.radiance + cpu_dome.radiance, 1e-12,
+        "CPU distant and dome lights contribute matching miss radiance");
+    const rt::CpuAnalyticLightSample cpu_dome_sample =
+        cpu_infinite_sampler.sample(Eigen::Vector3d::Zero(), 0.5, 0.2, 0.3);
+    expect_true(cpu_dome_sample.valid && cpu_dome_sample.infinite && !cpu_dome_sample.delta,
+        "CPU dome produces a continuous infinite sample");
+    expect_near(cpu_dome_sample.pdf, cpu_dome.selection_pdf / (4.0 * std::numbers::pi), 1e-12,
+        "CPU dome sample uses its selection-weighted spherical PDF");
 
     expect_near(rt::light_uniform_sphere_pdf() * 4.0 * std::numbers::pi, 1.0, 1e-6,
         "uniform sphere PDF normalization");

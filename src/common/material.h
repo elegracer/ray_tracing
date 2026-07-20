@@ -50,6 +50,11 @@ struct EmptyMaterial {
     double scattering_pdf(const Ray& ray_in, const HitRecord& hit_rec, const Ray& scattered) const {
         return 0.0;
     }
+
+    Vec3d evaluate_direct(const Ray&, const HitRecord&, const Vec3d&, double& pdf) const {
+        pdf = 0.0;
+        return Vec3d::Zero();
+    }
 };
 
 
@@ -73,6 +78,13 @@ struct Lambertion {
     double scattering_pdf(const Ray& ray_in, const HitRecord& hit_rec, const Ray& scattered) const {
         const double cos_theta = hit_rec.normal.dot(scattered.direction().normalized());
         return std::max(1e-8, cos_theta / pi);
+    }
+
+    Vec3d evaluate_direct(const Ray&, const HitRecord& hit_rec, const Vec3d& direction,
+        double& pdf) const {
+        const double cosine = std::max(0.0, hit_rec.normal.dot(direction.normalized()));
+        pdf = cosine / pi;
+        return m_tex->value(hit_rec.u, hit_rec.v, hit_rec.p) * pdf;
     }
 
 private:
@@ -103,6 +115,11 @@ struct Metal {
 
     double scattering_pdf(const Ray& ray_in, const HitRecord& hit_rec, const Ray& scattered) const {
         return 0.0;
+    }
+
+    Vec3d evaluate_direct(const Ray&, const HitRecord&, const Vec3d&, double& pdf) const {
+        pdf = 0.0;
+        return Vec3d::Zero();
     }
 
 private:
@@ -143,6 +160,11 @@ struct Dielectric {
 
     double scattering_pdf(const Ray& ray_in, const HitRecord& hit_rec, const Ray& scattered) const {
         return 0.0;
+    }
+
+    Vec3d evaluate_direct(const Ray&, const HitRecord&, const Vec3d&, double& pdf) const {
+        pdf = 0.0;
+        return Vec3d::Zero();
     }
 
 private:
@@ -204,8 +226,8 @@ struct OpenPbrSurfaceMaterial {
             medium = {};
             medium_owner = nullptr;
         }
-        scatter_rec.skip_pdf_ray = Ray(hit_rec.p,
-            Vec3d {sample.wi.x, sample.wi.y, sample.wi.z}, ray_in.time(), medium, medium_owner);
+        scatter_rec.skip_pdf_ray = Ray(hit_rec.p, Vec3d {sample.wi.x, sample.wi.y, sample.wi.z},
+            ray_in.time(), medium, medium_owner);
         return true;
     }
 
@@ -218,6 +240,20 @@ struct OpenPbrSurfaceMaterial {
         return static_cast<double>(
             rt::pdf_openpbr_core(parameters, frame, to_openpbr(-ray_in.direction().normalized()),
                 to_openpbr(scattered.direction().normalized())));
+    }
+
+    Vec3d evaluate_direct(const Ray& ray_in, const HitRecord& hit_rec, const Vec3d& direction,
+        double& pdf) const {
+        const rt::OpenPbrCoreMaterial parameters =
+            evaluated_scattering_parameters(hit_rec.u, hit_rec.v, hit_rec.p);
+        const Vec3d outward_normal = hit_rec.front_face ? hit_rec.normal : -hit_rec.normal;
+        const rt::OpenPbrFrame frame =
+            rt::make_openpbr_frame(to_openpbr(outward_normal), rt::OpenPbrVec3 {});
+        const rt::OpenPbrEvaluation evaluation = rt::evaluate_openpbr_core(parameters, frame,
+            to_openpbr(-ray_in.direction().normalized()), to_openpbr(direction.normalized()));
+        pdf = static_cast<double>(evaluation.pdf);
+        const double cosine = std::abs(hit_rec.normal.dot(direction.normalized()));
+        return Vec3d {evaluation.value.x, evaluation.value.y, evaluation.value.z} * cosine;
     }
 
 private:
@@ -303,6 +339,11 @@ struct DiffuseLight {
         return 0.0;
     }
 
+    Vec3d evaluate_direct(const Ray&, const HitRecord&, const Vec3d&, double& pdf) const {
+        pdf = 0.0;
+        return Vec3d::Zero();
+    }
+
     pro::proxy<Texture> m_tex;
 };
 
@@ -325,6 +366,11 @@ struct Isotropic {
 
     double scattering_pdf(const Ray& ray_in, const HitRecord& hit_rec, const Ray& scattered) const {
         return 1.0 / (4.0 * pi);
+    }
+
+    Vec3d evaluate_direct(const Ray&, const HitRecord& hit_rec, const Vec3d&, double& pdf) const {
+        pdf = 1.0 / (4.0 * pi);
+        return m_tex->value(hit_rec.u, hit_rec.v, hit_rec.p) * pdf;
     }
 
     pro::proxy<Texture> m_tex;

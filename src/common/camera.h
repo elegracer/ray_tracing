@@ -1,7 +1,9 @@
 #pragma once
 
 #include "color.h"
+#include "cpu_analytic_light.h"
 #include "interval.h"
+#include "light_sampling.h"
 #include "pdf.h"
 #include "material.h"
 #include "realtime/camera_models.h"
@@ -60,8 +62,13 @@ public:
         return make_primary_ray(pixel, apply_defocus, 0.0);
     }
 
-    void render(const pro::proxy<Hittable>& world, const pro::proxy<Hittable>& lights = {}) {
+    void render(const pro::proxy<Hittable>& world, const pro::proxy<Hittable>& lights = {},
+        const std::vector<rt::AnalyticLightDesc>& analytic_lights = {}) {
         initialize();
+
+        const std::optional<rt::CpuAnalyticLightSampler> analytic_sampler =
+            analytic_lights.empty() ? std::nullopt
+                                    : std::optional<rt::CpuAnalyticLightSampler> {analytic_lights};
 
         img = cv::Mat(image_height, image_width, CV_8UC3);
 
@@ -84,7 +91,8 @@ public:
                         for (int s_y = 0; s_y < sqrt_spp; ++s_y) {
                             for (int s_x = 0; s_x < sqrt_spp; ++s_x) {
                                 Ray ray = get_ray(x, y, s_x, s_y);
-                                pixel_color += ray_color(ray, max_depth, world, lights);
+                                pixel_color += ray_color(ray, max_depth, world, lights,
+                                    analytic_sampler ? &*analytic_sampler : nullptr, {});
                             }
                         }
                         pixel_color *= pixel_samples_scale;
@@ -127,6 +135,13 @@ private:
     Vec3d defocus_disk_u;           // Defocus disk horizontal radius
     Vec3d defocus_disk_v;           // Defocus disk vertical radius
     std::optional<SharedCameraRayConfig> shared_camera_ray_config_;
+
+    struct PreviousAnalyticScatter {
+        bool valid = false;
+        bool delta = false;
+        Vec3d position = Vec3d::Zero();
+        double bsdf_pdf = 0.0;
+    };
 
     void initialize() {
         image_height = std::max(int(image_width / aspect_ratio), 1);
@@ -186,8 +201,8 @@ private:
         // sampled point around the pixel location x, y for stratified sample square s_x, s_y
 
         const Vec3d offset = sample_square_stratified(s_x, s_y);
-        return make_primary_ray(
-            Eigen::Vector2d {x + 0.5 + offset.x(), y + 0.5 + offset.y()}, true, random_double());
+        return make_primary_ray(Eigen::Vector2d {x + 0.5 + offset.x(), y + 0.5 + offset.y()}, true,
+            random_double());
     }
 
     Vec3d sample_square_stratified(const int s_x, const int s_y) const {
@@ -211,15 +226,16 @@ private:
         return center + (p.x() * defocus_disk_u) + (p.y() * defocus_disk_v);
     }
 
-    Ray make_primary_ray(const Eigen::Vector2d& pixel, const bool apply_defocus, const double ray_time) const {
+    Ray make_primary_ray(const Eigen::Vector2d& pixel, const bool apply_defocus,
+        const double ray_time) const {
         if (shared_camera_ray_config_.has_value()) {
             const SharedCameraRayConfig& config = *shared_camera_ray_config_;
             const Eigen::Vector3d dir_cam = config.model == rt::CameraModelType::pinhole32
-                ? rt::unproject_pinhole32(config.pinhole, pixel)
-                : rt::unproject_equi62_lut1d(config.equi, pixel);
+                                                ? rt::unproject_pinhole32(config.pinhole, pixel)
+                                                : rt::unproject_equi62_lut1d(config.equi, pixel);
 
-            const bool use_defocus =
-                apply_defocus && config.model == rt::CameraModelType::pinhole32 && defocus_angle > 0.0;
+            const bool use_defocus = apply_defocus && config.model == rt::CameraModelType::pinhole32
+                                     && defocus_angle > 0.0;
             const Vec3d ray_origin = use_defocus ? defocus_disk_sample() : center;
             if (use_defocus) {
                 const double focus_t = focus_dist / std::max(dir_cam.z(), 1e-12);
@@ -231,22 +247,76 @@ private:
 
         const Vec3d pixel_sample =
             pixel00_loc + ((pixel.x() - 0.5) * pixel_delta_u) + ((pixel.y() - 0.5) * pixel_delta_v);
-        const Vec3d ray_origin = apply_defocus && defocus_angle > 0.0 ? defocus_disk_sample() : center;
+        const Vec3d ray_origin =
+            apply_defocus && defocus_angle > 0.0 ? defocus_disk_sample() : center;
         return Ray(ray_origin, pixel_sample - ray_origin, ray_time);
     }
 
+    Vec3d sample_analytic_direct(const Ray& ray, const HitRecord& hit_rec,
+        const pro::proxy<Hittable>& world, const rt::CpuAnalyticLightSampler& analytic_lights,
+        bool bsdf_technique_available) {
+        const rt::CpuAnalyticLightSample light =
+            analytic_lights.sample(hit_rec.p, random_double(), random_double(), random_double());
+        if (!light.valid) {
+            return Vec3d::Zero();
+        }
+
+        const Vec3d direction = light.direction.normalized();
+        const Ray shadow_ray {hit_rec.p + direction * 2e-4, direction, ray.time(),
+            ray.subsurface_medium(), ray.subsurface_owner()};
+        const double max_t = light.infinite ? infinity : light.distance - 3e-4;
+        HitRecord occluder;
+        if (max_t <= 0.001 || world->hit(shadow_ray, Interval {0.001, max_t}, occluder)) {
+            return Vec3d::Zero();
+        }
+
+        double bsdf_pdf = 0.0;
+        const Vec3d response = hit_rec.mat->evaluate_direct(ray, hit_rec, direction, bsdf_pdf);
+        if (!response.allFinite() || response.maxCoeff() <= 0.0) {
+            return Vec3d::Zero();
+        }
+        const double mis_weight =
+            light.delta || !bsdf_technique_available
+                ? 1.0
+                : static_cast<double>(rt::light_power_heuristic(static_cast<float>(light.pdf),
+                      static_cast<float>(bsdf_pdf)));
+        return light.radiance.array() * response.array() * (mis_weight / light.pdf);
+    }
+
     Vec3d ray_color(const Ray& ray, const int depth, const pro::proxy<Hittable>& world,
-        const pro::proxy<Hittable>& lights) {
+        const pro::proxy<Hittable>& lights, const rt::CpuAnalyticLightSampler* analytic_lights,
+        const PreviousAnalyticScatter& previous_scatter) {
         // If we've exceeded the ray bounce limit, no more light is gathered
         if (depth <= 0) {
             return {0.0, 0.0, 0.0};
         }
 
         HitRecord hit_rec;
+        const bool world_hit = world->hit(ray, Interval {0.001, infinity}, hit_rec);
+        rt::CpuAnalyticLightHit analytic_hit;
+        if (analytic_lights != nullptr
+            && analytic_lights->intersect(ray, Interval {0.001, world_hit ? hit_rec.t : infinity},
+                analytic_hit)) {
+            if (ray.subsurface_medium().active != 0) {
+                return Vec3d::Zero();
+            }
+            const double weight = analytic_lights->emission_mis_weight(analytic_hit,
+                previous_scatter.position, ray.direction(), previous_scatter.bsdf_pdf,
+                previous_scatter.valid, previous_scatter.delta);
+            return analytic_hit.radiance * weight;
+        }
 
         // If the ray hits nothing, return the background color
-        if (!world->hit(ray, Interval {0.001, infinity}, hit_rec)) {
-            return ray.subsurface_medium().active != 0 ? Vec3d::Zero() : background;
+        if (!world_hit) {
+            if (ray.subsurface_medium().active != 0) {
+                return Vec3d::Zero();
+            }
+            const Vec3d analytic_radiance =
+                analytic_lights == nullptr
+                    ? Vec3d::Zero()
+                    : analytic_lights->infinite_radiance(ray.direction(), previous_scatter.bsdf_pdf,
+                          previous_scatter.valid, previous_scatter.delta);
+            return background + analytic_radiance;
         }
 
         Vec3d medium_weight = Vec3d::Ones();
@@ -270,42 +340,62 @@ private:
                     ray.subsurface_medium().anisotropy, static_cast<float>(random_double()),
                     static_cast<float>(random_double()));
                 const Vec3d next_direction {direction.x, direction.y, direction.z};
-                const Vec3d position =
-                    ray.at(static_cast<double>(segment.distance) / ray_length);
+                const Vec3d position = ray.at(static_cast<double>(segment.distance) / ray_length);
                 const Ray scattered {position + next_direction * 1e-6, next_direction, ray.time(),
                     ray.subsurface_medium(), ray.subsurface_owner()};
                 return medium_weight.array()
-                       * ray_color(scattered, depth - 1, world, lights).array();
+                       * ray_color(scattered, depth - 1, world, lights, analytic_lights, {})
+                             .array();
             }
         }
 
         ScatterRecord scatter_rec;
         const Vec3d color_from_emission =
             hit_rec.mat->emitted(ray, hit_rec, hit_rec.u, hit_rec.v, hit_rec.p);
+        const Vec3d color_from_analytic =
+            analytic_lights == nullptr || ray.subsurface_medium().active != 0
+                ? Vec3d::Zero()
+                : sample_analytic_direct(ray, hit_rec, world, *analytic_lights, depth > 1);
 
         if (!hit_rec.mat->scatter(ray, hit_rec, scatter_rec)) {
-            return medium_weight.array() * color_from_emission.array();
+            return medium_weight.array() * (color_from_emission + color_from_analytic).array();
         }
 
         if (scatter_rec.skip_pdf) {
+            const double bsdf_pdf =
+                hit_rec.mat->scattering_pdf(ray, hit_rec, scatter_rec.skip_pdf_ray);
+            const PreviousAnalyticScatter next_scatter {
+                .valid = true,
+                .delta = bsdf_pdf <= 0.0,
+                .position = hit_rec.p,
+                .bsdf_pdf = std::max(0.0, bsdf_pdf),
+            };
             const Vec3d result = scatter_rec.attenuation.array()
-                                 * ray_color(scatter_rec.skip_pdf_ray, depth - 1, world, lights)
+                                 * ray_color(scatter_rec.skip_pdf_ray, depth - 1, world, lights,
+                                     analytic_lights, next_scatter)
                                        .array();
-            return medium_weight.array() * result.array();
+            return medium_weight.array() * (color_from_analytic + result).array();
         }
 
         Ray scattered;
         double pdf_value;
 
-        const pro::proxy<PDF> sampling_pdf = make_light_mis_pdf(
-            scatter_rec.pdf, lights, hit_rec.p, background.maxCoeff() > 0.0);
-        scattered = Ray {hit_rec.p, sampling_pdf->generate(), ray.time(),
-            ray.subsurface_medium(), ray.subsurface_owner()};
+        const pro::proxy<PDF> sampling_pdf =
+            make_light_mis_pdf(scatter_rec.pdf, lights, hit_rec.p, background.maxCoeff() > 0.0);
+        scattered = Ray {hit_rec.p, sampling_pdf->generate(), ray.time(), ray.subsurface_medium(),
+            ray.subsurface_owner()};
         pdf_value = sampling_pdf->value(scattered.direction());
 
         const double scattering_pdf = hit_rec.mat->scattering_pdf(ray, hit_rec, scattered);
 
-        const Vec3d sample_color = ray_color(scattered, depth - 1, world, lights);
+        const PreviousAnalyticScatter next_scatter {
+            .valid = true,
+            .delta = false,
+            .position = hit_rec.p,
+            .bsdf_pdf = std::max(0.0, scattering_pdf),
+        };
+        const Vec3d sample_color =
+            ray_color(scattered, depth - 1, world, lights, analytic_lights, next_scatter);
 
         const Vec3d color_from_scatter =    //
             scatter_rec.attenuation.array() //
@@ -313,6 +403,7 @@ private:
             * sample_color.array()          //
             / pdf_value;
 
-        return medium_weight.array() * (color_from_emission + color_from_scatter).array();
+        return medium_weight.array()
+               * (color_from_emission + color_from_analytic + color_from_scatter).array();
     }
 };

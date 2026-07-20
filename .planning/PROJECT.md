@@ -32,6 +32,7 @@ Composed scene, camera, light, and material meaning must stay consistent across 
 - ✓ The opt-in OpenPBR production path compiles base/specular/transmission/emission color3 connections into a compact CPU/GPU sidecar, evaluates existing textures at the hit point, and applies shared raw/linear/sRGB source-to-linear semantics — `v2.0`
 - ✓ Legacy diffuse, metal, dielectric, emissive, and isotropic-volume mappings are documented and gated by deterministic compatibility images; lossy microfacet, transport, and emission-unit assumptions emit localized diagnostics — `v2.0`
 - ✓ The pinned ASWF Vehicles and official OpenPBR v1.1.1 corpora now pass the product import/compile path and a deterministic 10-view, 20-image EXR/PNG acceptance bundle with exact camera, provenance, hash, simultaneous-submission, and reference-error evidence — `v2.0`
+- ✓ LIGHT-01 now executes emissive geometry, environment, and six SceneIR v2 analytic light types through explicit CPU/GPU distributions, solid-angle PDFs, visibility, miss radiance, and matched light/BSDF MIS with production image gates — `v2.0`
 
 ### Active
 
@@ -111,4 +112,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-21 after public USD/OpenPBR acceptance closure*
+*Last updated: 2026-07-21 after LIGHT-01 analytic-light execution closure*

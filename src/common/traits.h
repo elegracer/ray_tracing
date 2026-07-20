@@ -34,6 +34,7 @@ struct Hittable                                         //
 PRO_DEF_MEM_DISPATCH(MaterialMemEmitted, emitted);
 PRO_DEF_MEM_DISPATCH(MaterialMemScatter, scatter);
 PRO_DEF_MEM_DISPATCH(MaterialMemScatteringPDF, scattering_pdf);
+PRO_DEF_MEM_DISPATCH(MaterialMemEvaluateDirect, evaluate_direct);
 
 struct Material                                         //
     : pro::facade_builder                               //
@@ -45,6 +46,9 @@ struct Material                                         //
           bool(const Ray& ray_in, const HitRecord& hit_rec, ScatterRecord& scatter_rec) const> //
       ::add_convention<MaterialMemScatteringPDF,
           double(const Ray& ray_in, const HitRecord& hit_rec, const Ray& scattered) const> //
+      ::add_convention<MaterialMemEvaluateDirect,
+          Vec3d(const Ray& ray_in, const HitRecord& hit_rec, const Vec3d& direction,
+              double& pdf) const> //
       ::build {};
 
 
