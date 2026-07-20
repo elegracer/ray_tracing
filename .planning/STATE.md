@@ -12,9 +12,9 @@ See: .planning/PROJECT.md (updated 2026-07-19)
 Phase: 4 of 6 — OpenUSD And MaterialX I/O
 Plan: Add optional official SDK integration, composed-stage import, deterministic supported-subset export, and advanced OpenPBR lobes
 Status: Active milestone, Phase 4 in progress
-Last activity: 2026-07-20 - Added shared CPU/GPU OpenPBR thin-film interference
+Last activity: 2026-07-20 - Added shared CPU/GPU OpenPBR transmission dispersion
 
-Progress: [##########] 100% of scoped OpenUSD requirements plus coat/fuzz/thin film complete; dispersion and subsurface keep Phase 4 active
+Progress: [##########] 100% of scoped OpenUSD requirements plus coat/fuzz/thin film/dispersion complete; subsurface keeps Phase 4 active
 
 ## v2.0 Phase 1 Evidence
 
@@ -78,7 +78,7 @@ The existing flat `SceneIR` remains the current CPU/GPU execution model. `compil
 
 ## v2.0 Phase 3 Evidence
 
-`OpenPbrCoreMaterial` now crosses the production boundary through explicit `adapt_to_cpu_openpbr` and `adapt_to_realtime_openpbr` entry points. Both consume the same SceneIR v2 compatibility material table; missing or duplicate identities, surface/volume mismatches, unsupported connections, displacement, scattering/dispersion, and active Phase-4 lobes fail explicitly rather than rendering with ignored parameters. The legacy adapters and default scene factory remain unchanged.
+`OpenPbrCoreMaterial` now crosses the production boundary through explicit `adapt_to_cpu_openpbr` and `adapt_to_realtime_openpbr` entry points. Both consume the same SceneIR v2 compatibility material table; missing or duplicate identities, surface/volume mismatches, unsupported connections, displacement, transmission scattering, and active subsurface fail explicitly rather than rendering with ignored parameters. The legacy adapters and default scene factory remain unchanged.
 
 The CPU material and GPU path tracer call the shared OpenPBR emission, evaluate, and sample/PDF implementation. GPU direct lighting evaluates the OpenPBR BSDF and recognizes OpenPBR emissive geometry. `OpenPbrCompiledMaterial` keeps constants plus base/specular/transmission/emission color bindings in an opt-in sidecar buffer while the common `MaterialSample` remains at most 24 bytes, preventing every legacy hit from carrying the OpenPBR block.
 
@@ -113,6 +113,10 @@ The physical gates pin a MaterialX Zeltner reference point, require pure-fuzz PD
 The PBR-03 thin-film slice maps the existing OpenPBR weight, micrometer thickness, and IOR inputs into the same compact production sidecar. A shared C++/CUDA Belcour/Barla Airy implementation matches MaterialX 1.39.5's default two-order RGB reference, accounts for coat/base media at the film interfaces, and modulates dielectric and generalized-Schlick metal Fresnel without adding a separate lobe. Reflection probabilities and per-channel diffuse/transmission complements share that result; the thin-walled window combines both interfaces, while the independent coat lobe remains unchanged and attenuates the film-modified base. Zero weight remains exactly compatible.
 
 The physical gates pin MaterialX numeric responses at 300 and 600 nanometers, normalize the mixed thin-film PDF, match sampled/evaluated values, bound film-only and coat-plus-film white furnaces, verify thin-walled reflection/transmission closure, and compare the new case on a real CUDA device. Eight focused SceneIR/OpenPBR/GPU/render-path tests pass. Implementation commit `8c54a6c` and gate commit `59c044f` provide the review boundary.
+
+The PBR-03 dispersion slice maps the existing OpenPBR scale and Abbe-number inputs into the compact production sidecar and removes their former fail-closed boundary. The shared C++/CUDA core derives C/d/F IORs with a two-term Cauchy model, keeps the authored IOR at the 587.6 nm d line, selects refracted RGB channels from path throughput, and uses a channel-mixture PDF for rough transmission. Smooth transmission carries an unbiased one-channel delta weight. GPU path state retains one wavelength context across all bounces and direct-light evaluation, while zero scale executes the previous scalar-IOR path exactly.
+
+The physical gates reconstruct `V_d=20` from the resulting IORs, verify RGB refraction ordering, path-throughput channel probabilities, mixed-PDF normalization, sample/evaluate agreement, bounded white-furnace energy, exact zero-scale compatibility, authored SceneIR mapping, and active-dispersion parity on a real CUDA device. The full default suite passes 63/63. Implementation commit `d28ec14` and gate commit `f55a254` provide the review boundary.
 
 ## Performance Metrics
 
@@ -162,7 +166,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- Implement transmission dispersion as the next bounded PBR-03 slice with path-consistent RGB wavelengths, matched probabilities, Abbe-number references, and exact zero-scale compatibility.
+- Implement subsurface as the final bounded PBR-03 slice with an explicit random-walk/diffusion decision, shared CPU/GPU transport semantics, physical radius/color/anisotropy references, and exact zero-weight compatibility.
 
 ### Blockers/Concerns
 
@@ -172,7 +176,8 @@ Recent decisions affecting current work:
 - The first temporal reference fixture covers final_room motion/disocclusion plus exact reset parity; broader multi-scene perceptual coverage remains part of VAL-02 rather than Phase 1 reconstruction closure.
 - Single-run P99 varied materially across repeated captures, so future speed claims need repeated identical runs in addition to the now-recorded workload and environment.
 - CUDA memory telemetry is device-global rather than per-process; concurrent GPU workloads can perturb baseline and peak values.
-- OpenUSD is an optional system SDK dependency with verified OFF/ON paths; supported direct MaterialX color3 graphs compile, coat/fuzz/thin-film constants execute, and connected coat/fuzz colors, NodeGraph interfaces, and fields outside the declared SceneIR subset remain fail-closed.
+- OpenUSD is an optional system SDK dependency with verified OFF/ON paths; supported direct MaterialX color3 graphs compile, coat/fuzz/thin-film/dispersion constants execute, and connected coat/fuzz colors, NodeGraph interfaces, and fields outside the declared SceneIR subset remain fail-closed.
+- Dispersion currently uses fixed C/d/F RGB anchors. Stochastic wavelengths from measured sensor sensitivity curves remain a later spectral-quality extension; the current model is path-consistent but three-band.
 - Direct-light sampling still uses the existing center/nearest-point heuristic without solid-angle/area PDFs or MIS. OpenPBR surfaces now use the shared BSDF response and emissive materials participate, but unbiased light transport remains a Phase 5 gate before ReSTIR DI.
 - The current `gpt-5.6-*` Codex IDE route still returns HTTP 404 from the built-in web tool. This is not a renderer delivery blocker: bounded public research uses direct read-only HTTP against official primary sources and records the pinned source revision. Do not spend renderer goal turns repairing host search unless the user explicitly reopens that task.
 
@@ -190,5 +195,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-07-20
-Stopped at: scoped OpenUSD/MaterialX I/O plus shared coat/fuzz/thin-film evaluation are closed with matched CPU/GPU sampling and physical/reference gates; dispersion is the next bounded PBR-03 slice
+Stopped at: scoped OpenUSD/MaterialX I/O plus shared coat/fuzz/thin-film/dispersion evaluation are closed with matched CPU/GPU sampling and physical/reference gates; subsurface is the final bounded PBR-03 slice
 Resume file: .planning/milestones/v2.0-REQUIREMENTS.md
