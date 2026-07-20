@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace rt::scene {
@@ -134,8 +135,7 @@ OpenPbrCompiledMaterial compile_openpbr_core_material(const SceneOpenPbrSurface&
                 .coat_weight = static_cast<float>(material.coat_weight),
                 .coat_color = to_openpbr_vec3(material.coat_color),
                 .coat_roughness = static_cast<float>(material.coat_roughness),
-                .coat_roughness_anisotropy =
-                    static_cast<float>(material.coat_roughness_anisotropy),
+                .coat_roughness_anisotropy = static_cast<float>(material.coat_roughness_anisotropy),
                 .coat_ior = static_cast<float>(material.coat_ior),
                 .coat_darkening = static_cast<float>(material.coat_darkening),
                 .thin_film_weight = static_cast<float>(material.thin_film_weight),
@@ -147,6 +147,38 @@ OpenPbrCompiledMaterial compile_openpbr_core_material(const SceneOpenPbrSurface&
                 .geometry_thin_walled = material.geometry_thin_walled ? 1 : 0,
             },
     };
+}
+
+OpenPbrCompiledMaterial compile_openpbr_core_material(const SceneOpenPbrSurface& material,
+    const SceneIRv2& scene, const std::unordered_map<std::string, int>& texture_indices) {
+    SceneOpenPbrSurface constants = material;
+    constants.connections.clear();
+    OpenPbrCompiledMaterial compiled = compile_openpbr_core_material(constants);
+
+    for (const SceneMaterialConnection& connection : material.connections) {
+        OpenPbrColorTextureBinding* binding =
+            find_supported_color_binding(compiled.color_textures, connection.input_name);
+        if (binding == nullptr || connection.input_type != SceneMaterialValueType::color3
+            || connection.channel != SceneTextureChannel::rgb) {
+            throw std::invalid_argument(
+                "OpenPBR production core supports RGB connections only for base_color, "
+                "specular_color, transmission_color, and emission_color");
+        }
+        const ScenePrim* texture_prim = scene.find_prim(connection.texture_path);
+        if (texture_prim == nullptr || !texture_prim->texture) {
+            throw std::invalid_argument(
+                "OpenPBR connected input does not resolve to a SceneIR v2 texture");
+        }
+        const auto texture_index = texture_indices.find(connection.texture_path);
+        if (texture_index == texture_indices.end()) {
+            throw std::invalid_argument("OpenPBR connected texture has no realtime texture index: "
+                                        + connection.texture_path);
+        }
+        binding->texture_index = texture_index->second;
+        binding->source_color_space =
+            compile_source_color_space(texture_prim->texture->color_space);
+    }
+    return compiled;
 }
 
 std::vector<std::optional<OpenPbrCompiledMaterial>> compile_openpbr_core_material_table(

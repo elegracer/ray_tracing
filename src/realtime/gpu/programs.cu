@@ -204,27 +204,61 @@ __device__ float turbulence_noise(float3 p) {
     return fabsf(accum);
 }
 
+__device__ float address_texture_coordinate(float coordinate, int mode, bool& valid) {
+    if (mode == 0 && (coordinate < 0.0f || coordinate > 1.0f)) {
+        valid = false;
+        return 0.0f;
+    }
+    if (mode == 2) {
+        return coordinate - floorf(coordinate);
+    }
+    if (mode == 3) {
+        const float period = coordinate - 2.0f * floorf(0.5f * coordinate);
+        return period <= 1.0f ? period : 2.0f - period;
+    }
+    return clamp01(coordinate);
+}
+
+__device__ float3 image_texel(const DeviceSceneView& scene, const PackedTexture& texture, int x,
+    int y) {
+    x = x < 0 ? 0 : (x >= texture.image_width ? texture.image_width - 1 : x);
+    y = y < 0 ? 0 : (y >= texture.image_height ? texture.image_height - 1 : y);
+    const int pixel_index = texture.image_offset + y * texture.image_width + x;
+    return pixel_index >= 0 && pixel_index < scene.image_texel_count
+               ? vector3f_to_float3(scene.image_texels[pixel_index])
+               : make_float3(0.0f, 1.0f, 1.0f);
+}
+
 __device__ float3 sample_image_texture(const DeviceSceneView& scene, const PackedTexture& texture,
     float u, float v) {
     if (scene.image_texels == nullptr || texture.image_width <= 0 || texture.image_height <= 0) {
         return make_float3(0.0f, 1.0f, 1.0f);
     }
 
-    const float clamped_u = clamp01(u);
-    const float clamped_v = clamp01(1.0f - v);
-    int i = static_cast<int>(clamped_u * static_cast<float>(texture.image_width));
-    int j = static_cast<int>(clamped_v * static_cast<float>(texture.image_height));
-    if (i >= texture.image_width) {
-        i = texture.image_width - 1;
+    bool valid = true;
+    const float addressed_u = address_texture_coordinate(u, texture.u_address_mode, valid);
+    const float addressed_v = 1.0f - address_texture_coordinate(v, texture.v_address_mode, valid);
+    if (!valid) {
+        return make_float3(0.0f, 0.0f, 0.0f);
     }
-    if (j >= texture.image_height) {
-        j = texture.image_height - 1;
+    if (texture.filter_type == 0) {
+        int x = static_cast<int>(addressed_u * static_cast<float>(texture.image_width));
+        int y = static_cast<int>(addressed_v * static_cast<float>(texture.image_height));
+        x = x >= texture.image_width ? texture.image_width - 1 : x;
+        y = y >= texture.image_height ? texture.image_height - 1 : y;
+        return image_texel(scene, texture, x, y);
     }
-    const int pixel_index = texture.image_offset + j * texture.image_width + i;
-    if (pixel_index < 0 || pixel_index >= scene.image_texel_count) {
-        return make_float3(0.0f, 1.0f, 1.0f);
-    }
-    return vector3f_to_float3(scene.image_texels[pixel_index]);
+    const float x = addressed_u * static_cast<float>(texture.image_width - 1);
+    const float y = addressed_v * static_cast<float>(texture.image_height - 1);
+    const int x0 = static_cast<int>(floorf(x));
+    const int y0 = static_cast<int>(floorf(y));
+    const float tx = x - static_cast<float>(x0);
+    const float ty = y - static_cast<float>(y0);
+    const float3 top = add3(mul3(image_texel(scene, texture, x0, y0), 1.0f - tx),
+        mul3(image_texel(scene, texture, x0 + 1, y0), tx));
+    const float3 bottom = add3(mul3(image_texel(scene, texture, x0, y0 + 1), 1.0f - tx),
+        mul3(image_texel(scene, texture, x0 + 1, y0 + 1), tx));
+    return add3(mul3(top, 1.0f - ty), mul3(bottom, ty));
 }
 
 __device__ float3 evaluate_texture(const DeviceSceneView& scene, int texture_index, float u,
@@ -1135,8 +1169,13 @@ __device__ DirectLightSample sample_direct_light(const DeviceSceneView& scene,
         float w2 = 0.0f;
         sample_uniform_triangle(random_float01(rng), random_float01(rng), w0, w1, w2);
         sample.position = add3(mul3(p0, w0), add3(mul3(p1, w1), mul3(p2, w2)));
-        tex_u = w1;
-        tex_v = w2;
+        if (triangle.has_texcoords != 0) {
+            tex_u = triangle.uv0.x() * w0 + triangle.uv1.x() * w1 + triangle.uv2.x() * w2;
+            tex_v = triangle.uv0.y() * w0 + triangle.uv1.y() * w1 + triangle.uv2.y() * w2;
+        } else {
+            tex_u = w1;
+            tex_v = w2;
+        }
         const float3 area_normal = cross3(sub3(p1, p0), sub3(p2, p0));
         const float double_area = length3(area_normal);
         if (double_area <= 1e-12f) {
@@ -1451,13 +1490,31 @@ __device__ void try_hit_triangle(const PackedTriangle& triangle, const Ray& ray,
     }
 
     const float3 normal = normalize3(cross3(edge1, edge2));
+    const float w = 1.0f - u - v;
     found_hit = true;
     best_hit.hit = true;
     best_hit.t = t;
     best_hit.position = add3(ray.origin, mul3(ray.direction, t));
-    best_hit.tex_u = u;
-    best_hit.tex_v = v;
+    if (triangle.has_texcoords != 0) {
+        best_hit.tex_u = triangle.uv0.x() * w + triangle.uv1.x() * u + triangle.uv2.x() * v;
+        best_hit.tex_v = triangle.uv0.y() * w + triangle.uv1.y() * u + triangle.uv2.y() * v;
+    } else {
+        best_hit.tex_u = u;
+        best_hit.tex_v = v;
+    }
     set_face_normal(ray, normal, best_hit);
+    if (triangle.has_vertex_normals != 0) {
+        float3 shading = add3(mul3(vector3f_to_float3(triangle.n0), w),
+            add3(mul3(vector3f_to_float3(triangle.n1), u),
+                mul3(vector3f_to_float3(triangle.n2), v)));
+        if (!near_zero3(shading)) {
+            shading = normalize3(shading);
+            if (dot3(shading, normal) < 0.0f) {
+                shading = mul3(shading, -1.0f);
+            }
+            best_hit.shading_normal = best_hit.front_face ? shading : mul3(shading, -1.0f);
+        }
+    }
 }
 
 __device__ HitInfo intersect_scene(const DeviceSceneView& scene, const Ray& ray, float t_min,

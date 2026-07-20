@@ -28,7 +28,12 @@ int main() {
         scene.add_texture(rt::ConstantColorTextureDesc {.color = Eigen::Vector3d {0.1, 0.2, 0.8}});
     const int checker = scene.add_texture(
         rt::CheckerTextureDesc {.scale = 3.5, .even_texture = red, .odd_texture = blue});
-    const int image = scene.add_texture(rt::ImageTextureDesc {.path = "missing-test-texture.png"});
+    const int image = scene.add_texture(rt::ImageTextureDesc {
+        .path = "missing-test-texture.png",
+        .u_address_mode = rt::TextureAddressMode::periodic,
+        .v_address_mode = rt::TextureAddressMode::mirror,
+        .filter_type = rt::TextureFilterType::closest,
+    });
     const int noise = scene.add_texture(rt::NoiseTextureDesc {.scale = 9.0});
 
     const int lambertian = scene.add_material(rt::LambertianMaterial {.albedo_texture = checker});
@@ -61,6 +66,14 @@ int main() {
         .p0 = Eigen::Vector3d {1.0, 0.0, 0.0},
         .p1 = Eigen::Vector3d {0.0, 1.0, 0.0},
         .p2 = Eigen::Vector3d {0.0, 0.0, 1.0},
+        .n0 = Eigen::Vector3d {1.0, 0.0, 0.0},
+        .n1 = Eigen::Vector3d {0.0, 1.0, 0.0},
+        .n2 = Eigen::Vector3d {0.0, 0.0, 1.0},
+        .uv0 = Eigen::Vector2d {0.0, 0.0},
+        .uv1 = Eigen::Vector2d {1.0, 0.0},
+        .uv2 = Eigen::Vector2d {0.0, 1.0},
+        .has_vertex_normals = true,
+        .has_texcoords = true,
         .dynamic = false,
     });
     scene.add_medium(rt::HomogeneousMediumPrimitive {
@@ -105,6 +118,12 @@ int main() {
         "triangle p1");
     expect_vec3f_near(prepared.triangles[0].p2, Eigen::Vector3f {0.0f, 0.0f, 1.0f}, 1e-6f,
         "triangle p2");
+    expect_vec3f_near(prepared.triangles[0].n1, Eigen::Vector3f {0.0f, 1.0f, 0.0f}, 1e-6f,
+        "triangle n1");
+    expect_true(prepared.triangles[0].has_vertex_normals == 1, "triangle normals flag");
+    expect_true(prepared.triangles[0].has_texcoords == 1, "triangle texcoords flag");
+    expect_near(prepared.triangles[0].uv1.x(), 1.0, 1e-6, "triangle uv1 x");
+    expect_near(prepared.triangles[0].uv2.y(), 1.0, 1e-6, "triangle uv2 y");
     expect_true(prepared.triangles[0].material_index == metal, "triangle material");
 
     expect_vec3f_near(prepared.media[0].local_center_or_min, Eigen::Vector3f {-1.0f, -2.0f, -3.0f},
@@ -157,6 +176,9 @@ int main() {
     expect_true(prepared.textures[3].type == 2, "image texture type");
     expect_true(prepared.textures[3].image_width == 0, "missing image width");
     expect_true(prepared.textures[3].image_height == 0, "missing image height");
+    expect_true(prepared.textures[3].u_address_mode == 2, "image periodic u mode");
+    expect_true(prepared.textures[3].v_address_mode == 3, "image mirrored v mode");
+    expect_true(prepared.textures[3].filter_type == 0, "image closest filter");
     expect_true(prepared.textures[4].type == 3, "noise texture type");
     expect_near(prepared.textures[4].scale, 9.0, 1e-6, "noise scale");
 

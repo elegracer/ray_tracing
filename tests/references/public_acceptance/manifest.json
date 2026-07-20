@@ -1,0 +1,849 @@
+{
+  "approved": true,
+  "cameras": [
+    {
+      "camera_index": 0,
+      "camera_to_world": [
+        [
+          0.7071067811865475,
+          0.17149858514250882,
+          -0.6859943405700354,
+          756.2913482585874
+        ],
+        [
+          1.3877787807814457e-17,
+          -0.9701425001453321,
+          -0.24253562503633294,
+          325.6307577270029
+        ],
+        [
+          -0.7071067811865476,
+          0.1714985851425088,
+          -0.6859943405700355,
+          708.5317435679897
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "height": 480,
+      "intrinsics": {
+        "cx": 320.0,
+        "cy": 240.0,
+        "fx": 656.0972293053748,
+        "fy": 656.0972293053748,
+        "radial": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "tangential": [
+          0.0,
+          0.0
+        ]
+      },
+      "model": "pinhole32",
+      "pose": "front_three_quarter",
+      "simultaneous": false,
+      "view_id": "front_three_quarter__pinhole32",
+      "width": 640
+    },
+    {
+      "camera_index": 0,
+      "camera_to_world": [
+        [
+          0.7071067811865475,
+          0.17149858514250882,
+          -0.6859943405700354,
+          756.2913482585874
+        ],
+        [
+          1.3877787807814457e-17,
+          -0.9701425001453321,
+          -0.24253562503633294,
+          325.6307577270029
+        ],
+        [
+          -0.7071067811865476,
+          0.1714985851425088,
+          -0.6859943405700355,
+          708.5317435679897
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "height": 480,
+      "intrinsics": {
+        "cx": 320.0,
+        "cy": 240.0,
+        "fx": 458.3662361046586,
+        "fy": 458.3662361046586,
+        "lut_entries": 1024,
+        "lut_step": 0.0008820492453842039,
+        "radial": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "tangential": [
+          0.0,
+          0.0
+        ]
+      },
+      "model": "equi62_lut1d",
+      "pose": "front_three_quarter",
+      "simultaneous": false,
+      "view_id": "front_three_quarter__equi62_lut1d",
+      "width": 640
+    },
+    {
+      "camera_index": 0,
+      "camera_to_world": [
+        [
+          -0.7071067811865477,
+          -0.17149858514250882,
+          0.6859943405700355,
+          -756.2913482585875
+        ],
+        [
+          1.3877787807814457e-17,
+          -0.9701425001453321,
+          -0.24253562503633294,
+          325.6307577270029
+        ],
+        [
+          0.7071067811865477,
+          -0.1714985851425088,
+          0.6859943405700353,
+          -804.0509529491849
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "height": 480,
+      "intrinsics": {
+        "cx": 320.0,
+        "cy": 240.0,
+        "fx": 656.0972293053748,
+        "fy": 656.0972293053748,
+        "radial": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "tangential": [
+          0.0,
+          0.0
+        ]
+      },
+      "model": "pinhole32",
+      "pose": "rear_three_quarter",
+      "simultaneous": false,
+      "view_id": "rear_three_quarter__pinhole32",
+      "width": 640
+    },
+    {
+      "camera_index": 0,
+      "camera_to_world": [
+        [
+          -0.7071067811865477,
+          -0.17149858514250882,
+          0.6859943405700355,
+          -756.2913482585875
+        ],
+        [
+          1.3877787807814457e-17,
+          -0.9701425001453321,
+          -0.24253562503633294,
+          325.6307577270029
+        ],
+        [
+          0.7071067811865477,
+          -0.1714985851425088,
+          0.6859943405700353,
+          -804.0509529491849
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "height": 480,
+      "intrinsics": {
+        "cx": 320.0,
+        "cy": 240.0,
+        "fx": 458.3662361046586,
+        "fy": 458.3662361046586,
+        "lut_entries": 1024,
+        "lut_step": 0.0008820492453842039,
+        "radial": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "tangential": [
+          0.0,
+          0.0
+        ]
+      },
+      "model": "equi62_lut1d",
+      "pose": "rear_three_quarter",
+      "simultaneous": false,
+      "view_id": "rear_three_quarter__equi62_lut1d",
+      "width": 640
+    },
+    {
+      "camera_index": 0,
+      "camera_to_world": [
+        [
+          0.7071067811865475,
+          -0.4579565896743105,
+          0.5387724584403654,
+          -593.982960063295
+        ],
+        [
+          -2.7755575615628914e-17,
+          -0.7619393177594593,
+          -0.6476484200955404,
+          772.2573315228449
+        ],
+        [
+          0.7071067811865476,
+          0.45795658967431047,
+          -0.5387724584403653,
+          546.2233553726974
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "height": 480,
+      "intrinsics": {
+        "cx": 320.0,
+        "cy": 240.0,
+        "fx": 656.0972293053748,
+        "fy": 656.0972293053748,
+        "radial": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "tangential": [
+          0.0,
+          0.0
+        ]
+      },
+      "model": "pinhole32",
+      "pose": "elevated_three_quarter",
+      "simultaneous": false,
+      "view_id": "elevated_three_quarter__pinhole32",
+      "width": 640
+    },
+    {
+      "camera_index": 0,
+      "camera_to_world": [
+        [
+          0.7071067811865475,
+          -0.4579565896743105,
+          0.5387724584403654,
+          -593.982960063295
+        ],
+        [
+          -2.7755575615628914e-17,
+          -0.7619393177594593,
+          -0.6476484200955404,
+          772.2573315228449
+        ],
+        [
+          0.7071067811865476,
+          0.45795658967431047,
+          -0.5387724584403653,
+          546.2233553726974
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "height": 480,
+      "intrinsics": {
+        "cx": 320.0,
+        "cy": 240.0,
+        "fx": 458.3662361046586,
+        "fy": 458.3662361046586,
+        "lut_entries": 1024,
+        "lut_step": 0.0008820492453842039,
+        "radial": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "tangential": [
+          0.0,
+          0.0
+        ]
+      },
+      "model": "equi62_lut1d",
+      "pose": "elevated_three_quarter",
+      "simultaneous": false,
+      "view_id": "elevated_three_quarter__equi62_lut1d",
+      "width": 640
+    },
+    {
+      "camera_index": 0,
+      "camera_to_world": [
+        [
+          0.7071067811865475,
+          0.23359302549309996,
+          -0.667408644266,
+          735.801089833972
+        ],
+        [
+          1.3877787807814457e-17,
+          -0.9438583563660177,
+          -0.33035042472810605,
+          422.4443454320584
+        ],
+        [
+          -0.7071067811865476,
+          0.2335930254930999,
+          -0.6674086442660001,
+          688.0414851433743
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "height": 480,
+      "intrinsics": {
+        "cx": 320.0,
+        "cy": 240.0,
+        "fx": 656.0972293053748,
+        "fy": 656.0972293053748,
+        "radial": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "tangential": [
+          0.0,
+          0.0
+        ]
+      },
+      "model": "pinhole32",
+      "pose": "orbit_4_mixed_models",
+      "simultaneous": true,
+      "view_id": "orbit_4_mixed_models__cam0__pinhole32",
+      "width": 640
+    },
+    {
+      "camera_index": 1,
+      "camera_to_world": [
+        [
+          0.7071067811865477,
+          -0.23359302549309988,
+          0.6674086442659998,
+          -735.8010898339719
+        ],
+        [
+          -2.7755575615628914e-17,
+          -0.9438583563660174,
+          -0.33035042472810605,
+          422.4443454320584
+        ],
+        [
+          0.7071067811865474,
+          0.23359302549309993,
+          -0.6674086442660001,
+          688.0414851433744
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "height": 480,
+      "intrinsics": {
+        "cx": 320.0,
+        "cy": 240.0,
+        "fx": 458.3662361046586,
+        "fy": 458.3662361046586,
+        "lut_entries": 1024,
+        "lut_step": 0.0008820492453842039,
+        "radial": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "tangential": [
+          0.0,
+          0.0
+        ]
+      },
+      "model": "equi62_lut1d",
+      "pose": "orbit_4_mixed_models",
+      "simultaneous": true,
+      "view_id": "orbit_4_mixed_models__cam1__equi62_lut1d",
+      "width": 640
+    },
+    {
+      "camera_index": 2,
+      "camera_to_world": [
+        [
+          -0.7071067811865477,
+          -0.23359302549309996,
+          0.667408644266,
+          -735.8010898339721
+        ],
+        [
+          1.3877787807814457e-17,
+          -0.9438583563660177,
+          -0.33035042472810605,
+          422.4443454320584
+        ],
+        [
+          0.7071067811865476,
+          -0.2335930254930999,
+          0.6674086442659999,
+          -783.5606945245695
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "height": 480,
+      "intrinsics": {
+        "cx": 320.0,
+        "cy": 240.0,
+        "fx": 656.0972293053748,
+        "fy": 656.0972293053748,
+        "radial": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "tangential": [
+          0.0,
+          0.0
+        ]
+      },
+      "model": "pinhole32",
+      "pose": "orbit_4_mixed_models",
+      "simultaneous": true,
+      "view_id": "orbit_4_mixed_models__cam2__pinhole32",
+      "width": 640
+    },
+    {
+      "camera_index": 3,
+      "camera_to_world": [
+        [
+          -0.7071067811865477,
+          0.2335930254930999,
+          -0.6674086442659998,
+          735.8010898339718
+        ],
+        [
+          0.0,
+          -0.9438583563660174,
+          -0.33035042472810605,
+          422.4443454320584
+        ],
+        [
+          -0.7071067811865474,
+          -0.2335930254931,
+          0.667408644266,
+          -783.5606945245697
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "height": 480,
+      "intrinsics": {
+        "cx": 320.0,
+        "cy": 240.0,
+        "fx": 458.3662361046586,
+        "fy": 458.3662361046586,
+        "lut_entries": 1024,
+        "lut_step": 0.0008820492453842039,
+        "radial": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "tangential": [
+          0.0,
+          0.0
+        ]
+      },
+      "model": "equi62_lut1d",
+      "pose": "orbit_4_mixed_models",
+      "simultaneous": true,
+      "view_id": "orbit_4_mixed_models__cam3__equi62_lut1d",
+      "width": 640
+    }
+  ],
+  "outputs": [
+    {
+      "average_luminance": 0.8344968286361891,
+      "display_png": "front_three_quarter__pinhole32.png",
+      "display_png_sha256": "5aff37582fcb609044f942f8a279c25f45085b7bdb960188d1bb92e9231df635",
+      "linear_exr": "front_three_quarter__pinhole32.exr",
+      "linear_exr_sha256": "8ce64dc7e1aa39edb2791e151b14a4d8586641d79e6e819a186e70aa14b815f2",
+      "view_id": "front_three_quarter__pinhole32"
+    },
+    {
+      "average_luminance": 0.8636798453499684,
+      "display_png": "front_three_quarter__equi62_lut1d.png",
+      "display_png_sha256": "ada34e140b6be40f23e7a419d1df9e07904a140509d7ff8d761f1f3b783d1be9",
+      "linear_exr": "front_three_quarter__equi62_lut1d.exr",
+      "linear_exr_sha256": "b8ca68f2df83aa58b190d62db258e36168fd3a0ba74d23aceabde9c879fe3de3",
+      "view_id": "front_three_quarter__equi62_lut1d"
+    },
+    {
+      "average_luminance": 0.8295946392586027,
+      "display_png": "rear_three_quarter__pinhole32.png",
+      "display_png_sha256": "b6f9c0e8f45416d00ff7cc0a4222d5e898236fbe347ae03758720411b13590f3",
+      "linear_exr": "rear_three_quarter__pinhole32.exr",
+      "linear_exr_sha256": "d0c8991e85284f1de0e0085ff8cf467e4f04cc6e3667d318b0208d886c10b555",
+      "view_id": "rear_three_quarter__pinhole32"
+    },
+    {
+      "average_luminance": 0.8614524599674117,
+      "display_png": "rear_three_quarter__equi62_lut1d.png",
+      "display_png_sha256": "93fe7f514a93d507cce61b70bc801fb54f295609626cc99759312aaed918d006",
+      "linear_exr": "rear_three_quarter__equi62_lut1d.exr",
+      "linear_exr_sha256": "115fcae8b3251f2d10da3dc37901633333b9afd79056e604a4fea59a01d6bd75",
+      "view_id": "rear_three_quarter__equi62_lut1d"
+    },
+    {
+      "average_luminance": 0.8299910491741622,
+      "display_png": "elevated_three_quarter__pinhole32.png",
+      "display_png_sha256": "6d60a4a1a5d3cb45fdea38935de9cb0f6db56c5404491b470203df8c169aa13a",
+      "linear_exr": "elevated_three_quarter__pinhole32.exr",
+      "linear_exr_sha256": "3f643d881787dfe233431a382abbc3f9124da31eaca81df2fce8a413cde0768c",
+      "view_id": "elevated_three_quarter__pinhole32"
+    },
+    {
+      "average_luminance": 0.8615636556730596,
+      "display_png": "elevated_three_quarter__equi62_lut1d.png",
+      "display_png_sha256": "c0555532fa188b95c2a277889481ed9be3c7235c51c758fe448061bc9db641e2",
+      "linear_exr": "elevated_three_quarter__equi62_lut1d.exr",
+      "linear_exr_sha256": "77182737f71010b006c21ec65d9e237e120b7ae233268b7e60f15d3b3467219e",
+      "view_id": "elevated_three_quarter__equi62_lut1d"
+    },
+    {
+      "average_luminance": 0.8332097815121979,
+      "display_png": "orbit_4_mixed_models__cam0__pinhole32.png",
+      "display_png_sha256": "b8d835596935808856df97eafbf98e20101d7448b317b37a807328331a770efe",
+      "linear_exr": "orbit_4_mixed_models__cam0__pinhole32.exr",
+      "linear_exr_sha256": "5f055e3023efe840e4c241e3db470f0e8fa5fe4c8d2552ec74d7162674420259",
+      "view_id": "orbit_4_mixed_models__cam0__pinhole32"
+    },
+    {
+      "average_luminance": 0.8630507702214135,
+      "display_png": "orbit_4_mixed_models__cam1__equi62_lut1d.png",
+      "display_png_sha256": "336c20774f435c6f0122ba42384353855ae8d556880180d174f4eb66d63cc65d",
+      "linear_exr": "orbit_4_mixed_models__cam1__equi62_lut1d.exr",
+      "linear_exr_sha256": "b0800856ffda1e7b3cf79d8048eb997601280db523d242705f2cea7ba8fbada3",
+      "view_id": "orbit_4_mixed_models__cam1__equi62_lut1d"
+    },
+    {
+      "average_luminance": 0.8279866254665518,
+      "display_png": "orbit_4_mixed_models__cam2__pinhole32.png",
+      "display_png_sha256": "818d652dd9c284a9665c3c01423c5e952638e6c5e479118389afebdac5b57610",
+      "linear_exr": "orbit_4_mixed_models__cam2__pinhole32.exr",
+      "linear_exr_sha256": "5903a8a1cb70d360efce00e771e588a81a3b9f72d33fe360e0a8c2b7ece23aac",
+      "view_id": "orbit_4_mixed_models__cam2__pinhole32"
+    },
+    {
+      "average_luminance": 0.8607416369162549,
+      "display_png": "orbit_4_mixed_models__cam3__equi62_lut1d.png",
+      "display_png_sha256": "7bb0b6597b7dec0e74b0327bec8ffb6a00bdc7e07853c6a837a2ca860622ba6e",
+      "linear_exr": "orbit_4_mixed_models__cam3__equi62_lut1d.exr",
+      "linear_exr_sha256": "e2cd757040324158da08c351e6b0fda2d386e02c3a2051b2d01d9b6bf693f291",
+      "view_id": "orbit_4_mixed_models__cam3__equi62_lut1d"
+    }
+  ],
+  "reference_gate_passed": true,
+  "reference_metrics": [
+    {
+      "linear": {
+        "max_abs": 0.0,
+        "max_abs_threshold": 0.05,
+        "passed": true,
+        "rmse": 0.0,
+        "rmse_threshold": 0.005
+      },
+      "perceptual": {
+        "max_abs": 0.0,
+        "max_abs_threshold": 8.0,
+        "mean_abs": 0.0,
+        "mean_abs_threshold": 1.0,
+        "passed": true
+      },
+      "reference_exr_sha256": "8ce64dc7e1aa39edb2791e151b14a4d8586641d79e6e819a186e70aa14b815f2",
+      "reference_png_sha256": "5aff37582fcb609044f942f8a279c25f45085b7bdb960188d1bb92e9231df635",
+      "view_id": "front_three_quarter__pinhole32"
+    },
+    {
+      "linear": {
+        "max_abs": 0.0,
+        "max_abs_threshold": 0.05,
+        "passed": true,
+        "rmse": 0.0,
+        "rmse_threshold": 0.005
+      },
+      "perceptual": {
+        "max_abs": 0.0,
+        "max_abs_threshold": 8.0,
+        "mean_abs": 0.0,
+        "mean_abs_threshold": 1.0,
+        "passed": true
+      },
+      "reference_exr_sha256": "b8ca68f2df83aa58b190d62db258e36168fd3a0ba74d23aceabde9c879fe3de3",
+      "reference_png_sha256": "ada34e140b6be40f23e7a419d1df9e07904a140509d7ff8d761f1f3b783d1be9",
+      "view_id": "front_three_quarter__equi62_lut1d"
+    },
+    {
+      "linear": {
+        "max_abs": 0.0,
+        "max_abs_threshold": 0.05,
+        "passed": true,
+        "rmse": 0.0,
+        "rmse_threshold": 0.005
+      },
+      "perceptual": {
+        "max_abs": 0.0,
+        "max_abs_threshold": 8.0,
+        "mean_abs": 0.0,
+        "mean_abs_threshold": 1.0,
+        "passed": true
+      },
+      "reference_exr_sha256": "d0c8991e85284f1de0e0085ff8cf467e4f04cc6e3667d318b0208d886c10b555",
+      "reference_png_sha256": "b6f9c0e8f45416d00ff7cc0a4222d5e898236fbe347ae03758720411b13590f3",
+      "view_id": "rear_three_quarter__pinhole32"
+    },
+    {
+      "linear": {
+        "max_abs": 0.0,
+        "max_abs_threshold": 0.05,
+        "passed": true,
+        "rmse": 0.0,
+        "rmse_threshold": 0.005
+      },
+      "perceptual": {
+        "max_abs": 0.0,
+        "max_abs_threshold": 8.0,
+        "mean_abs": 0.0,
+        "mean_abs_threshold": 1.0,
+        "passed": true
+      },
+      "reference_exr_sha256": "115fcae8b3251f2d10da3dc37901633333b9afd79056e604a4fea59a01d6bd75",
+      "reference_png_sha256": "93fe7f514a93d507cce61b70bc801fb54f295609626cc99759312aaed918d006",
+      "view_id": "rear_three_quarter__equi62_lut1d"
+    },
+    {
+      "linear": {
+        "max_abs": 0.0,
+        "max_abs_threshold": 0.05,
+        "passed": true,
+        "rmse": 0.0,
+        "rmse_threshold": 0.005
+      },
+      "perceptual": {
+        "max_abs": 0.0,
+        "max_abs_threshold": 8.0,
+        "mean_abs": 0.0,
+        "mean_abs_threshold": 1.0,
+        "passed": true
+      },
+      "reference_exr_sha256": "3f643d881787dfe233431a382abbc3f9124da31eaca81df2fce8a413cde0768c",
+      "reference_png_sha256": "6d60a4a1a5d3cb45fdea38935de9cb0f6db56c5404491b470203df8c169aa13a",
+      "view_id": "elevated_three_quarter__pinhole32"
+    },
+    {
+      "linear": {
+        "max_abs": 0.0,
+        "max_abs_threshold": 0.05,
+        "passed": true,
+        "rmse": 0.0,
+        "rmse_threshold": 0.005
+      },
+      "perceptual": {
+        "max_abs": 0.0,
+        "max_abs_threshold": 8.0,
+        "mean_abs": 0.0,
+        "mean_abs_threshold": 1.0,
+        "passed": true
+      },
+      "reference_exr_sha256": "77182737f71010b006c21ec65d9e237e120b7ae233268b7e60f15d3b3467219e",
+      "reference_png_sha256": "c0555532fa188b95c2a277889481ed9be3c7235c51c758fe448061bc9db641e2",
+      "view_id": "elevated_three_quarter__equi62_lut1d"
+    },
+    {
+      "linear": {
+        "max_abs": 0.0,
+        "max_abs_threshold": 0.05,
+        "passed": true,
+        "rmse": 0.0,
+        "rmse_threshold": 0.005
+      },
+      "perceptual": {
+        "max_abs": 0.0,
+        "max_abs_threshold": 8.0,
+        "mean_abs": 0.0,
+        "mean_abs_threshold": 1.0,
+        "passed": true
+      },
+      "reference_exr_sha256": "5f055e3023efe840e4c241e3db470f0e8fa5fe4c8d2552ec74d7162674420259",
+      "reference_png_sha256": "b8d835596935808856df97eafbf98e20101d7448b317b37a807328331a770efe",
+      "view_id": "orbit_4_mixed_models__cam0__pinhole32"
+    },
+    {
+      "linear": {
+        "max_abs": 0.0,
+        "max_abs_threshold": 0.05,
+        "passed": true,
+        "rmse": 0.0,
+        "rmse_threshold": 0.005
+      },
+      "perceptual": {
+        "max_abs": 0.0,
+        "max_abs_threshold": 8.0,
+        "mean_abs": 0.0,
+        "mean_abs_threshold": 1.0,
+        "passed": true
+      },
+      "reference_exr_sha256": "b0800856ffda1e7b3cf79d8048eb997601280db523d242705f2cea7ba8fbada3",
+      "reference_png_sha256": "336c20774f435c6f0122ba42384353855ae8d556880180d174f4eb66d63cc65d",
+      "view_id": "orbit_4_mixed_models__cam1__equi62_lut1d"
+    },
+    {
+      "linear": {
+        "max_abs": 0.0,
+        "max_abs_threshold": 0.05,
+        "passed": true,
+        "rmse": 0.0,
+        "rmse_threshold": 0.005
+      },
+      "perceptual": {
+        "max_abs": 0.0,
+        "max_abs_threshold": 8.0,
+        "mean_abs": 0.0,
+        "mean_abs_threshold": 1.0,
+        "passed": true
+      },
+      "reference_exr_sha256": "5903a8a1cb70d360efce00e771e588a81a3b9f72d33fe360e0a8c2b7ece23aac",
+      "reference_png_sha256": "818d652dd9c284a9665c3c01423c5e952638e6c5e479118389afebdac5b57610",
+      "view_id": "orbit_4_mixed_models__cam2__pinhole32"
+    },
+    {
+      "linear": {
+        "max_abs": 0.0,
+        "max_abs_threshold": 0.05,
+        "passed": true,
+        "rmse": 0.0,
+        "rmse_threshold": 0.005
+      },
+      "perceptual": {
+        "max_abs": 0.0,
+        "max_abs_threshold": 8.0,
+        "mean_abs": 0.0,
+        "mean_abs_threshold": 1.0,
+        "passed": true
+      },
+      "reference_exr_sha256": "e2cd757040324158da08c351e6b0fda2d386e02c3a2051b2d01d9b6bf693f291",
+      "reference_png_sha256": "7bb0b6597b7dec0e74b0327bec8ffb6a00bdc7e07853c6a837a2ca860622ba6e",
+      "view_id": "orbit_4_mixed_models__cam3__equi62_lut1d"
+    }
+  ],
+  "render_settings": {
+    "denoise": false,
+    "environment_linear_rgb": [
+      0.65,
+      0.75,
+      1.0
+    ],
+    "formats": [
+      "scene_linear_exr",
+      "display_png"
+    ],
+    "height": 480,
+    "max_bounces": 4,
+    "samples_per_pixel": 16,
+    "width": 640
+  },
+  "sample_seed": 20260721,
+  "scene_bounds": {
+    "max": [
+      138.09452699851988,
+      194.88204107119378,
+      188.97648750924475
+    ],
+    "min": [
+      -138.09452699851988,
+      -78.39926652355194,
+      -284.49569689044
+    ]
+  },
+  "scene_stats": {
+    "materials": 15,
+    "textures": 14,
+    "triangles": 1988
+  },
+  "schema": "public_acceptance_reference_bundle_v1",
+  "simultaneous_submission_id": "orbit_4_mixed_models-seed-20260727",
+  "source_revisions": {
+    "openpbr_examples": 83,
+    "openpbr_repository": "AcademySoftwareFoundation/OpenPBR",
+    "openpbr_revision": "f8d6d947dfae4c9b599965a86c22826ea7a8dbfb",
+    "usd_repository": "usd-wg/assets",
+    "usd_revision": "1b91f3c464891af259d51d9ee9ee9e6c357f7079",
+    "usd_stage": "full_assets/Vehicles/USD_Mini_Car_Kit/assets/vehicles/vehicleVariants.usda"
+  }
+}

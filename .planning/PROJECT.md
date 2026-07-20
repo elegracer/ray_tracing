@@ -31,13 +31,14 @@ Composed scene, camera, light, and material meaning must stay consistent across 
 - ✓ `SceneIR v2` now carries the official OpenPBR 1.1.1 parameter/default contract, MaterialX color3 texture nodes and displacement metadata, typed connected inputs, explicit color spaces, and deterministic projections for every legacy material and texture variant without changing the v1 execution path — `v2.0`
 - ✓ The opt-in OpenPBR production path compiles base/specular/transmission/emission color3 connections into a compact CPU/GPU sidecar, evaluates existing textures at the hit point, and applies shared raw/linear/sRGB source-to-linear semantics — `v2.0`
 - ✓ Legacy diffuse, metal, dielectric, emissive, and isotropic-volume mappings are documented and gated by deterministic compatibility images; lossy microfacet, transport, and emission-unit assumptions emit localized diagnostics — `v2.0`
+- ✓ The pinned ASWF Vehicles and official OpenPBR v1.1.1 corpora now pass the product import/compile path and a deterministic 10-view, 20-image EXR/PNG acceptance bundle with exact camera, provenance, hash, simultaneous-submission, and reference-error evidence — `v2.0`
 
 ### Active
 
 - Align scene identity, hierarchy, geometry, transforms, cameras, lights, instancing, units, assets, and material binding with composed OpenUSD semantics — `v2.0`
 - Align material inputs with OpenPBR/MaterialX and implement matched, energy-aware BSDF evaluation, sampling, and PDFs across CPU/GPU — `v2.0`
 - Replace linear all-light scans and centroid lighting with scalable light distributions, MIS, then ReSTIR DI; keep GI/PT and neural caching evidence-gated — `v2.0`
-- Add reference USD/OpenPBR scenes, physical invariants, temporal tests, image metrics, and quality-normalized performance gates — `v2.0`
+- Extend physical invariants, temporal tests, image metrics, and quality-normalized performance gates beyond the completed pinned USD/OpenPBR release corpus — `v2.0`
 
 ### Out of Scope
 
@@ -110,4 +111,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-19 after OpenPBR legacy compatibility closure*
+*Last updated: 2026-07-21 after public USD/OpenPBR acceptance closure*

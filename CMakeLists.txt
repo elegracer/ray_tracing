@@ -81,6 +81,12 @@ if(RT_ENABLE_PUBLIC_ACCEPTANCE_PROBES AND NOT RT_ENABLE_OPENUSD)
     message(FATAL_ERROR "RT_ENABLE_PUBLIC_ACCEPTANCE_PROBES requires RT_ENABLE_OPENUSD=ON")
 endif()
 
+if(RT_ENABLE_PUBLIC_ACCEPTANCE_PROBES)
+    find_package(MaterialX CONFIG REQUIRED)
+    find_package(OpenSSL REQUIRED)
+    find_package(OpenEXR REQUIRED)
+endif()
+
 if(RT_ENABLE_OPENUSD)
     find_package(pxr CONFIG REQUIRED)
     if(TARGET usd_m)
@@ -227,6 +233,13 @@ target_link_libraries(core
 )
 if(RT_ENABLE_OPENUSD)
     target_link_libraries(core PRIVATE ${RT_OPENUSD_TARGETS})
+endif()
+if(RT_ENABLE_PUBLIC_ACCEPTANCE_PROBES)
+    target_sources(core PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/materialx_openpbr_loader.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/scene/materialx_openpbr_loader.h
+    )
+    target_link_libraries(core PRIVATE MaterialXCore MaterialXFormat)
 endif()
 
 # utils
@@ -500,9 +513,18 @@ if(RT_ENABLE_PUBLIC_ACCEPTANCE_PROBES)
             -P ${RT_PUBLIC_ACCEPTANCE_ASSET_SCRIPT})
     add_test(NAME test_public_usd_scene_import COMMAND test_public_usd_scene_import
         ${public_usd_acceptance_stage})
+    string(CONCAT public_openpbr_acceptance_examples
+        "${RT_PUBLIC_ACCEPTANCE_ASSET_ROOT}/"
+        "${RT_PUBLIC_ACCEPTANCE_ASSET_openpbr_examples_CACHE_DIR}/examples")
+    add_executable(test_public_openpbr_materials
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_public_openpbr_materials.cpp)
+    target_link_libraries(test_public_openpbr_materials PRIVATE core)
+    add_test(NAME test_public_openpbr_materials COMMAND test_public_openpbr_materials
+        ${public_openpbr_acceptance_examples})
     set_tests_properties(
         test_public_acceptance_asset_integrity
         test_public_usd_scene_import
+        test_public_openpbr_materials
         PROPERTIES LABELS "acceptance;public-assets")
 endif()
 
@@ -642,6 +664,40 @@ target_link_libraries(realtime_gpu PUBLIC
     CUDA::cuda_driver
     dl
 )
+
+if(RT_ENABLE_PUBLIC_ACCEPTANCE_PROBES)
+    add_executable(render_public_acceptance
+        ${CMAKE_CURRENT_SOURCE_DIR}/utils/render_public_acceptance.cpp)
+    target_compile_definitions(render_public_acceptance PRIVATE
+        RT_ACCEPTANCE_USD_REVISION="${RT_PUBLIC_ACCEPTANCE_ASSET_usd_wg_vehicles_REVISION}"
+        RT_ACCEPTANCE_OPENPBR_REVISION="${RT_PUBLIC_ACCEPTANCE_ASSET_openpbr_examples_REVISION}"
+        RT_ACCEPTANCE_USD_ENTRYPOINT="${RT_PUBLIC_ACCEPTANCE_ASSET_usd_wg_vehicles_ENTRYPOINT}"
+    )
+    target_link_libraries(render_public_acceptance PRIVATE
+        realtime_gpu core OpenSSL::Crypto OpenEXR::OpenEXR)
+    set(public_acceptance_reference_dir
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/references/public_acceptance")
+    set(public_acceptance_render_output_dir
+        "${CMAKE_CURRENT_BINARY_DIR}/public-acceptance-render")
+    add_test(NAME test_public_render_acceptance COMMAND render_public_acceptance
+        --stage ${public_usd_acceptance_stage}
+        --openpbr-dir ${public_openpbr_acceptance_examples}
+        --output-dir ${public_acceptance_render_output_dir}
+        --reference-dir ${public_acceptance_reference_dir})
+    set_tests_properties(test_public_render_acceptance PROPERTIES
+        LABELS "acceptance;public-assets;gpu"
+        TIMEOUT 900)
+    add_custom_target(approve_public_acceptance_references
+        COMMAND render_public_acceptance
+            --stage ${public_usd_acceptance_stage}
+            --openpbr-dir ${public_openpbr_acceptance_examples}
+            --output-dir ${public_acceptance_render_output_dir}
+            --reference-dir ${public_acceptance_reference_dir}
+            --approve-references
+        DEPENDS render_public_acceptance
+        COMMENT "Rendering and approving the pinned public acceptance references"
+        VERBATIM)
+endif()
 
 add_executable(test_optix_direction)
 target_sources(test_optix_direction

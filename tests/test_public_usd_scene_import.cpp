@@ -1,4 +1,5 @@
 #include "scene/openusd_stage_importer.h"
+#include "scene/realtime_scene_adapter.h"
 
 #include <cstdlib>
 #include <cstddef>
@@ -49,11 +50,20 @@ int main(int argc, const char* argv[]) {
                 "public stage did not compile mesh primvars, material subsets, connected "
                 "PreviewSurface materials, and resolved image textures");
         }
+        const rt::PackedScene realtime = rt::scene::adapt_scene_ir_v2_to_realtime(scene).pack();
+        if (realtime.triangle_count == 0 || realtime.material_count == 0
+            || realtime.texture_count == 0) {
+            throw std::runtime_error(
+                "public stage did not compile into realtime triangles, materials, and textures");
+        }
         std::cout << "imported public USD acceptance stage with " << scene.prims().size()
                   << " SceneIR v2 prims; meshes_with_primvars=" << meshes_with_primvars
                   << ", meshes_with_material_subsets=" << meshes_with_material_subsets
                   << ", connected_surface_materials=" << connected_surface_materials
-                  << ", resolved_image_textures=" << resolved_image_textures << '\n';
+                  << ", resolved_image_textures=" << resolved_image_textures
+                  << ", realtime_triangles=" << realtime.triangle_count
+                  << ", realtime_materials=" << realtime.material_count
+                  << ", realtime_textures=" << realtime.texture_count << '\n';
     } catch (const std::exception& error) {
         std::cerr << "public USD acceptance import failed: " << error.what() << '\n';
         return EXIT_FAILURE;

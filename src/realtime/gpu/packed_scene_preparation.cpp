@@ -59,6 +59,14 @@ PackedTriangle pack_triangle(const TrianglePrimitive& triangle) {
         .p1 = triangle.p1.cast<float>(),
         .p2 = triangle.p2.cast<float>(),
         .material_index = triangle.material_index,
+        .n0 = triangle.n0.cast<float>(),
+        .has_vertex_normals = triangle.has_vertex_normals ? 1 : 0,
+        .n1 = triangle.n1.cast<float>(),
+        .has_texcoords = triangle.has_texcoords ? 1 : 0,
+        .n2 = triangle.n2.cast<float>(),
+        .uv0 = triangle.uv0.cast<float>(),
+        .uv1 = triangle.uv1.cast<float>(),
+        .uv2 = triangle.uv2.cast<float>(),
     };
 }
 
@@ -147,6 +155,9 @@ PackedTexture pack_texture(const TextureDesc& texture, std::vector<Eigen::Vector
                 packed.odd_texture = value.odd_texture;
             } else if constexpr (std::is_same_v<T, ImageTextureDesc>) {
                 packed.type = 2;
+                packed.u_address_mode = static_cast<int>(value.u_address_mode);
+                packed.v_address_mode = static_cast<int>(value.v_address_mode);
+                packed.filter_type = static_cast<int>(value.filter_type);
                 packed.image_offset = static_cast<int>(image_texels.size());
                 const cv::Mat image = load_texture_image_rgb32f(value.path);
                 if (image.empty()) {

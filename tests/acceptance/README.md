@@ -48,8 +48,20 @@ fit from the version-pinned composed stage bounds and recorded in the manifest.
 Non-empty images alone do not pass: every declared artifact and reference
 comparison must be present and valid.
 
-Configure with `RT_ENABLE_PUBLIC_ACCEPTANCE_PROBES=ON` after fetching to add
-the corpus integrity test and the real `import_openusd_stage` Vehicles probe to
-CTest. The probe intentionally remains outside the default compatibility suite:
-it must stay red while the product rejects required schemas, and become a
-release gate only when the full import-to-realtime path passes.
+Configure with both `RT_ENABLE_OPENUSD=ON` and
+`RT_ENABLE_PUBLIC_ACCEPTANCE_PROBES=ON` after fetching. This adds the corpus
+integrity gate, the real `import_openusd_stage` Vehicles probe, compilation of
+all 83 official OpenPBR examples through MaterialX, and the full reference
+render to CTest:
+
+```bash
+cmake --build build-openusd-acceptance --target render_public_acceptance
+ctest --test-dir build-openusd-acceptance -R public --output-on-failure
+```
+
+`test_public_render_acceptance` writes its deliverable to
+`build-openusd-acceptance/public-acceptance-render`: 10 scene-linear EXRs, 10
+display PNGs, and `manifest.json`. The repository-approved comparison bundle is
+under `tests/references/public_acceptance`. Updating it is an explicit review
+operation via `approve_public_acceptance_references`; ordinary test runs never
+rewrite approved references.

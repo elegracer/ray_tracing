@@ -17,7 +17,7 @@ Baseline: `.planning/v2.0-BASELINE.json`
 - [x] **Phase 3: OpenPBR Core And Physical BSDFs** — the official OpenPBR 1.1.1 authoring contract and shared CPU/GPU evaluator run through an opt-in SceneIR v2 production path with matched sampling, direct response, emission, four supported MaterialX color3 connections, explicit source-to-linear conversion, compact GPU sidecar storage, deterministic linear reference gates, documented legacy mappings, and five fixed-seed compatibility image comparisons.
 - [x] **Phase 4: OpenUSD And MaterialX I/O** — all scoped OpenUSD requirements, deterministic round trips, supported connected MaterialX color3 graph import, and shared coat/fuzz/thin-film/dispersion/subsurface transport are complete.
 - [ ] **Phase 5: Scalable Lighting And GPU Scheduling** — explicit light distributions, environment sampling, MIS, ReSTIR DI, persistent scheduling/launch data, and AS update/refit/instancing.
-- [ ] **Phase 6: Quality/Performance Closure And Advanced Reuse** — reference corpus, physical/temporal/image gates, NRD comparison, capability-gated ReSTIR GI/PT and neural cache experiments.
+- [ ] **Phase 6: Quality/Performance Closure And Advanced Reuse** — the pinned VAL-02 USD/OpenPBR reference corpus and image gates are complete; broader physical/temporal coverage, NRD comparison, and capability-gated ReSTIR GI/PT and neural cache experiments remain.
 
 ## Ordering Rules
 

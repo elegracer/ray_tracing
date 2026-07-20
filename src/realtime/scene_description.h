@@ -21,8 +21,24 @@ struct CheckerTextureDesc {
     int odd_texture = -1;
 };
 
+enum class TextureAddressMode {
+    constant,
+    clamp,
+    periodic,
+    mirror,
+};
+
+enum class TextureFilterType {
+    closest,
+    linear,
+    cubic,
+};
+
 struct ImageTextureDesc {
     std::string path;
+    TextureAddressMode u_address_mode = TextureAddressMode::clamp;
+    TextureAddressMode v_address_mode = TextureAddressMode::clamp;
+    TextureFilterType filter_type = TextureFilterType::closest;
 };
 
 struct NoiseTextureDesc {
@@ -83,6 +99,14 @@ struct TrianglePrimitive {
     Eigen::Vector3d p0 = Eigen::Vector3d::Zero();
     Eigen::Vector3d p1 = Eigen::Vector3d::Zero();
     Eigen::Vector3d p2 = Eigen::Vector3d::Zero();
+    Eigen::Vector3d n0 = Eigen::Vector3d::Zero();
+    Eigen::Vector3d n1 = Eigen::Vector3d::Zero();
+    Eigen::Vector3d n2 = Eigen::Vector3d::Zero();
+    Eigen::Vector2d uv0 = Eigen::Vector2d::Zero();
+    Eigen::Vector2d uv1 = Eigen::Vector2d::Zero();
+    Eigen::Vector2d uv2 = Eigen::Vector2d::Zero();
+    bool has_vertex_normals = false;
+    bool has_texcoords = false;
     bool dynamic = false;
 };
 

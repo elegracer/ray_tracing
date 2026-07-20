@@ -12,9 +12,15 @@ See: .planning/PROJECT.md (updated 2026-07-19)
 Phase: 5 of 6 — Scalable Lighting And GPU Scheduling
 Plan: Add explicit light distributions, solid-angle PDFs, MIS, ReSTIR DI, persistent launch data, and measured AS update/refit/instancing paths
 Status: Active milestone, Phase 5 unbiased direct-lighting baseline in progress
-Last activity: 2026-07-20 - Added explicit emissive/environment sampling and CPU transformed-emitter support
+Last activity: 2026-07-21 - Closed VAL-02 with the pinned public USD/OpenPBR image bundle
 
-Progress: Phase 4 complete; Phase 5 emissive/environment baseline is green, with analytic-light execution and estimator agreement still open
+Progress: Phase 4 complete; VAL-02 public acceptance is green; Phase 5 emissive/environment baseline is green, with analytic-light execution and estimator agreement still open
+
+## VAL-02 Public Corpus Evidence
+
+The pinned ASWF USD WG `Vehicles` stage at `1b91f3c464891af259d51d9ee9ee9e6c357f7079` imports through OpenUSD into SceneIR v2 and the production realtime adapter. The probe preserves 74 prims, compiles 1,988 realtime triangles, 15 materials, and 14 image textures, and covers indexed primvars, material subsets, instances, affine transforms, and resolved assets. All 83 official OpenPBR v1.1.1 MaterialX examples at `f8d6d947dfae4c9b599965a86c22826ea7a8dbfb` parse with the official MaterialX API and compile through the production OpenPBR core without fallback.
+
+The fixed-seed acceptance runner emits 10 views at 640x480 and 16 samples per pixel: three bounds-fitted poses under both `pinhole32` and `equi62_lut1d`, plus one simultaneous mixed-model four-camera orbit submission. Every view has a scene-linear float EXR and display PNG, for 20 image files total. The manifest records source revisions, render settings, seed, exact camera transforms and intrinsics, output SHA-256 values, and the simultaneous submission identity. Approved references are checked with linear RMSE <= 0.005, linear max absolute error <= 0.05, perceptual mean absolute error <= 1, and perceptual max absolute error <= 8; the final deterministic readback is exact. The OpenUSD/public-probe configuration passes 69/69 tests and the default dependency-off configuration passes 65/65 tests.
 
 ## v2.0 Phase 1 Evidence
 
@@ -189,7 +195,7 @@ Recent decisions affecting current work:
 - OptiX temporal AOV still costs about 7.20-7.27 ms on the four-camera critical path, leaving realtime slower than the no-denoise quality profile.
 - The benchmark/image-output CLI still downloads beauty, normal, albedo, and depth by design; only the interactive viewer has a no-readback default path.
 - CUDA/OpenGL interop requires the OpenGL context and CUDA allocation to use the same NVIDIA GPU; the viewer configures PRIME render-offload on Linux, while unsupported display stacks must use `--host-readback`.
-- The first temporal reference fixture covers final_room motion/disocclusion plus exact reset parity; broader multi-scene perceptual coverage remains part of VAL-02 rather than Phase 1 reconstruction closure.
+- The pinned VAL-02 public corpus is closed; broader multi-scene perceptual coverage remains an optional Phase 6 expansion rather than a release-gate gap.
 - Single-run P99 varied materially across repeated captures, so future speed claims need repeated identical runs in addition to the now-recorded workload and environment.
 - CUDA memory telemetry is device-global rather than per-process; concurrent GPU workloads can perturb baseline and peak values.
 - OpenUSD is an optional system SDK dependency with verified OFF/ON paths; supported direct MaterialX color3 graphs compile, coat/fuzz/thin-film/dispersion/subsurface constants execute, and connected coat/fuzz/subsurface colors, NodeGraph interfaces, and fields outside the declared SceneIR subset remain fail-closed.
@@ -210,6 +216,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-07-20
-Stopped at: Phase 5 analytic-light execution tables are compiled and cross-backend gated; next consume them in CPU/GPU sampling, visibility, miss radiance, and MIS
+Last session: 2026-07-21
+Stopped at: VAL-02 public USD/OpenPBR acceptance is closed; next resume Phase 5 analytic-light sampling, visibility, miss radiance, and MIS
 Resume file: .planning/milestones/v2.0-REQUIREMENTS.md

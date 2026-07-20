@@ -133,6 +133,16 @@ struct PackedTriangle {
     float pad1 = 0.0f;
     Eigen::Vector3f p2;
     int material_index = -1;
+    Eigen::Vector3f n0;
+    int has_vertex_normals = 0;
+    Eigen::Vector3f n1;
+    int has_texcoords = 0;
+    Eigen::Vector3f n2;
+    float pad2 = 0.0f;
+    Eigen::Vector2f uv0;
+    Eigen::Vector2f uv1;
+    Eigen::Vector2f uv2;
+    Eigen::Vector2f pad3 = Eigen::Vector2f::Zero();
 };
 
 struct PackedMedium {
@@ -166,6 +176,9 @@ struct PackedTexture {
     int image_offset = 0;
     int image_width = 0;
     int image_height = 0;
+    int u_address_mode = 1;
+    int v_address_mode = 1;
+    int filter_type = 1;
     float scale = 1.0f;
     Eigen::Vector3f color = Eigen::Vector3f::Zero();
 };
