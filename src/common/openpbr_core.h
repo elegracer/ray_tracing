@@ -48,6 +48,10 @@ struct OpenPbrCoreMaterial {
     float coat_ior = 1.6f;
     float coat_darkening = 1.0f;
 
+    float thin_film_weight = 0.0f;
+    float thin_film_thickness = 0.5f;
+    float thin_film_ior = 1.4f;
+
     float emission_luminance = 0.0f;
     OpenPbrVec3 emission_color {1.0f, 1.0f, 1.0f};
 
@@ -358,6 +362,209 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE float openpbr_fresnel_dielectric(float cosine, f
     const float perpendicular =
         (cosine - eta * cos_transmitted) / openpbr_max(cosine + eta * cos_transmitted, 1e-8f);
     return 0.5f * (parallel * parallel + perpendicular * perpendicular);
+}
+
+struct OpenPbrPolarizedReflectance {
+    float p = 0.0f;
+    float s = 0.0f;
+};
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrPolarizedReflectance
+openpbr_fresnel_dielectric_polarized(float cosine, float eta) {
+    const float cosine2 = openpbr_square(openpbr_saturate(cosine));
+    const float sine2 = 1.0f - cosine2;
+    const float t0 = openpbr_max(eta * eta - sine2, 0.0f);
+    const float t1 = t0 + cosine2;
+    const float t2 = 2.0f * sqrtf(t0) * openpbr_saturate(cosine);
+    const float rs = (t1 - t2) / openpbr_max(t1 + t2, 1e-8f);
+    const float t3 = cosine2 * t0 + sine2 * sine2;
+    const float t4 = t2 * sine2;
+    const float rp = rs * (t3 - t4) / openpbr_max(t3 + t4, 1e-8f);
+    return {rp, rs};
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrPolarizedReflectance
+openpbr_fresnel_real_ior_polarized(float cosine, float relative_ior) {
+    const float cosine2 = openpbr_square(openpbr_saturate(cosine));
+    const float sine2 = 1.0f - cosine2;
+    const float ior2 = relative_ior * relative_ior;
+    const float t0 = ior2 - sine2;
+    const float magnitude = fabsf(t0);
+    const float t1 = magnitude + cosine2;
+    const float a = openpbr_safe_sqrt(0.5f * (magnitude + t0));
+    const float t2 = 2.0f * a * openpbr_saturate(cosine);
+    const float rs = (t1 - t2) / openpbr_max(t1 + t2, 1e-8f);
+    const float t3 = cosine2 * magnitude + sine2 * sine2;
+    const float t4 = t2 * sine2;
+    const float rp = rs * (t3 - t4) / openpbr_max(t3 + t4, 1e-8f);
+    return {rp, rs};
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrPolarizedReflectance
+openpbr_real_ior_reflection_phase(float cosine, float incident_ior, float transmitted_ior) {
+    const float sine2 = 1.0f - openpbr_square(openpbr_saturate(cosine));
+    const float transmitted2 = transmitted_ior * transmitted_ior;
+    const float incident2 = incident_ior * incident_ior;
+    const float a = transmitted2 - incident2 * sine2;
+    const float u = openpbr_safe_sqrt(0.5f * (a + fabsf(a)));
+    const float s_denominator = u * u - openpbr_square(incident_ior * cosine);
+    const float p_denominator = openpbr_square(transmitted2 * cosine) - incident2 * u * u;
+    return {p_denominator < 0.0f ? kOpenPbrPi : 0.0f,
+        s_denominator < 0.0f ? kOpenPbrPi : 0.0f};
+}
+
+// Belcour/Barla spectral sensitivity fit with MaterialX's default two Airy orders.
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_thin_film_sensitivity(float opd,
+    const OpenPbrVec3& shift) {
+    const float phase = 2.0f * kOpenPbrPi * opd;
+    const OpenPbrVec3 value {5.4856e-13f, 4.4201e-13f, 5.2481e-13f};
+    const OpenPbrVec3 position {1.6810e6f, 1.7953e6f, 2.2084e6f};
+    const OpenPbrVec3 variance {4.3278e9f, 9.3046e9f, 6.6121e9f};
+    OpenPbrVec3 xyz {
+        value.x * sqrtf(2.0f * kOpenPbrPi * variance.x)
+            * cosf(position.x * phase + shift.x) * expf(-variance.x * phase * phase),
+        value.y * sqrtf(2.0f * kOpenPbrPi * variance.y)
+            * cosf(position.y * phase + shift.y) * expf(-variance.y * phase * phase),
+        value.z * sqrtf(2.0f * kOpenPbrPi * variance.z)
+            * cosf(position.z * phase + shift.z) * expf(-variance.z * phase * phase),
+    };
+    xyz.x += 9.7470e-14f * sqrtf(2.0f * kOpenPbrPi * 4.5282e9f)
+             * cosf(2.2399e6f * phase + shift.x) * expf(-4.5282e9f * phase * phase);
+    return openpbr_div(xyz, 1.0685e-7f);
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_xyz_to_rgb(
+    const OpenPbrVec3& xyz) {
+    return {2.3706743f * xyz.x - 0.9000405f * xyz.y - 0.4706338f * xyz.z,
+        -0.5138850f * xyz.x + 1.4253036f * xyz.y + 0.0885814f * xyz.z,
+        0.0052982f * xyz.x - 0.0146949f * xyz.y + 1.0093968f * xyz.z};
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE float openpbr_f0_to_ior(float f0) {
+    const float root = sqrtf(openpbr_clamp(f0, 0.01f, 0.99f));
+    return (1.0f + root) / openpbr_max(1.0f - root, 1e-5f);
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE float openpbr_thin_film_transmitted_cosine(float cosine,
+    float incident_ior, float film_ior) {
+    const float ratio = incident_ior / openpbr_max(film_ior, 1e-4f);
+    const float sine2 = (1.0f - openpbr_square(openpbr_saturate(cosine))) * ratio * ratio;
+    return sine2 < 1.0f ? openpbr_safe_sqrt(1.0f - sine2) : 0.0f;
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_thin_film_airy(float cosine,
+    float thickness_nm, float incident_ior, float film_ior, const OpenPbrVec3& substrate_ior,
+    const OpenPbrVec3& generalized_reflectance, bool generalized_schlick) {
+    const float eta1 = openpbr_max(incident_ior, 1e-4f);
+    const float eta2 = openpbr_max(film_ior, 1e-4f);
+    const float cos_theta = openpbr_saturate(fabsf(cosine));
+    const float cos_theta_t = openpbr_thin_film_transmitted_cosine(cos_theta, eta1, eta2);
+    if (cos_theta_t <= 0.0f) {
+        return openpbr_make_vec3(1.0f);
+    }
+
+    const OpenPbrPolarizedReflectance r12 =
+        openpbr_fresnel_dielectric_polarized(cos_theta, eta2 / eta1);
+    const OpenPbrPolarizedReflectance t121 {1.0f - r12.p, 1.0f - r12.s};
+    OpenPbrVec3 r23p {};
+    OpenPbrVec3 r23s {};
+    OpenPbrVec3 phi23p {};
+    OpenPbrVec3 phi23s {};
+    for (int channel = 0; channel < 3; ++channel) {
+        const float eta3 = channel == 0 ? substrate_ior.x
+                           : channel == 1 ? substrate_ior.y
+                                          : substrate_ior.z;
+        const float generalized = channel == 0 ? generalized_reflectance.x
+                                  : channel == 1 ? generalized_reflectance.y
+                                                 : generalized_reflectance.z;
+        if (generalized_schlick) {
+            const float reflectance = 0.5f * openpbr_saturate(generalized);
+            if (channel == 0) {
+                r23p.x = reflectance;
+                r23s.x = reflectance;
+                phi23p.x = eta3 < eta2 ? kOpenPbrPi : 0.0f;
+                phi23s.x = phi23p.x;
+            } else if (channel == 1) {
+                r23p.y = reflectance;
+                r23s.y = reflectance;
+                phi23p.y = eta3 < eta2 ? kOpenPbrPi : 0.0f;
+                phi23s.y = phi23p.y;
+            } else {
+                r23p.z = reflectance;
+                r23s.z = reflectance;
+                phi23p.z = eta3 < eta2 ? kOpenPbrPi : 0.0f;
+                phi23s.z = phi23p.z;
+            }
+        } else {
+            const OpenPbrPolarizedReflectance reflectance =
+                openpbr_fresnel_real_ior_polarized(cos_theta_t, eta3 / eta2);
+            const OpenPbrPolarizedReflectance phase =
+                openpbr_real_ior_reflection_phase(cos_theta_t, eta2, eta3);
+            if (channel == 0) {
+                r23p.x = reflectance.p;
+                r23s.x = reflectance.s;
+                phi23p.x = phase.p;
+                phi23s.x = phase.s;
+            } else if (channel == 1) {
+                r23p.y = reflectance.p;
+                r23s.y = reflectance.s;
+                phi23p.y = phase.p;
+                phi23s.y = phase.s;
+            } else {
+                r23p.z = reflectance.p;
+                r23s.z = reflectance.s;
+                phi23p.z = phase.p;
+                phi23s.z = phase.s;
+            }
+        }
+    }
+
+    const float brewster_cosine = eta1 / sqrtf(eta1 * eta1 + eta2 * eta2);
+    const OpenPbrPolarizedReflectance phi21 {
+        cos_theta < brewster_cosine ? 0.0f : kOpenPbrPi, kOpenPbrPi};
+    const OpenPbrVec3 r123p {sqrtf(openpbr_max(r12.p * r23p.x, 0.0f)),
+        sqrtf(openpbr_max(r12.p * r23p.y, 0.0f)),
+        sqrtf(openpbr_max(r12.p * r23p.z, 0.0f))};
+    const OpenPbrVec3 r123s {sqrtf(openpbr_max(r12.s * r23s.x, 0.0f)),
+        sqrtf(openpbr_max(r12.s * r23s.y, 0.0f)),
+        sqrtf(openpbr_max(r12.s * r23s.z, 0.0f))};
+    const float opd = 2.0f * eta2 * cos_theta_t * thickness_nm * 1e-9f;
+
+    const OpenPbrVec3 rs {
+        t121.p * t121.p * r23p.x / openpbr_max(1.0f - r12.p * r23p.x, 1e-6f),
+        t121.p * t121.p * r23p.y / openpbr_max(1.0f - r12.p * r23p.y, 1e-6f),
+        t121.p * t121.p * r23p.z / openpbr_max(1.0f - r12.p * r23p.z, 1e-6f),
+    };
+    OpenPbrVec3 result = openpbr_add(openpbr_make_vec3(r12.p), rs);
+    OpenPbrVec3 coefficient = openpbr_sub(rs, openpbr_make_vec3(t121.p));
+    for (int order = 1; order <= 2; ++order) {
+        coefficient = openpbr_mul(coefficient, r123p);
+        const OpenPbrVec3 shift = openpbr_mul(
+            openpbr_add(phi23p, openpbr_make_vec3(phi21.p)), static_cast<float>(order));
+        result = openpbr_add(result,
+            openpbr_mul(coefficient,
+                openpbr_mul(openpbr_thin_film_sensitivity(static_cast<float>(order) * opd, shift),
+                    2.0f)));
+    }
+
+    const OpenPbrVec3 rp {
+        t121.s * t121.s * r23s.x / openpbr_max(1.0f - r12.s * r23s.x, 1e-6f),
+        t121.s * t121.s * r23s.y / openpbr_max(1.0f - r12.s * r23s.y, 1e-6f),
+        t121.s * t121.s * r23s.z / openpbr_max(1.0f - r12.s * r23s.z, 1e-6f),
+    };
+    result = openpbr_add(result, openpbr_add(openpbr_make_vec3(r12.s), rp));
+    coefficient = openpbr_sub(rp, openpbr_make_vec3(t121.s));
+    for (int order = 1; order <= 2; ++order) {
+        coefficient = openpbr_mul(coefficient, r123s);
+        const OpenPbrVec3 shift = openpbr_mul(
+            openpbr_add(phi23s, openpbr_make_vec3(phi21.s)), static_cast<float>(order));
+        result = openpbr_add(result,
+            openpbr_mul(coefficient,
+                openpbr_mul(openpbr_thin_film_sensitivity(static_cast<float>(order) * opd, shift),
+                    2.0f)));
+    }
+
+    return openpbr_clamp_unit(openpbr_xyz_to_rgb(openpbr_mul(result, 0.5f)));
 }
 
 RT_OPENPBR_HD RT_OPENPBR_INLINE float openpbr_modulated_ior(const OpenPbrCoreMaterial& material) {
@@ -807,6 +1014,11 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE float openpbr_coat_reflection_pdf(
            / openpbr_max(4.0f * fabsf(wo_dot_m), 1e-8f);
 }
 
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_dielectric_reflectance(
+    const OpenPbrCoreMaterial& material, float cosine, bool entering);
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_metal_reflectance(
+    const OpenPbrCoreMaterial& material, float cosine);
+
 RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrLobeProbabilities openpbr_lobe_probabilities(
     const OpenPbrCoreMaterial& material, float outgoing_cosine = 1.0f,
     bool exterior_layers = true) {
@@ -818,17 +1030,28 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrLobeProbabilities openpbr_lobe_probabilit
     const float eta_ratio = (eta - 1.0f) / (eta + 1.0f);
     const float dielectric_f0 = eta_ratio * eta_ratio;
 
-    const float diffuse_score = (1.0f - metalness) * (1.0f - transmission) * (1.0f - dielectric_f0)
+    float dielectric_sampling_reflectance = dielectric_f0;
+    float metal_sampling_reflectance =
+        metal_specular_weight
+        * openpbr_luminance(openpbr_mul(openpbr_clamp_unit(material.base_color), base_weight));
+    if (material.thin_film_weight > 0.0f && material.thin_film_thickness > 0.0f) {
+        dielectric_sampling_reflectance = openpbr_luminance(
+            openpbr_dielectric_reflectance(material, outgoing_cosine, true));
+        metal_sampling_reflectance =
+            openpbr_luminance(openpbr_metal_reflectance(material, outgoing_cosine));
+    }
+
+    const float diffuse_score = (1.0f - metalness) * (1.0f - transmission)
+                                * openpbr_saturate(1.0f - dielectric_sampling_reflectance)
                                 * base_weight
                                 * openpbr_luminance(openpbr_clamp_unit(material.base_color));
     const float dielectric_reflection_score =
-        (1.0f - metalness) * dielectric_f0
+        (1.0f - metalness) * dielectric_sampling_reflectance
         * openpbr_luminance(openpbr_clamp_unit(material.specular_color));
-    const float metal_reflection_score =
-        metalness * metal_specular_weight
-        * openpbr_luminance(openpbr_mul(openpbr_clamp_unit(material.base_color), base_weight));
+    const float metal_reflection_score = metalness * metal_sampling_reflectance;
     const float transmission_score =
-        (1.0f - metalness) * transmission * (1.0f - dielectric_f0)
+        (1.0f - metalness) * transmission
+        * openpbr_saturate(1.0f - dielectric_sampling_reflectance)
         * openpbr_luminance(openpbr_surface_transmission_color(material));
 
     const float coat_score = exterior_layers
@@ -950,24 +1173,110 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_metal_fresnel(
     return openpbr_mul(openpbr_clamp_unit(f82), openpbr_saturate(material.specular_weight));
 }
 
-RT_OPENPBR_HD RT_OPENPBR_INLINE float openpbr_dielectric_directional_albedo(
+RT_OPENPBR_HD RT_OPENPBR_INLINE float openpbr_weighted_coat_ior(
+    const OpenPbrCoreMaterial& material) {
+    return 1.0f + openpbr_saturate(material.coat_weight)
+                      * (openpbr_max(material.coat_ior, 1e-4f) - 1.0f);
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_thin_wall_window_reflectance(
+    const OpenPbrVec3& interface_reflectance) {
+    const OpenPbrVec3 r = openpbr_clamp_unit(interface_reflectance);
+    return {openpbr_saturate(r.x + openpbr_square(1.0f - r.x) * r.x
+                                       / openpbr_max(1.0f - r.x * r.x, 1e-6f)),
+        openpbr_saturate(r.y + openpbr_square(1.0f - r.y) * r.y
+                                  / openpbr_max(1.0f - r.y * r.y, 1e-6f)),
+        openpbr_saturate(r.z + openpbr_square(1.0f - r.z) * r.z
+                                  / openpbr_max(1.0f - r.z * r.z, 1e-6f))};
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_apply_thin_film(
+    const OpenPbrCoreMaterial& material, float cosine, const OpenPbrVec3& base_reflectance,
+    float incident_ior, const OpenPbrVec3& substrate_ior,
+    const OpenPbrVec3& generalized_reflectance, bool generalized_schlick) {
+    const float weight = openpbr_saturate(material.thin_film_weight);
+    const float thickness_nm = openpbr_max(material.thin_film_thickness, 0.0f) * 1000.0f;
+    if (weight <= 0.0f || thickness_nm <= 0.0f) {
+        return base_reflectance;
+    }
+    OpenPbrVec3 film = openpbr_thin_film_airy(cosine, thickness_nm, incident_ior,
+        material.thin_film_ior, substrate_ior, generalized_reflectance, generalized_schlick);
+    if (material.geometry_thin_walled != 0 && !generalized_schlick) {
+        film = openpbr_thin_wall_window_reflectance(film);
+    }
+    return openpbr_lerp(base_reflectance, film, weight);
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_dielectric_reflectance(
     const OpenPbrCoreMaterial& material, float cosine, bool entering) {
+    const float base_reflectance = openpbr_dielectric_fresnel(material, cosine, entering);
+    const float base_ior = openpbr_modulated_ior(material);
+    const float coat_ior = openpbr_weighted_coat_ior(material);
+    const float incident_ior = entering ? coat_ior : base_ior;
+    const float substrate_ior = entering ? base_ior : coat_ior;
+    return openpbr_apply_thin_film(material, cosine,
+        openpbr_make_vec3(base_reflectance), incident_ior,
+        openpbr_make_vec3(substrate_ior), {}, false);
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_metal_reflectance(
+    const OpenPbrCoreMaterial& material, float cosine) {
+    const OpenPbrVec3 base_reflectance = openpbr_metal_fresnel(material, cosine);
+    const float incident_ior = openpbr_weighted_coat_ior(material);
+    const float cos_theta_t = openpbr_thin_film_transmitted_cosine(
+        cosine, incident_ior, material.thin_film_ior);
+    const OpenPbrVec3 reflectance_at_film = openpbr_metal_fresnel(material, cos_theta_t);
+    const OpenPbrVec3 normal_reflectance = openpbr_metal_fresnel(material, 1.0f);
+    const OpenPbrVec3 substrate_ior {
+        incident_ior * openpbr_f0_to_ior(normal_reflectance.x),
+        incident_ior * openpbr_f0_to_ior(normal_reflectance.y),
+        incident_ior * openpbr_f0_to_ior(normal_reflectance.z),
+    };
+    return openpbr_apply_thin_film(material, cosine, base_reflectance, incident_ior,
+        substrate_ior, reflectance_at_film, true);
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_dielectric_directional_albedo_rgb(
+    const OpenPbrCoreMaterial& material, float cosine, bool entering) {
+    if (material.thin_film_weight <= 0.0f || material.thin_film_thickness <= 0.0f) {
+        const OpenPbrRoughness roughness = openpbr_roughness(material);
+        const float alpha = openpbr_average_alpha(roughness);
+        if (openpbr_effectively_smooth(material)) {
+            return openpbr_make_vec3(openpbr_dielectric_fresnel(material, cosine, entering));
+        }
+        const float color0 = openpbr_dielectric_fresnel(material, 1.0f, entering);
+        if (color0 <= 1e-8f) {
+            return {};
+        }
+        const float single_scatter =
+            openpbr_ggx_directional_albedo(cosine, alpha, color0, 1.0f);
+        const float white_single_scatter =
+            openpbr_ggx_directional_albedo(cosine, alpha, 1.0f, 1.0f);
+        const float directional_fresnel = openpbr_dielectric_fresnel(material, cosine, entering);
+        const float compensation = 1.0f
+                                   + directional_fresnel * (1.0f - white_single_scatter)
+                                         / openpbr_max(white_single_scatter, 1e-4f);
+        return openpbr_make_vec3(openpbr_saturate(single_scatter * compensation));
+    }
+
     const OpenPbrRoughness roughness = openpbr_roughness(material);
     const float alpha = openpbr_average_alpha(roughness);
+    const OpenPbrVec3 mirror = openpbr_dielectric_reflectance(material, cosine, entering);
     if (openpbr_effectively_smooth(material)) {
-        return openpbr_dielectric_fresnel(material, cosine, entering);
+        return mirror;
     }
-    const float color0 = openpbr_dielectric_fresnel(material, 1.0f, entering);
-    if (color0 <= 1e-8f) {
-        return 0.0f;
-    }
-    const float single_scatter = openpbr_ggx_directional_albedo(cosine, alpha, color0, 1.0f);
-    const float white_single_scatter = openpbr_ggx_directional_albedo(cosine, alpha, 1.0f, 1.0f);
-    const float directional_fresnel = openpbr_dielectric_fresnel(material, cosine, entering);
-    const float compensation = 1.0f
-                               + directional_fresnel * (1.0f - white_single_scatter)
-                                     / openpbr_max(white_single_scatter, 1e-4f);
-    return openpbr_saturate(single_scatter * compensation);
+    const OpenPbrVec3 color0 = openpbr_dielectric_reflectance(material, 1.0f, entering);
+    const OpenPbrVec3 rough {
+        openpbr_ggx_directional_albedo(cosine, alpha, color0.x, 1.0f),
+        openpbr_ggx_directional_albedo(cosine, alpha, color0.y, 1.0f),
+        openpbr_ggx_directional_albedo(cosine, alpha, color0.z, 1.0f),
+    };
+    return openpbr_lerp(mirror, rough, sqrtf(openpbr_saturate(alpha)));
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE float openpbr_dielectric_directional_albedo(
+    const OpenPbrCoreMaterial& material, float cosine, bool entering) {
+    return openpbr_luminance(openpbr_dielectric_directional_albedo_rgb(material, cosine, entering));
 }
 
 RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_reflection_fresnel(
@@ -977,16 +1286,17 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrVec3 openpbr_reflection_fresnel(
     const OpenPbrRoughness roughness = openpbr_roughness(material);
     const float alpha = openpbr_average_alpha(roughness);
 
-    const float dielectric_f = openpbr_dielectric_fresnel(material, microfacet_cosine, entering);
+    const OpenPbrVec3 dielectric_f =
+        openpbr_dielectric_reflectance(material, microfacet_cosine, entering);
     const OpenPbrVec3 dielectric_single = openpbr_mul(
         entering || material.geometry_thin_walled != 0 ? openpbr_clamp_unit(material.specular_color)
                                                        : openpbr_make_vec3(1.0f),
         dielectric_f);
     const OpenPbrVec3 dielectric_compensation =
-        openpbr_ggx_energy_compensation(outgoing_cosine, alpha, openpbr_make_vec3(dielectric_f));
+        openpbr_ggx_energy_compensation(outgoing_cosine, alpha, dielectric_f);
     const OpenPbrVec3 dielectric = openpbr_mul(dielectric_single, dielectric_compensation);
 
-    const OpenPbrVec3 metal_single = openpbr_metal_fresnel(material, microfacet_cosine);
+    const OpenPbrVec3 metal_single = openpbr_metal_reflectance(material, microfacet_cosine);
     const OpenPbrVec3 metal_compensation =
         openpbr_ggx_energy_compensation(outgoing_cosine, alpha, metal_single);
     const OpenPbrVec3 metal = openpbr_mul(metal_single, metal_compensation);
@@ -1022,9 +1332,10 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrEvaluation evaluate_openpbr_core(
     const bool reflection = wi.z * wo.z > 0.0f;
 
     if (reflection) {
-        const float substrate_attenuation =
-            1.0f - openpbr_dielectric_directional_albedo(material, wo.z, entering);
-        result.value = openpbr_mul(openpbr_diffuse_value(material, wo, wi), substrate_attenuation);
+        const OpenPbrVec3 substrate_attenuation = openpbr_sub(openpbr_make_vec3(1.0f),
+            openpbr_dielectric_directional_albedo_rgb(material, wo.z, entering));
+        result.value = openpbr_mul(openpbr_diffuse_value(material, wo, wi),
+            openpbr_clamp_unit(substrate_attenuation));
         result.pdf = probabilities.diffuse * wi.z * kOpenPbrInvPi;
 
         const OpenPbrVec3 sum = openpbr_add(wi, wo);
@@ -1070,20 +1381,23 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrEvaluation evaluate_openpbr_core(
             const float wi_dot_m = openpbr_dot(wi, wm);
             const float wo_dot_m = openpbr_dot(wo, wm);
             if (wi_dot_m * wi.z > 0.0f && wo_dot_m * wo.z > 0.0f) {
-                const float fresnel = openpbr_fresnel_dielectric(wo_dot_m, eta_path);
+                const OpenPbrVec3 reflectance =
+                    openpbr_dielectric_reflectance(material, wo_dot_m, entering);
                 const float half_denominator = wi_dot_m + wo_dot_m / eta_path;
                 const float denominator_squared = half_denominator * half_denominator;
                 if (denominator_squared > 1e-16f) {
                     const float distribution = openpbr_ggx_d(roughness, wm);
                     const float masking = openpbr_ggx_g(roughness, wo, wi);
                     float transmission =
-                        distribution * (1.0f - fresnel) * masking
+                        distribution * masking
                         * fabsf(wi_dot_m * wo_dot_m / (wi.z * wo.z * denominator_squared));
                     transmission /= eta_path * eta_path;
                     transmission *= (1.0f - openpbr_saturate(material.base_metalness))
                                     * openpbr_saturate(material.transmission_weight);
-                    result.value =
-                        openpbr_mul(openpbr_surface_transmission_color(material), transmission);
+                    result.value = openpbr_mul(openpbr_mul(
+                        openpbr_surface_transmission_color(material),
+                        openpbr_clamp_unit(openpbr_sub(openpbr_make_vec3(1.0f), reflectance))),
+                        transmission);
 
                     const float derivative = fabsf(wi_dot_m) / denominator_squared;
                     const float microfacet_pdf =
@@ -1240,10 +1554,12 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrSample sample_openpbr_core(
         sample.event = OpenPbrScatterEvent::glossy_reflection;
     } else if (material.geometry_thin_walled != 0) {
         wi = openpbr_negate(wo);
-        const float reflection = openpbr_dielectric_fresnel(material, wo.z, true);
-        OpenPbrVec3 coefficient = openpbr_mul(openpbr_surface_transmission_color(material),
+        const OpenPbrVec3 transmission = openpbr_clamp_unit(openpbr_sub(openpbr_make_vec3(1.0f),
+            openpbr_dielectric_reflectance(material, wo.z, true)));
+        OpenPbrVec3 coefficient = openpbr_mul(openpbr_mul(
+            openpbr_surface_transmission_color(material), transmission),
             opacity * (1.0f - openpbr_saturate(material.base_metalness))
-                * openpbr_saturate(material.transmission_weight) * (1.0f - reflection));
+                * openpbr_saturate(material.transmission_weight));
         coefficient = openpbr_mul(coefficient,
             openpbr_substrate_scale(material, wo.z, wi.z, exterior_layers));
         sample.wi = openpbr_to_world(frame, wi);
@@ -1263,10 +1579,12 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE OpenPbrSample sample_openpbr_core(
         if (!openpbr_refract(wo, {0.0f, 0.0f, 1.0f}, material_eta_path, refracted_eta_path, wi)) {
             return sample;
         }
-        const float fresnel = openpbr_fresnel_dielectric(wo.z, material_eta_path);
-        OpenPbrVec3 coefficient = openpbr_mul(openpbr_surface_transmission_color(material),
+        const OpenPbrVec3 transmission = openpbr_clamp_unit(openpbr_sub(openpbr_make_vec3(1.0f),
+            openpbr_dielectric_reflectance(material, wo.z, entering)));
+        OpenPbrVec3 coefficient = openpbr_mul(openpbr_mul(
+            openpbr_surface_transmission_color(material), transmission),
             opacity * (1.0f - openpbr_saturate(material.base_metalness))
-                * openpbr_saturate(material.transmission_weight) * (1.0f - fresnel)
+                * openpbr_saturate(material.transmission_weight)
                 / (refracted_eta_path * refracted_eta_path));
         coefficient = openpbr_mul(coefficient,
             openpbr_substrate_scale(material, wo.z, wi.z, exterior_layers));

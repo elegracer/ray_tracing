@@ -18,9 +18,9 @@ void require_production_core_support(const SceneOpenPbrSurface& material) {
         throw std::invalid_argument(
             "OpenPBR production core does not yet support MaterialX displacement");
     }
-    if (material.subsurface_weight > 0.0 || material.thin_film_weight > 0.0) {
+    if (material.subsurface_weight > 0.0) {
         throw std::invalid_argument(
-            "OpenPBR production core does not yet support active subsurface or thin-film lobes");
+            "OpenPBR production core does not yet support active subsurface lobes");
     }
     if (material.transmission_scatter.squaredNorm() > 0.0
         || material.transmission_scatter_anisotropy != 0.0
@@ -133,6 +133,9 @@ OpenPbrCompiledMaterial compile_openpbr_core_material(const SceneOpenPbrSurface&
                     static_cast<float>(material.coat_roughness_anisotropy),
                 .coat_ior = static_cast<float>(material.coat_ior),
                 .coat_darkening = static_cast<float>(material.coat_darkening),
+                .thin_film_weight = static_cast<float>(material.thin_film_weight),
+                .thin_film_thickness = static_cast<float>(material.thin_film_thickness),
+                .thin_film_ior = static_cast<float>(material.thin_film_ior),
                 .emission_luminance = static_cast<float>(material.emission_luminance),
                 .emission_color = to_openpbr_vec3(material.emission_color),
                 .geometry_opacity = static_cast<float>(material.geometry_opacity),
