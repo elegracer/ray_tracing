@@ -297,17 +297,11 @@ private:
         Ray scattered;
         double pdf_value;
 
-        if (lights.has_value()) {
-            const MixturePDF mixture_pdf {scatter_rec.pdf,
-                pro::make_proxy_shared<PDF, HittablePDF>(lights, hit_rec.p)};
-            scattered = Ray {hit_rec.p, mixture_pdf.generate(), ray.time(),
-                ray.subsurface_medium(), ray.subsurface_owner()};
-            pdf_value = mixture_pdf.value(scattered.direction());
-        } else {
-            scattered = Ray {hit_rec.p, scatter_rec.pdf->generate(), ray.time(),
-                ray.subsurface_medium(), ray.subsurface_owner()};
-            pdf_value = scatter_rec.pdf->value(scattered.direction());
-        }
+        const pro::proxy<PDF> sampling_pdf = make_light_mis_pdf(
+            scatter_rec.pdf, lights, hit_rec.p, background.maxCoeff() > 0.0);
+        scattered = Ray {hit_rec.p, sampling_pdf->generate(), ray.time(),
+            ray.subsurface_medium(), ray.subsurface_owner()};
+        pdf_value = sampling_pdf->value(scattered.direction());
 
         const double scattering_pdf = hit_rec.mat->scattering_pdf(ray, hit_rec, scattered);
 

@@ -49,12 +49,6 @@ double extract_y_rotation_degrees(const Eigen::Matrix3d& rotation) {
     return rad2deg(angle);
 }
 
-bool is_identity_transform(const Transform& transform) {
-    constexpr double kTol = 1e-9;
-    return transform.translation.norm() <= kTol
-           && (transform.rotation - Eigen::Matrix3d::Identity()).cwiseAbs().maxCoeff() <= kTol;
-}
-
 pro::proxy<Hittable> apply_transform(pro::proxy<Hittable> object, const Transform& transform) {
     const double yaw_deg = extract_y_rotation_degrees(transform.rotation);
     if (std::abs(yaw_deg) > 1e-9) {
@@ -202,8 +196,7 @@ CpuSceneAdapterResult adapt_to_cpu_impl(const SceneIR& scene,
             && (*openpbr_materials)[static_cast<std::size_t>(instance.material_index)]
                        ->parameters.emission_luminance
                    > 0.0f;
-        if ((std::holds_alternative<EmissiveMaterial>(material_desc) || openpbr_emissive)
-            && is_identity_transform(instance.transform)) {
+        if (std::holds_alternative<EmissiveMaterial>(material_desc) || openpbr_emissive) {
             lights.add(object);
         }
     }

@@ -63,3 +63,21 @@ struct MixturePDF {
     pro::proxy<PDF> m_pdf0;
     pro::proxy<PDF> m_pdf1;
 };
+
+inline pro::proxy<PDF> make_light_mis_pdf(const pro::proxy<PDF>& bsdf_pdf,
+    const pro::proxy<Hittable>& lights, const Vec3d& origin, bool sample_environment) {
+    pro::proxy<PDF> direct_pdf;
+    if (lights.has_value()) {
+        direct_pdf = pro::make_proxy_shared<PDF, HittablePDF>(lights, origin);
+    }
+    if (sample_environment) {
+        pro::proxy<PDF> environment_pdf = pro::make_proxy_shared<PDF, SpherePDF>();
+        direct_pdf = direct_pdf.has_value()
+                         ? pro::make_proxy_shared<PDF, MixturePDF>(direct_pdf, environment_pdf)
+                         : environment_pdf;
+    }
+    if (!direct_pdf.has_value()) {
+        return bsdf_pdf;
+    }
+    return pro::make_proxy_shared<PDF, MixturePDF>(bsdf_pdf, direct_pdf);
+}

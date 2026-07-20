@@ -33,9 +33,11 @@ struct Translate {
 
     AABB bounding_box() const { return m_bbox; }
 
-    double pdf_value(const Vec3d& origin, const Vec3d& direction) const { return 0.0; }
+    double pdf_value(const Vec3d& origin, const Vec3d& direction) const {
+        return m_object->pdf_value(origin - m_offset, direction);
+    }
 
-    Vec3d random(const Vec3d& origin) const { return {1.0, 0.0, 0.0}; }
+    Vec3d random(const Vec3d& origin) const { return m_object->random(origin - m_offset); }
 
     pro::proxy<Hittable> m_object;
     Vec3d m_offset;
@@ -112,9 +114,26 @@ struct RotateY {
 
     AABB bounding_box() const { return m_bbox; }
 
-    double pdf_value(const Vec3d& origin, const Vec3d& direction) const { return 0.0; }
+    double pdf_value(const Vec3d& origin, const Vec3d& direction) const {
+        const Vec3d local_origin {
+            (m_cos_theta * origin.x()) - (m_sin_theta * origin.z()), origin.y(),
+            (m_sin_theta * origin.x()) + (m_cos_theta * origin.z())};
+        const Vec3d local_direction {
+            (m_cos_theta * direction.x()) - (m_sin_theta * direction.z()), direction.y(),
+            (m_sin_theta * direction.x()) + (m_cos_theta * direction.z())};
+        return m_object->pdf_value(local_origin, local_direction);
+    }
 
-    Vec3d random(const Vec3d& origin) const { return {1.0, 0.0, 0.0}; }
+    Vec3d random(const Vec3d& origin) const {
+        const Vec3d local_origin {
+            (m_cos_theta * origin.x()) - (m_sin_theta * origin.z()), origin.y(),
+            (m_sin_theta * origin.x()) + (m_cos_theta * origin.z())};
+        const Vec3d local_direction = m_object->random(local_origin);
+        return {
+            (m_cos_theta * local_direction.x()) + (m_sin_theta * local_direction.z()),
+            local_direction.y(),
+            (-m_sin_theta * local_direction.x()) + (m_cos_theta * local_direction.z())};
+    }
 
     pro::proxy<Hittable> m_object;
     double m_cos_theta;
