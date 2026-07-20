@@ -128,7 +128,9 @@ The first LIGHT-01 slice replaces the GPU all-light scan and centroid/nearest-po
 
 The CPU reference path now includes its constant environment in the BSDF/direct-light mixture and correctly transforms `pdf_value` and sampled directions through translated and Y-rotated emitters. Transformed emissive geometry therefore remains eligible for direct-light sampling instead of being silently excluded; the black-environment/no-light path returns the original BSDF PDF unchanged. The rebuilt default suite passes 64/64. GPU implementation/gate commits are `9a14c7d`, `de344dc`, `118d461`, and `dc773b4`; CPU implementation/gate commits are `069f93a` and `fbd3c0b`.
 
-LIGHT-01 remains open because supported SceneIR v2 analytic and dome light payloads are preserved by OpenUSD import/export but are not yet compiled into the CPU/GPU execution tables. LIGHT-02 also remains open until normalized-PDF, furnace/finite-energy, and estimator-agreement gates cover both backends rather than only the current focused cases.
+The SceneIR v2 execution compiler now lowers visible render-purpose sphere, disk, rect, cylinder, distant, and dome lights into one normalized analytic-light CDF carried by both the CPU adapter and realtime scene. GPU preparation packs the same positions, affine bases, radiance, world-space areas, distant cones, delta flags, and selection probabilities without tessellating lights into many primitive entries. Exposure, world-space `normalize`, and the OpenUSD blackbody color-temperature transform are applied once at the authored-to-runtime boundary. Textured rect/dome lights, non-default diffuse/specular overrides, and non-similarity sphere/cylinder transforms fail explicitly until their execution semantics exist. The default build and CTest pass 65/65; implementation and gates are in `83037bb`.
+
+LIGHT-01 remains open because the compiled analytic-light sidecar is not yet consumed by CPU ray integration or uploaded to the GPU direct-light kernel. The next slice must sample the six light types, trace finite/infinite visibility, evaluate dome/distant miss radiance, and apply matched light/BSDF MIS before marking the requirement complete. LIGHT-02 also remains open until normalized-PDF, furnace/finite-energy, and estimator-agreement gates cover both backends rather than only the current focused cases.
 
 ## Performance Metrics
 
@@ -179,7 +181,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- Compile supported SceneIR v2 sphere/disk/rect/cylinder/distant/dome lights into production CPU/GPU sampling tables, then close LIGHT-01 with analytic-light visibility and MIS gates.
+- Consume the compiled sphere/disk/rect/cylinder/distant/dome table in CPU/GPU sampling, visibility, miss-radiance, and matched-MIS paths, then close LIGHT-01 with production image gates.
 - Complete LIGHT-02 with CPU/GPU normalized-PDF, furnace/finite-energy, finite-radiance, and estimator-agreement gates before ReSTIR DI.
 
 ### Blockers/Concerns
@@ -192,7 +194,7 @@ Recent decisions affecting current work:
 - CUDA memory telemetry is device-global rather than per-process; concurrent GPU workloads can perturb baseline and peak values.
 - OpenUSD is an optional system SDK dependency with verified OFF/ON paths; supported direct MaterialX color3 graphs compile, coat/fuzz/thin-film/dispersion/subsurface constants execute, and connected coat/fuzz/subsurface colors, NodeGraph interfaces, and fields outside the declared SceneIR subset remain fail-closed.
 - Dispersion currently uses fixed C/d/F RGB anchors. Stochastic wavelengths from measured sensor sensitivity curves remain a later spectral-quality extension; the current model is path-consistent but three-band.
-- Emissive geometry and the constant environment now use explicit distributions, solid-angle PDFs, visibility, and MIS. SceneIR v2 analytic/dome lights still stop at the authored/imported contract and must enter both execution backends before LIGHT-01 closes.
+- Emissive geometry and the constant environment now use explicit distributions, solid-angle PDFs, visibility, and MIS. SceneIR v2 analytic/dome lights compile into matched CPU/realtime/GPU sidecars but do not yet execute in either integrator; LIGHT-01 stays open until sampling, visibility, miss radiance, and MIS are gated.
 - The current `gpt-5.6-*` Codex IDE route still returns HTTP 404 from the built-in web tool. This is not a renderer delivery blocker: bounded public research uses direct read-only HTTP against official primary sources and records the pinned source revision. Do not spend renderer goal turns repairing host search unless the user explicitly reopens that task.
 
 ## Deferred Items
@@ -209,5 +211,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-07-20
-Stopped at: Phase 5 emissive/environment MIS baseline is green; next compile SceneIR v2 analytic and dome lights into the production sampling tables
+Stopped at: Phase 5 analytic-light execution tables are compiled and cross-backend gated; next consume them in CPU/GPU sampling, visibility, miss radiance, and MIS
 Resume file: .planning/milestones/v2.0-REQUIREMENTS.md
