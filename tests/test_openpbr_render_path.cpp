@@ -14,6 +14,9 @@
 
 #include <tbb/global_control.h>
 
+#include <cmath>
+#include <numbers>
+
 namespace {
 
 constexpr int kImageSize = 64;
@@ -156,6 +159,91 @@ rt::RadianceFrame render_openpbr_direct_light(bool openpbr_light) {
     return renderer.render_radiance(scene.pack(), make_test_rig().pack(), profile, 0);
 }
 
+rt::RadianceFrame render_analytic_direct_light(rt::AnalyticLightType type, bool occluded) {
+    rt::SceneDescription scene;
+    const int receiver =
+        scene.add_material(rt::LambertianMaterial {.albedo = Eigen::Vector3d::Constant(0.8)});
+    scene.add_quad(rt::QuadPrimitive {
+        .material_index = receiver,
+        .origin = rt::legacy_renderer_to_world(Eigen::Vector3d {-3.0, -3.0, -4.0}),
+        .edge_u = rt::legacy_renderer_to_world(Eigen::Vector3d {6.0, 0.0, 0.0}),
+        .edge_v = rt::legacy_renderer_to_world(Eigen::Vector3d {0.0, 6.0, 0.0}),
+        .dynamic = false,
+    });
+
+    constexpr double inverse_sqrt_two = 0.7071067811865475244;
+    const Eigen::Vector3d direction {inverse_sqrt_two, -inverse_sqrt_two, 0.0};
+    rt::AnalyticLightDesc light;
+    light.type = type;
+    light.radiance = Eigen::Vector3d::Constant(12.0);
+    light.selection_pdf = 1.0;
+    light.cdf = 1.0;
+    if (type == rt::AnalyticLightType::distant) {
+        light.local_to_world_linear.col(2) = direction;
+        light.cos_theta_max = 1.0;
+        light.delta = true;
+    } else if (type == rt::AnalyticLightType::sphere) {
+        light.position = Eigen::Vector3d {0.0, 4.0, 0.0} + direction * 2.0;
+        light.radius = 0.5;
+        light.world_area = 4.0 * std::numbers::pi * light.radius * light.radius;
+    } else if (type == rt::AnalyticLightType::cylinder) {
+        light.position = Eigen::Vector3d {0.0, 4.0, 0.0} + direction * 2.0;
+        light.local_to_world_linear.col(0) = direction;
+        light.local_to_world_linear.col(1) =
+            Eigen::Vector3d {inverse_sqrt_two, inverse_sqrt_two, 0.0};
+        light.local_to_world_linear.col(2) = Eigen::Vector3d::UnitZ();
+        light.radius = 0.5;
+        light.length = 1.0;
+        light.world_area = 2.0 * std::numbers::pi * light.radius * light.length;
+    } else {
+        light.position = Eigen::Vector3d {0.0, 4.0, 0.0} + direction * 2.0;
+        light.local_to_world_linear.col(0) = Eigen::Vector3d {0.0, 0.0, 1.0};
+        light.local_to_world_linear.col(1) =
+            Eigen::Vector3d {-inverse_sqrt_two, -inverse_sqrt_two, 0.0};
+        light.local_to_world_linear.col(2) = direction;
+        if (type == rt::AnalyticLightType::disk) {
+            light.radius = 0.5;
+            light.world_area = std::numbers::pi * light.radius * light.radius;
+        } else {
+            light.width = 1.0;
+            light.height = 1.0;
+            light.world_area = 1.0;
+        }
+    }
+    scene.add_analytic_light(light);
+
+    if (occluded) {
+        scene.add_sphere(rt::SpherePrimitive {receiver, Eigen::Vector3d {0.0, 4.0, 0.0} + direction,
+            0.45, false});
+    }
+
+    rt::RenderProfile profile = rt::RenderProfile::realtime_default();
+    profile.samples_per_pixel = type == rt::AnalyticLightType::distant ? 1 : 64;
+    profile.max_bounces = 1;
+    rt::OptixRenderer renderer;
+    return renderer.render_radiance(scene.pack(), make_test_rig().pack(), profile, 0);
+}
+
+rt::RadianceFrame render_analytic_dome_miss() {
+    rt::SceneDescription scene;
+    const int offscreen =
+        scene.add_material(rt::LambertianMaterial {.albedo = Eigen::Vector3d::Constant(0.5)});
+    scene.add_sphere(
+        rt::SpherePrimitive {offscreen, Eigen::Vector3d {100.0, 100.0, 100.0}, 1.0, false});
+    rt::AnalyticLightDesc dome;
+    dome.type = rt::AnalyticLightType::dome;
+    dome.radiance = Eigen::Vector3d {0.25, 0.5, 1.0};
+    dome.selection_pdf = 1.0;
+    dome.cdf = 1.0;
+    scene.add_analytic_light(dome);
+
+    rt::RenderProfile profile = rt::RenderProfile::realtime_default();
+    profile.samples_per_pixel = 1;
+    profile.max_bounces = 1;
+    rt::OptixRenderer renderer;
+    return renderer.render_radiance(scene.pack(), make_test_rig().pack(), profile, 0);
+}
+
 rt::RadianceFrame render_subsurface_sphere() {
     rt::SceneDescription scene;
     scene.background = Eigen::Vector3d::Ones();
@@ -255,6 +343,33 @@ int main() {
         "OpenPBR direct response uses the shared BSDF instead of base-color fallback");
     expect_true(center_pixel_luminance(render_openpbr_direct_light(true)) > 0.01,
         "OpenPBR emissive geometry participates in direct lighting");
+    expect_true(
+        center_pixel_luminance(render_analytic_direct_light(rt::AnalyticLightType::sphere, false))
+            > 0.01,
+        "analytic sphere light reaches the production GPU integrator");
+    expect_true(
+        center_pixel_luminance(render_analytic_direct_light(rt::AnalyticLightType::disk, false))
+            > 0.01,
+        "analytic disk light reaches the production GPU integrator");
+    const double rect_unoccluded =
+        center_pixel_luminance(render_analytic_direct_light(rt::AnalyticLightType::rect, false));
+    const double rect_occluded =
+        center_pixel_luminance(render_analytic_direct_light(rt::AnalyticLightType::rect, true));
+    expect_true(rect_unoccluded > 0.01,
+        "analytic rect light reaches the production GPU integrator");
+    expect_true(rect_occluded < rect_unoccluded * 0.2,
+        "analytic rect light respects finite shadow visibility");
+    expect_true(
+        center_pixel_luminance(render_analytic_direct_light(rt::AnalyticLightType::cylinder, false))
+            > 0.01,
+        "analytic cylinder light reaches the production GPU integrator");
+    expect_true(
+        center_pixel_luminance(render_analytic_direct_light(rt::AnalyticLightType::distant, false))
+            > 0.01,
+        "analytic distant light reaches the production GPU integrator");
+    const Eigen::Vector3d dome_rgb = center_pixel_rgb(render_analytic_dome_miss());
+    expect_vec3_near(dome_rgb, Eigen::Vector3d {0.25, 0.5, 1.0}, 5e-4,
+        "analytic dome contributes miss radiance");
 
     rt::OpenPbrCoreMaterial subsurface_parameters;
     subsurface_parameters.base_weight = 0.0f;
@@ -284,8 +399,8 @@ int main() {
     const OpenPbrSurfaceMaterial other_subsurface_material {
         rt::OpenPbrCompiledMaterial {.parameters = subsurface_parameters}, {}};
     ScatterRecord wrong_owner_scatter;
-    expect_true(!other_subsurface_material.scatter(
-                    entry_scatter.skip_pdf_ray, entry_hit, wrong_owner_scatter),
+    expect_true(!other_subsurface_material.scatter(entry_scatter.skip_pdf_ray, entry_hit,
+                    wrong_owner_scatter),
         "CPU random walk cannot cross a different OpenPBR material boundary");
 
     const Ray exiting_ray {Vec3d::Zero(), Vec3d {0.0, 0.0, 1.0}, 0.0,
@@ -317,9 +432,9 @@ int main() {
     expect_true(!subsurface_cpu.empty(), "CPU random-walk subsurface render produces an image");
     const cv::Vec3b subsurface_cpu_center =
         subsurface_cpu.at<cv::Vec3b>(subsurface_cpu.rows / 2, subsurface_cpu.cols / 2);
-    expect_true(std::max({subsurface_cpu_center[0], subsurface_cpu_center[1],
-                    subsurface_cpu_center[2]})
-                    > 0,
+    expect_true(
+        std::max({subsurface_cpu_center[0], subsurface_cpu_center[1], subsurface_cpu_center[2]})
+            > 0,
         "CPU random-walk subsurface transports white-environment energy through a closed sphere");
     return 0;
 }

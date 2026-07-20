@@ -21,8 +21,7 @@ struct SamplingProbe {
     bool hit(const Ray&, const Interval&, HitRecord&) const { return false; }
     AABB bounding_box() const { return AABB {Vec3d {-1.0, -1.0, -1.0}, Vec3d::Ones()}; }
     double pdf_value(const Vec3d& origin, const Vec3d& direction) const {
-        return 10.0 + origin.x() + 2.0 * origin.z() + 3.0 * direction.x()
-               + 5.0 * direction.z();
+        return 10.0 + origin.x() + 2.0 * origin.z() + 3.0 * direction.x() + 5.0 * direction.z();
     }
     Vec3d random(const Vec3d&) const { return {1.0, 2.0, 3.0}; }
 };
@@ -51,6 +50,22 @@ int main() {
     expect_true(rt::sample_packed_light(lights.data(), 3, 1.0f) == 2, "CDF upper clamp");
     expect_true(rt::sample_packed_light(nullptr, 0, 0.5f) == -1, "empty distribution");
 
+    const std::array<rt::PackedAnalyticLight, 3> analytic_lights {{
+        {.type = rt::PackedAnalyticLightType::sphere, .cdf = 0.25f},
+        {.type = rt::PackedAnalyticLightType::rect, .cdf = 0.75f},
+        {.type = rt::PackedAnalyticLightType::dome, .cdf = 1.0f},
+    }};
+    expect_true(rt::sample_packed_analytic_light(analytic_lights.data(), 3, 0.0f) == 0,
+        "analytic CDF lower boundary");
+    expect_true(rt::sample_packed_analytic_light(analytic_lights.data(), 3, 0.25f) == 1,
+        "analytic CDF first boundary");
+    expect_true(rt::sample_packed_analytic_light(analytic_lights.data(), 3, 0.75f) == 2,
+        "analytic CDF second boundary");
+    expect_true(rt::sample_packed_analytic_light(analytic_lights.data(), 3, 1.0f) == 2,
+        "analytic CDF upper clamp");
+    expect_true(rt::sample_packed_analytic_light(nullptr, 0, 0.5f) == -1,
+        "empty analytic distribution");
+
     expect_near(rt::light_uniform_sphere_pdf() * 4.0 * std::numbers::pi, 1.0, 1e-6,
         "uniform sphere PDF normalization");
     expect_near(rt::light_area_to_solid_angle_pdf(2.0f, 8.0f, 0.5f), 8.0, 1e-6,
@@ -61,8 +76,7 @@ int main() {
     expect_near(rt::light_power_heuristic(0.0f, 1.0f), 0.0, 1e-6, "zero-density technique weight");
 
     const SamplingProbe probe;
-    const pro::proxy<Hittable> probe_proxy =
-        pro::make_proxy_shared<Hittable, SamplingProbe>(probe);
+    const pro::proxy<Hittable> probe_proxy = pro::make_proxy_shared<Hittable, SamplingProbe>(probe);
     const Vec3d origin {4.0, 2.0, 1.0};
     const Vec3d direction {-2.0, 1.0, -3.0};
 
@@ -98,8 +112,7 @@ int main() {
         make_light_mis_pdf(bsdf_pdf, no_geometry, origin, true);
     expect_near(environment_only->value(direction), 0.5 * 0.2 + 0.5 * environment_pdf, 1e-12,
         "CPU environment mixture stays normalized without geometry lights");
-    const pro::proxy<PDF> bsdf_only =
-        make_light_mis_pdf(bsdf_pdf, no_geometry, origin, false);
+    const pro::proxy<PDF> bsdf_only = make_light_mis_pdf(bsdf_pdf, no_geometry, origin, false);
     expect_near(bsdf_only->value(direction), 0.2, 1e-12,
         "black-environment no-light path preserves the BSDF PDF exactly");
 

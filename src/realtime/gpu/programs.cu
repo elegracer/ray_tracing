@@ -34,6 +34,14 @@ struct HitInfo {
     bool front_face = true;
 };
 
+struct AnalyticLightHit {
+    bool hit = false;
+    float t = 0.0f;
+    float3 position = make_float3(0.0f, 0.0f, 0.0f);
+    float3 normal = make_float3(0.0f, 0.0f, 1.0f);
+    int light_index = -1;
+};
+
 struct PathState {
     float3 throughput = make_float3(1.0f, 1.0f, 1.0f);
     float3 radiance = make_float3(0.0f, 0.0f, 0.0f);
@@ -61,12 +69,15 @@ struct DirectLightSample {
     float pdf = 0.0f;
     int material_index = -1;
     bool infinite = false;
+    bool delta = false;
     bool valid = false;
 };
 
 __device__ PathState trace_primary_ray(const LaunchParams& params, int x, int y);
 __device__ float3 scene_background(const LaunchParams& params);
 __device__ void accumulate_direct_light(const LaunchParams& params, const HitInfo& hit,
+    std::uint32_t& rng, bool bsdf_technique_available, PathState& state);
+__device__ void accumulate_analytic_direct_light(const LaunchParams& params, const HitInfo& hit,
     std::uint32_t& rng, bool bsdf_technique_available, PathState& state);
 __device__ void sample_bsdf(const LaunchParams& params, const HitInfo& hit, std::uint32_t& rng,
     PathState& state);
@@ -124,6 +135,10 @@ __device__ float3 random_unit_vector(std::uint32_t& rng) {
 __device__ float3 vector3f_to_float3(const Eigen::Vector3f& v) {
     const float* ptr = v.data();
     return make_float3(ptr[0], ptr[1], ptr[2]);
+}
+
+__device__ float3 packed_light_vector_to_float3(const PackedLightVector3& v) {
+    return make_float3(v.x, v.y, v.z);
 }
 
 __device__ OpenPbrVec3 to_openpbr_vec3(const float3& value) {
@@ -586,6 +601,250 @@ __device__ float emission_mis_weight(const DeviceSceneView& scene, const PathSta
     return light_power_heuristic(state.previous_bsdf_pdf, light_pdf);
 }
 
+__device__ bool finite_analytic_light(PackedAnalyticLightType type) {
+    return type == PackedAnalyticLightType::sphere || type == PackedAnalyticLightType::disk
+           || type == PackedAnalyticLightType::rect || type == PackedAnalyticLightType::cylinder;
+}
+
+__device__ float3 analytic_light_normal(const PackedAnalyticLight& light) {
+    return normalize3(mul3(cross3(packed_light_vector_to_float3(light.basis_x),
+                               packed_light_vector_to_float3(light.basis_y)),
+        -1.0f));
+}
+
+__device__ bool analytic_plane_coordinates(const PackedAnalyticLight& light, const float3& point,
+    float& local_x, float& local_y) {
+    const float3 basis_x = packed_light_vector_to_float3(light.basis_x);
+    const float3 basis_y = packed_light_vector_to_float3(light.basis_y);
+    const float3 local = sub3(point, packed_light_vector_to_float3(light.position));
+    const float xx = dot3(basis_x, basis_x);
+    const float xy = dot3(basis_x, basis_y);
+    const float yy = dot3(basis_y, basis_y);
+    const float determinant = xx * yy - xy * xy;
+    if (determinant <= 1e-16f) {
+        return false;
+    }
+    const float px = dot3(local, basis_x);
+    const float py = dot3(local, basis_y);
+    local_x = (px * yy - py * xy) / determinant;
+    local_y = (py * xx - px * xy) / determinant;
+    return true;
+}
+
+__device__ bool try_intersect_analytic_light(const PackedAnalyticLight& light, const Ray& ray,
+    float t_min, float t_max, AnalyticLightHit& hit) {
+    const float3 center = packed_light_vector_to_float3(light.position);
+    if (light.type == PackedAnalyticLightType::sphere) {
+        const float radius = light.radius * length3(packed_light_vector_to_float3(light.basis_x));
+        const float3 oc = sub3(ray.origin, center);
+        const float a = length_sq3(ray.direction);
+        const float half_b = dot3(oc, ray.direction);
+        const float c = length_sq3(oc) - radius * radius;
+        const float discriminant = half_b * half_b - a * c;
+        if (a <= 1e-16f || discriminant < 0.0f) {
+            return false;
+        }
+        const float root_term = sqrtf(discriminant);
+        float root = (-half_b - root_term) / a;
+        if (root <= t_min || root >= t_max) {
+            root = (-half_b + root_term) / a;
+        }
+        if (root <= t_min || root >= t_max) {
+            return false;
+        }
+        const float3 position = add3(ray.origin, mul3(ray.direction, root));
+        const float3 normal = normalize3(sub3(position, center));
+        if (dot3(ray.direction, normal) >= 0.0f) {
+            return false;
+        }
+        hit.hit = true;
+        hit.t = root;
+        hit.position = position;
+        hit.normal = normal;
+        return true;
+    }
+
+    if (light.type == PackedAnalyticLightType::disk
+        || light.type == PackedAnalyticLightType::rect) {
+        const float3 normal = analytic_light_normal(light);
+        const float denominator = dot3(ray.direction, normal);
+        if (denominator >= -1e-8f) {
+            return false;
+        }
+        const float t = dot3(sub3(center, ray.origin), normal) / denominator;
+        if (t <= t_min || t >= t_max) {
+            return false;
+        }
+        const float3 position = add3(ray.origin, mul3(ray.direction, t));
+        float local_x = 0.0f;
+        float local_y = 0.0f;
+        if (!analytic_plane_coordinates(light, position, local_x, local_y)) {
+            return false;
+        }
+        const bool inside =
+            light.type == PackedAnalyticLightType::disk
+                ? local_x * local_x + local_y * local_y <= light.radius * light.radius
+                : fabsf(local_x) <= 0.5f * light.width && fabsf(local_y) <= 0.5f * light.height;
+        if (!inside) {
+            return false;
+        }
+        hit.hit = true;
+        hit.t = t;
+        hit.position = position;
+        hit.normal = normal;
+        return true;
+    }
+
+    if (light.type != PackedAnalyticLightType::cylinder) {
+        return false;
+    }
+    const float3 basis_x = packed_light_vector_to_float3(light.basis_x);
+    const float3 basis_y = packed_light_vector_to_float3(light.basis_y);
+    const float3 basis_z = packed_light_vector_to_float3(light.basis_z);
+    const float scale = length3(basis_x);
+    if (scale <= 1e-8f) {
+        return false;
+    }
+    const float3 axis_x = div3(basis_x, scale);
+    const float3 axis_y = div3(basis_y, scale);
+    const float3 axis_z = normalize3(basis_z);
+    const float3 local_origin = sub3(ray.origin, center);
+    const float ox = dot3(local_origin, axis_x);
+    const float oy = dot3(local_origin, axis_y);
+    const float oz = dot3(local_origin, axis_z);
+    const float dx = dot3(ray.direction, axis_x);
+    const float dy = dot3(ray.direction, axis_y);
+    const float dz = dot3(ray.direction, axis_z);
+    const float radius = light.radius * scale;
+    const float a = dx * dx + dy * dy;
+    const float half_b = ox * dx + oy * dy;
+    const float c = ox * ox + oy * oy - radius * radius;
+    const float discriminant = half_b * half_b - a * c;
+    if (a <= 1e-16f || discriminant < 0.0f) {
+        return false;
+    }
+    const float root_term = sqrtf(discriminant);
+    float root = (-half_b - root_term) / a;
+    float z = oz + root * dz;
+    const float half_length = 0.5f * light.length * length3(basis_z);
+    if (root <= t_min || root >= t_max || fabsf(z) > half_length) {
+        root = (-half_b + root_term) / a;
+        z = oz + root * dz;
+    }
+    if (root <= t_min || root >= t_max || fabsf(z) > half_length) {
+        return false;
+    }
+    const float x = ox + root * dx;
+    const float y = oy + root * dy;
+    const float3 normal = normalize3(add3(mul3(axis_x, x), mul3(axis_y, y)));
+    if (dot3(ray.direction, normal) >= 0.0f) {
+        return false;
+    }
+    hit.hit = true;
+    hit.t = root;
+    hit.position = add3(ray.origin, mul3(ray.direction, root));
+    hit.normal = normal;
+    return true;
+}
+
+__device__ AnalyticLightHit intersect_analytic_lights(const DeviceSceneView& scene, const Ray& ray,
+    float t_min, float t_max) {
+    AnalyticLightHit closest_hit {};
+    float closest = t_max;
+    for (int i = 0; i < scene.analytic_light_count; ++i) {
+        const PackedAnalyticLight& light = scene.analytic_lights[i];
+        if (!finite_analytic_light(light.type) || light.treat_as_point != 0) {
+            continue;
+        }
+        AnalyticLightHit candidate {};
+        if (!try_intersect_analytic_light(light, ray, t_min, closest, candidate)) {
+            continue;
+        }
+        candidate.light_index = i;
+        closest = candidate.t;
+        closest_hit = candidate;
+    }
+    return closest_hit;
+}
+
+__device__ float analytic_light_pdf_for_hit(const PackedAnalyticLight& light, const float3& origin,
+    const float3& direction, const AnalyticLightHit& hit) {
+    if (light.delta != 0 || light.treat_as_point != 0 || light.treat_as_line != 0) {
+        return 0.0f;
+    }
+    if (light.type == PackedAnalyticLightType::sphere) {
+        const float3 center = packed_light_vector_to_float3(light.position);
+        const float radius = light.radius * length3(packed_light_vector_to_float3(light.basis_x));
+        const float distance_squared = length_sq3(sub3(center, origin));
+        const float radius_squared = radius * radius;
+        if (distance_squared <= radius_squared) {
+            return 0.0f;
+        }
+        const float cos_theta_max = sqrtf(fmaxf(0.0f, 1.0f - radius_squared / distance_squared));
+        return light_uniform_cone_pdf(cos_theta_max);
+    }
+    const float distance_squared = length_sq3(sub3(hit.position, origin));
+    const float abs_cosine = fmaxf(dot3(hit.normal, mul3(direction, -1.0f)), 0.0f);
+    return light_area_to_solid_angle_pdf(light.world_area, distance_squared, abs_cosine);
+}
+
+__device__ float analytic_emission_mis_weight(const DeviceSceneView& scene, const PathState& state,
+    const AnalyticLightHit& hit) {
+    if (!state.previous_scatter_valid || state.previous_scatter_delta || hit.light_index < 0) {
+        return 1.0f;
+    }
+    const PackedAnalyticLight& light = scene.analytic_lights[hit.light_index];
+    const float3 direction = normalize3(state.ray.direction);
+    const float light_pdf =
+        light.selection_pdf
+        * analytic_light_pdf_for_hit(light, state.previous_scatter_position, direction, hit);
+    return light_power_heuristic(state.previous_bsdf_pdf, light_pdf);
+}
+
+__device__ bool analytic_infinite_direction(const PackedAnalyticLight& light,
+    const float3& direction) {
+    if (light.type == PackedAnalyticLightType::dome) {
+        return true;
+    }
+    if (light.type != PackedAnalyticLightType::distant) {
+        return false;
+    }
+    const float3 axis = normalize3(packed_light_vector_to_float3(light.basis_z));
+    const float threshold = light.delta != 0 ? 0.999999f : light.cos_theta_max;
+    return dot3(axis, direction) >= threshold;
+}
+
+__device__ float analytic_infinite_pdf(const PackedAnalyticLight& light) {
+    if (light.delta != 0) {
+        return 0.0f;
+    }
+    return light.type == PackedAnalyticLightType::dome
+               ? light_uniform_sphere_pdf()
+               : light_uniform_cone_pdf(light.cos_theta_max);
+}
+
+__device__ float3 analytic_infinite_radiance(const DeviceSceneView& scene, const PathState& state) {
+    float3 radiance = make_float3(0.0f, 0.0f, 0.0f);
+    const float3 direction = normalize3(state.ray.direction);
+    for (int i = 0; i < scene.analytic_light_count; ++i) {
+        const PackedAnalyticLight& light = scene.analytic_lights[i];
+        if (!analytic_infinite_direction(light, direction)) {
+            continue;
+        }
+        float weight = 1.0f;
+        if (state.previous_scatter_valid && !state.previous_scatter_delta) {
+            const float conditional_pdf = analytic_infinite_pdf(light);
+            if (conditional_pdf <= 0.0f) {
+                continue;
+            }
+            weight = light_power_heuristic(state.previous_bsdf_pdf,
+                light.selection_pdf * conditional_pdf);
+        }
+        radiance = add3(radiance, mul3(packed_light_vector_to_float3(light.radiance), weight));
+    }
+    return radiance;
+}
+
 __device__ float reflectance(float cosine, float refraction_index) {
     float r0 = (1.0f - refraction_index) / (1.0f + refraction_index);
     r0 *= r0;
@@ -904,6 +1163,124 @@ __device__ DirectLightSample sample_direct_light(const DeviceSceneView& scene,
     sample.emission = evaluate_material_emission(scene, scene.materials[sample.material_index],
         tex_u, tex_v, sample.position);
     sample.pdf = selection_pdf * conditional_pdf;
+    sample.valid = sample.pdf > 0.0f && max_component3(sample.emission) > 0.0f;
+    return sample;
+}
+
+__device__ DirectLightSample sample_analytic_direct_light(const DeviceSceneView& scene,
+    const HitInfo& receiver, std::uint32_t& rng) {
+    DirectLightSample sample {};
+    const int light_index = sample_packed_analytic_light(scene.analytic_lights,
+        scene.analytic_light_count, random_float01(rng));
+    if (light_index < 0) {
+        return sample;
+    }
+    const PackedAnalyticLight& light = scene.analytic_lights[light_index];
+    if (light.selection_pdf <= 0.0f) {
+        return sample;
+    }
+
+    sample.emission = packed_light_vector_to_float3(light.radiance);
+    if (light.type == PackedAnalyticLightType::dome) {
+        sample.direction = random_unit_vector(rng);
+        sample.distance = kRayFar;
+        sample.pdf = light.selection_pdf * light_uniform_sphere_pdf();
+        sample.infinite = true;
+        sample.valid = sample.pdf > 0.0f && max_component3(sample.emission) > 0.0f;
+        return sample;
+    }
+    if (light.type == PackedAnalyticLightType::distant) {
+        const float3 axis = normalize3(packed_light_vector_to_float3(light.basis_z));
+        sample.direction = light.delta != 0
+                               ? axis
+                               : sample_uniform_cone_direction(axis, light.cos_theta_max,
+                                     random_float01(rng), random_float01(rng));
+        sample.distance = kRayFar;
+        sample.pdf = light.selection_pdf
+                     * (light.delta != 0 ? 1.0f : light_uniform_cone_pdf(light.cos_theta_max));
+        sample.infinite = true;
+        sample.delta = light.delta != 0;
+        sample.valid = sample.pdf > 0.0f && max_component3(sample.emission) > 0.0f;
+        return sample;
+    }
+
+    const float3 surface_point = receiver.position;
+    const float3 center = packed_light_vector_to_float3(light.position);
+    if (light.type == PackedAnalyticLightType::sphere) {
+        const float3 to_center = sub3(center, surface_point);
+        const float distance_squared = length_sq3(to_center);
+        const float radius = light.radius * length3(packed_light_vector_to_float3(light.basis_x));
+        const float radius_squared = radius * radius;
+        if (distance_squared <= radius_squared * (1.0f + 1e-6f)) {
+            return sample;
+        }
+        if (light.treat_as_point != 0) {
+            sample.distance = sqrtf(distance_squared);
+            sample.direction = div3(to_center, sample.distance);
+            const float intensity_scale = light.world_area > 1e-12f ? light.world_area : 1.0f;
+            sample.emission = mul3(sample.emission, intensity_scale / distance_squared);
+            sample.pdf = light.selection_pdf;
+            sample.delta = true;
+            sample.valid = max_component3(sample.emission) > 0.0f;
+            return sample;
+        }
+        const float cos_theta_max = sqrtf(fmaxf(0.0f, 1.0f - radius_squared / distance_squared));
+        sample.direction = sample_uniform_cone_direction(normalize3(to_center), cos_theta_max,
+            random_float01(rng), random_float01(rng));
+        AnalyticLightHit surface_hit {};
+        if (!try_intersect_analytic_light(light,
+                Ray {.origin = surface_point, .direction = sample.direction}, kRayEpsilon, kRayFar,
+                surface_hit)) {
+            return DirectLightSample {};
+        }
+        sample.position = surface_hit.position;
+        sample.normal = surface_hit.normal;
+        sample.distance = surface_hit.t;
+        sample.pdf = light.selection_pdf * light_uniform_cone_pdf(cos_theta_max);
+        sample.valid = sample.pdf > 0.0f && max_component3(sample.emission) > 0.0f;
+        return sample;
+    }
+
+    const float u0 = random_float01(rng);
+    const float u1 = random_float01(rng);
+    if (light.type == PackedAnalyticLightType::disk) {
+        const float radial = light.radius * sqrtf(u0);
+        const float phi = 2.0f * kPi * u1;
+        sample.position = add3(center,
+            add3(mul3(packed_light_vector_to_float3(light.basis_x), radial * cosf(phi)),
+                mul3(packed_light_vector_to_float3(light.basis_y), radial * sinf(phi))));
+        sample.normal = analytic_light_normal(light);
+    } else if (light.type == PackedAnalyticLightType::rect) {
+        sample.position = add3(center,
+            add3(mul3(packed_light_vector_to_float3(light.basis_x), (u0 - 0.5f) * light.width),
+                mul3(packed_light_vector_to_float3(light.basis_y), (u1 - 0.5f) * light.height)));
+        sample.normal = analytic_light_normal(light);
+    } else if (light.type == PackedAnalyticLightType::cylinder) {
+        const float phi = 2.0f * kPi * u0;
+        const float radial_x = light.radius * cosf(phi);
+        const float radial_y = light.radius * sinf(phi);
+        sample.position = add3(center,
+            add3(add3(mul3(packed_light_vector_to_float3(light.basis_x), radial_x),
+                     mul3(packed_light_vector_to_float3(light.basis_y), radial_y)),
+                mul3(packed_light_vector_to_float3(light.basis_z), (u1 - 0.5f) * light.length)));
+        sample.normal =
+            normalize3(add3(mul3(packed_light_vector_to_float3(light.basis_x), radial_x),
+                mul3(packed_light_vector_to_float3(light.basis_y), radial_y)));
+    } else {
+        return DirectLightSample {};
+    }
+
+    const float3 to_light = sub3(sample.position, surface_point);
+    const float distance_squared = length_sq3(to_light);
+    if (distance_squared <= 1e-12f) {
+        return DirectLightSample {};
+    }
+    sample.distance = sqrtf(distance_squared);
+    sample.direction = div3(to_light, sample.distance);
+    const float abs_cosine = dot3(sample.normal, mul3(sample.direction, -1.0f));
+    const float conditional_pdf =
+        light_area_to_solid_angle_pdf(light.world_area, distance_squared, abs_cosine);
+    sample.pdf = light.selection_pdf * conditional_pdf;
     sample.valid = sample.pdf > 0.0f && max_component3(sample.emission) > 0.0f;
     return sample;
 }
@@ -1280,10 +1657,25 @@ __global__ void radiance_kernel(const LaunchParams* params_ptr) {
         const int max_bounces = params.max_bounces > 0 ? params.max_bounces : 1;
         for (int bounce = 0; bounce < max_bounces && state.alive; ++bounce) {
             HitInfo hit = intersect_scene(params.scene, state.ray, kRayEpsilon, kRayFar, &rng);
+            const AnalyticLightHit analytic_hit = intersect_analytic_lights(params.scene, state.ray,
+                kRayEpsilon, hit.hit ? hit.t : kRayFar);
+            if (analytic_hit.hit) {
+                const PackedAnalyticLight& light =
+                    params.scene.analytic_lights[analytic_hit.light_index];
+                const float weight =
+                    analytic_emission_mis_weight(params.scene, state, analytic_hit);
+                state.radiance = add3(state.radiance,
+                    mul3(state.throughput,
+                        mul3(packed_light_vector_to_float3(light.radiance), weight)));
+                state.alive = false;
+                break;
+            }
             if (!hit.hit) {
                 const float weight = emission_mis_weight(params.scene, state, nullptr, true);
                 state.radiance = add3(state.radiance,
                     mul3(state.throughput, mul3(scene_background(params), weight)));
+                state.radiance = add3(state.radiance,
+                    mul3(state.throughput, analytic_infinite_radiance(params.scene, state)));
                 state.alive = false;
                 break;
             }
@@ -1324,6 +1716,7 @@ __global__ void radiance_kernel(const LaunchParams* params_ptr) {
                 add3(state.radiance, mul3(state.throughput, mul3(hit.emission, emission_weight)));
             const bool bsdf_technique_available = bounce + 1 < max_bounces;
             accumulate_direct_light(params, hit, rng, bsdf_technique_available, state);
+            accumulate_analytic_direct_light(params, hit, rng, bsdf_technique_available, state);
             if (!bsdf_technique_available) {
                 state.alive = false;
                 break;
@@ -1529,6 +1922,39 @@ __device__ void accumulate_direct_light(const LaunchParams& params, const HitInf
 
     const float mis_weight =
         bsdf_technique_available ? light_power_heuristic(light.pdf, bsdf_pdf) : 1.0f;
+    const float3 direct = mul3(mul3(light.emission, response), mis_weight / light.pdf);
+    state.radiance = add3(state.radiance, mul3(state.throughput, direct));
+}
+
+__device__ void accumulate_analytic_direct_light(const LaunchParams& params, const HitInfo& hit,
+    std::uint32_t& rng, bool bsdf_technique_available, PathState& state) {
+    if (hit.material_type == 3 || params.scene.analytic_light_count <= 0) {
+        return;
+    }
+
+    const DirectLightSample light = sample_analytic_direct_light(params.scene, hit, rng);
+    if (!light.valid) {
+        return;
+    }
+
+    float bsdf_pdf = 0.0f;
+    const float3 response =
+        direct_material_response(params.scene, hit, state, light.direction, bsdf_pdf);
+    if (max_component3(response) <= 0.0f) {
+        return;
+    }
+
+    Ray shadow_ray {};
+    shadow_ray.origin = add3(hit.position, mul3(light.direction, kRayEpsilon * 2.0f));
+    shadow_ray.direction = light.direction;
+    const float max_t = light.infinite ? kRayFar : light.distance - kRayEpsilon * 3.0f;
+    if (max_t <= kRayEpsilon || is_occluded(params.scene, shadow_ray, max_t)) {
+        return;
+    }
+
+    const float mis_weight = light.delta || !bsdf_technique_available
+                                 ? 1.0f
+                                 : light_power_heuristic(light.pdf, bsdf_pdf);
     const float3 direct = mul3(mul3(light.emission, response), mis_weight / light.pdf);
     state.radiance = add3(state.radiance, mul3(state.throughput, direct));
 }

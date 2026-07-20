@@ -28,6 +28,7 @@ private:
     MaterialSample* materials_ = nullptr;
     OpenPbrCompiledMaterial* openpbr_materials_ = nullptr;
     PackedLight* lights_ = nullptr;
+    PackedAnalyticLight* analytic_lights_ = nullptr;
     int sphere_count_ = 0;
     int quad_count_ = 0;
     int triangle_count_ = 0;
@@ -37,6 +38,7 @@ private:
     int material_count_ = 0;
     int openpbr_material_count_ = 0;
     int light_count_ = 0;
+    int analytic_light_count_ = 0;
 };
 
 } // namespace rt

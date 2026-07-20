@@ -101,6 +101,20 @@ RT_LIGHT_HD RT_LIGHT_INLINE int sample_packed_light(const PackedLight* lights, i
     return light_count - 1;
 }
 
+RT_LIGHT_HD RT_LIGHT_INLINE int sample_packed_analytic_light(const PackedAnalyticLight* lights,
+    int light_count, float u) {
+    if (lights == nullptr || light_count <= 0) {
+        return -1;
+    }
+    const float sample = u < 0.0f ? 0.0f : (u < 1.0f ? u : 0.99999994f);
+    for (int i = 0; i < light_count; ++i) {
+        if (sample < lights[i].cdf) {
+            return i;
+        }
+    }
+    return light_count - 1;
+}
+
 RT_LIGHT_HD RT_LIGHT_INLINE void sample_uniform_triangle(float u0, float u1, float& w0, float& w1,
     float& w2) {
     const float sqrt_u0 = sqrtf(u0 < 0.0f ? 0.0f : (u0 < 1.0f ? u0 : 1.0f));

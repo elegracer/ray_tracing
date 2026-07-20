@@ -39,6 +39,7 @@ struct DeviceSceneView {
     MaterialSample* materials = nullptr;
     OpenPbrCompiledMaterial* openpbr_materials = nullptr;
     PackedLight* lights = nullptr;
+    PackedAnalyticLight* analytic_lights = nullptr;
     int sphere_count = 0;
     int quad_count = 0;
     int triangle_count = 0;
@@ -48,6 +49,7 @@ struct DeviceSceneView {
     int material_count = 0;
     int openpbr_material_count = 0;
     int light_count = 0;
+    int analytic_light_count = 0;
 };
 
 struct DevicePinhole32Params {
