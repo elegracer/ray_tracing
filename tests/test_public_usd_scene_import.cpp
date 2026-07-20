@@ -1,9 +1,12 @@
 #include "scene/openusd_stage_importer.h"
 
 #include <cstdlib>
+#include <cstddef>
 #include <exception>
 #include <filesystem>
 #include <iostream>
+#include <stdexcept>
+#include <variant>
 
 int main(int argc, const char* argv[]) {
     if (argc != 2) {
@@ -18,8 +21,39 @@ int main(int argc, const char* argv[]) {
     try {
         const rt::scene::SceneIRv2 scene =
             rt::scene::import_openusd_stage(std::filesystem::path {argv[1]});
+        std::size_t meshes_with_primvars = 0;
+        std::size_t meshes_with_material_subsets = 0;
+        std::size_t connected_surface_materials = 0;
+        std::size_t resolved_image_textures = 0;
+        for (const rt::scene::ScenePrim& prim : scene.prims()) {
+            if (prim.geometry
+                && std::holds_alternative<rt::scene::SceneMeshGeometry>(*prim.geometry)) {
+                const auto& mesh = std::get<rt::scene::SceneMeshGeometry>(*prim.geometry);
+                meshes_with_primvars += !mesh.primvars.empty();
+                meshes_with_material_subsets += !mesh.material_subsets.empty();
+            }
+            if (prim.material
+                && std::holds_alternative<rt::scene::SceneOpenPbrSurface>(*prim.material)) {
+                const auto& material = std::get<rt::scene::SceneOpenPbrSurface>(*prim.material);
+                connected_surface_materials += !material.connections.empty();
+            }
+            if (prim.texture && prim.texture->node == rt::scene::SceneTextureNode::image
+                && prim.asset_references.size() == 1
+                && !prim.asset_references.front().resolved_path.empty()) {
+                ++resolved_image_textures;
+            }
+        }
+        if (meshes_with_primvars == 0 || meshes_with_material_subsets == 0
+            || connected_surface_materials == 0 || resolved_image_textures == 0) {
+            throw std::runtime_error(
+                "public stage did not compile mesh primvars, material subsets, connected "
+                "PreviewSurface materials, and resolved image textures");
+        }
         std::cout << "imported public USD acceptance stage with " << scene.prims().size()
-                  << " SceneIR v2 prims\n";
+                  << " SceneIR v2 prims; meshes_with_primvars=" << meshes_with_primvars
+                  << ", meshes_with_material_subsets=" << meshes_with_material_subsets
+                  << ", connected_surface_materials=" << connected_surface_materials
+                  << ", resolved_image_textures=" << resolved_image_textures << '\n';
     } catch (const std::exception& error) {
         std::cerr << "public USD acceptance import failed: " << error.what() << '\n';
         return EXIT_FAILURE;

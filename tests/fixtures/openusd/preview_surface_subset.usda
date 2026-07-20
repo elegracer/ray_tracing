@@ -1,0 +1,61 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "World"
+{
+    def Scope "Looks"
+    {
+        def Material "Paint"
+        {
+            token outputs:surface.connect = </World/Looks/Paint/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </World/Looks/Paint/Texture.outputs:rgb>
+                float inputs:metallic = 0.2
+                float inputs:roughness = 0.35
+                token outputs:surface
+            }
+
+            def Shader "Texture"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @paint.png@
+                float3 outputs:rgb
+            }
+        }
+    }
+
+    def Mesh "Panel"
+    {
+        int[] faceVertexCounts = [3, 3]
+        int[] faceVertexIndices = [0, 1, 2, 0, 2, 3]
+        point3f[] points = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)]
+        color3f[] primvars:displayColor = [(0.8, 0.8, 0.8)] (
+            interpolation = "constant"
+        )
+        texCoord2f[] primvars:map1 = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+        float3[] primvars:normals = [(0, 0, 1), (0, 0, 1)] (
+            interpolation = "uniform"
+        )
+        uniform token subdivisionScheme = "none"
+        uniform token subsetFamily:materialBind:familyType = "partition"
+
+        def GeomSubset "paintedFaces" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform token elementType = "face"
+            uniform token familyName = "materialBind"
+            int[] indices = [0, 1]
+            rel material:binding = </World/Looks/Paint>
+        }
+    }
+}

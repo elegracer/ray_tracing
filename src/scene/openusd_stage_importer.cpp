@@ -39,7 +39,10 @@
 #include <pxr/usd/usdGeom/imageable.h>
 #include <pxr/usd/usdGeom/mesh.h>
 #include <pxr/usd/usdGeom/metrics.h>
+#include <pxr/usd/usdGeom/primvar.h>
+#include <pxr/usd/usdGeom/primvarsAPI.h>
 #include <pxr/usd/usdGeom/sphere.h>
+#include <pxr/usd/usdGeom/subset.h>
 #include <pxr/usd/usdGeom/tokens.h>
 #include <pxr/usd/usdGeom/xformable.h>
 #include <pxr/usd/usdLux/cylinderLight.h>
@@ -178,6 +181,163 @@ ScenePurpose scene_purpose(const pxr::TfToken& value, const std::string& prim_pa
         "unsupported OpenUSD purpose '" + value.GetString() + "' on " + prim_path);
 }
 
+ScenePrimvarInterpolation primvar_interpolation(const pxr::TfToken& value,
+    const std::string& prim_path) {
+    if (value == pxr::UsdGeomTokens->constant) {
+        return ScenePrimvarInterpolation::constant;
+    }
+    if (value == pxr::UsdGeomTokens->uniform) {
+        return ScenePrimvarInterpolation::uniform;
+    }
+    if (value == pxr::UsdGeomTokens->varying) {
+        return ScenePrimvarInterpolation::varying;
+    }
+    if (value == pxr::UsdGeomTokens->vertex) {
+        return ScenePrimvarInterpolation::vertex;
+    }
+    if (value == pxr::UsdGeomTokens->faceVarying) {
+        return ScenePrimvarInterpolation::face_varying;
+    }
+    throw std::invalid_argument(
+        "unsupported OpenUSD primvar interpolation '" + value.GetString() + "' on " + prim_path);
+}
+
+template<typename VtArray, typename OutputValue, typename Convert>
+std::vector<OutputValue> read_primvar_values(const pxr::UsdGeomPrimvar& primvar,
+    const std::string& prim_path, Convert&& convert) {
+    VtArray values;
+    if (!primvar.Get(&values, pxr::UsdTimeCode::Default())) {
+        throw std::invalid_argument("failed to read OpenUSD primvar values on " + prim_path);
+    }
+    std::vector<OutputValue> result;
+    result.reserve(values.size());
+    for (const auto& value : values) {
+        result.push_back(convert(value));
+    }
+    return result;
+}
+
+ScenePrimvar import_primvar(const pxr::UsdGeomPrimvar& usd_primvar) {
+    const std::string prim_path = usd_primvar.GetAttr().GetPath().GetString();
+    ScenePrimvar primvar;
+    primvar.name = usd_primvar.GetPrimvarName().GetString();
+    primvar.interpolation = primvar_interpolation(usd_primvar.GetInterpolation(), prim_path);
+    primvar.element_size = static_cast<std::size_t>(std::max(1, usd_primvar.GetElementSize()));
+
+    const pxr::SdfValueTypeName type = usd_primvar.GetTypeName();
+    if (type == pxr::SdfValueTypeNames->TexCoord2fArray
+        || type == pxr::SdfValueTypeNames->Float2Array) {
+        primvar.role = type == pxr::SdfValueTypeNames->TexCoord2fArray ? ScenePrimvarRole::texcoord
+                                                                       : ScenePrimvarRole::none;
+        primvar.values =
+            read_primvar_values<pxr::VtVec2fArray, Eigen::Vector2f>(usd_primvar, prim_path,
+                [](const pxr::GfVec2f& value) { return Eigen::Vector2f {value[0], value[1]}; });
+    } else if (type == pxr::SdfValueTypeNames->Color3fArray
+               || type == pxr::SdfValueTypeNames->Normal3fArray
+               || type == pxr::SdfValueTypeNames->Vector3fArray
+               || type == pxr::SdfValueTypeNames->Point3fArray
+               || type == pxr::SdfValueTypeNames->Float3Array) {
+        if (type == pxr::SdfValueTypeNames->Color3fArray) {
+            primvar.role = ScenePrimvarRole::color;
+        } else if (type == pxr::SdfValueTypeNames->Normal3fArray) {
+            primvar.role = ScenePrimvarRole::normal;
+        } else if (type == pxr::SdfValueTypeNames->Vector3fArray) {
+            primvar.role = ScenePrimvarRole::vector;
+        } else if (type == pxr::SdfValueTypeNames->Point3fArray) {
+            primvar.role = ScenePrimvarRole::point;
+        }
+        primvar.values = read_primvar_values<pxr::VtVec3fArray, Eigen::Vector3f>(usd_primvar,
+            prim_path, [](const pxr::GfVec3f& value) {
+                return Eigen::Vector3f {value[0], value[1], value[2]};
+            });
+    } else if (type == pxr::SdfValueTypeNames->FloatArray) {
+        primvar.values = read_primvar_values<pxr::VtFloatArray, float>(usd_primvar, prim_path,
+            [](float value) { return value; });
+    } else if (type == pxr::SdfValueTypeNames->DoubleArray) {
+        primvar.values = read_primvar_values<pxr::VtDoubleArray, double>(usd_primvar, prim_path,
+            [](double value) { return value; });
+    } else if (type == pxr::SdfValueTypeNames->IntArray) {
+        primvar.values = read_primvar_values<pxr::VtIntArray, std::int32_t>(usd_primvar, prim_path,
+            [](int value) { return static_cast<std::int32_t>(value); });
+    } else {
+        throw std::invalid_argument("unsupported OpenUSD primvar type '"
+                                    + type.GetAsToken().GetString() + "' on " + prim_path);
+    }
+
+    if (primvar.role == ScenePrimvarRole::none && primvar.name == "normals"
+        && std::holds_alternative<std::vector<Eigen::Vector3f>>(primvar.values)) {
+        primvar.role = ScenePrimvarRole::normal;
+    } else if (primvar.role == ScenePrimvarRole::none && primvar.name == "tangents"
+               && std::holds_alternative<std::vector<Eigen::Vector3f>>(primvar.values)) {
+        primvar.role = ScenePrimvarRole::vector;
+    }
+
+    if (usd_primvar.IsIndexed()) {
+        pxr::VtIntArray indices;
+        if (!usd_primvar.GetIndices(&indices, pxr::UsdTimeCode::Default())) {
+            throw std::invalid_argument("failed to read OpenUSD primvar indices on " + prim_path);
+        }
+        primvar.indices.assign(indices.begin(), indices.end());
+    }
+    return primvar;
+}
+
+void import_mesh_primvars(const pxr::UsdGeomMesh& mesh, SceneMeshGeometry& geometry) {
+    const pxr::UsdGeomPrimvarsAPI primvars_api {mesh.GetPrim()};
+    for (const pxr::UsdGeomPrimvar& primvar : primvars_api.GetPrimvarsWithValues()) {
+        geometry.primvars.push_back(import_primvar(primvar));
+    }
+    std::sort(geometry.primvars.begin(), geometry.primvars.end(),
+        [](const ScenePrimvar& left, const ScenePrimvar& right) { return left.name < right.name; });
+}
+
+void import_material_subsets(const pxr::UsdGeomMesh& mesh, SceneMeshGeometry& geometry) {
+    pxr::UsdShadeMaterialBindingAPI binding_api {mesh.GetPrim()};
+    const std::vector<pxr::UsdGeomSubset> subsets = binding_api.GetMaterialBindSubsets();
+    if (subsets.empty()) {
+        return;
+    }
+
+    const pxr::TfToken family_type = binding_api.GetMaterialBindSubsetsFamilyType();
+    if (family_type == pxr::UsdGeomTokens->partition) {
+        geometry.material_subset_family_type = SceneMaterialSubsetFamilyType::partition;
+    } else if (family_type != pxr::UsdGeomTokens->nonOverlapping) {
+        throw std::invalid_argument("unsupported materialBind subset family type '"
+                                    + family_type.GetString() + "' on "
+                                    + mesh.GetPath().GetString());
+    }
+
+    geometry.material_subsets.reserve(subsets.size());
+    for (const pxr::UsdGeomSubset& subset : subsets) {
+        const std::string subset_path = subset.GetPath().GetString();
+        const pxr::TfToken element_type = read_attribute<pxr::TfToken>(subset.GetElementTypeAttr(),
+            subset_path, "GeomSubset element type");
+        if (element_type != pxr::UsdGeomTokens->face) {
+            throw std::invalid_argument(
+                "materialBind GeomSubset must target faces on " + subset_path);
+        }
+
+        const pxr::VtIntArray indices = read_attribute<pxr::VtIntArray>(subset.GetIndicesAttr(),
+            subset_path, "GeomSubset indices");
+        const pxr::UsdShadeMaterial material =
+            pxr::UsdShadeMaterialBindingAPI {subset.GetPrim()}.ComputeBoundMaterial();
+        if (!material) {
+            throw std::invalid_argument(
+                "materialBind GeomSubset has no resolved material on " + subset_path);
+        }
+
+        SceneMaterialSubset imported;
+        imported.name = subset.GetPrim().GetName().GetString();
+        imported.face_indices.assign(indices.begin(), indices.end());
+        imported.material_path = material.GetPath().GetString();
+        geometry.material_subsets.push_back(std::move(imported));
+    }
+    std::sort(geometry.material_subsets.begin(), geometry.material_subsets.end(),
+        [](const SceneMaterialSubset& left, const SceneMaterialSubset& right) {
+            return left.name < right.name;
+        });
+}
+
 void import_imageable(const pxr::UsdPrim& usd_prim, ScenePrim& prim) {
     const pxr::UsdGeomImageable imageable {usd_prim};
     if (!imageable) {
@@ -297,6 +457,8 @@ SceneGeometry import_geometry(const pxr::UsdPrim& usd_prim) {
         throw std::invalid_argument("unsupported OpenUSD mesh subdivision scheme '"
                                     + subdivision.GetString() + "' on " + prim_path);
     }
+    import_mesh_primvars(mesh, geometry);
+    import_material_subsets(mesh, geometry);
     return geometry;
 }
 
@@ -497,11 +659,13 @@ std::optional<pxr::UsdShadeShader> connected_texture_shader(const pxr::UsdShadeI
     }
     const pxr::UsdShadeConnectionSourceInfo& source = sources.front();
     if (source.sourceType != pxr::UsdShadeAttributeType::Output
-        || source.sourceName != pxr::TfToken {"out"}
+        || (source.sourceName != pxr::TfToken {"out"} && source.sourceName != pxr::TfToken {"rgb"})
         || (source.typeName != pxr::SdfValueTypeNames->Color3f
-            && source.typeName != pxr::SdfValueTypeNames->Color3d)) {
+            && source.typeName != pxr::SdfValueTypeNames->Color3d
+            && source.typeName != pxr::SdfValueTypeNames->Float3
+            && source.typeName != pxr::SdfValueTypeNames->Vector3f)) {
         throw std::invalid_argument(
-            "connected MaterialX input requires one color3 outputs:out source: " + input_path);
+            "connected color input requires one outputs:out or outputs:rgb source: " + input_path);
     }
     const pxr::UsdShadeShader shader {source.source.GetPrim()};
     if (!shader) {
@@ -566,7 +730,22 @@ std::string import_texture_shader(const pxr::UsdShadeShader& shader, MaterialGra
     SceneTexture texture;
     texture.color_space = SceneColorSpace::linear_srgb;
 
-    if (shader_id == pxr::TfToken {"ND_constant_color3"}) {
+    if (shader_id == pxr::TfToken {"UsdUVTexture"}) {
+        require_supported_inputs(shader, std::array<std::string_view, 1> {"file"});
+        const pxr::UsdShadeInput file = shader.GetInput(pxr::TfToken {"file"});
+        if (!file) {
+            throw std::invalid_argument("UsdUVTexture requires inputs:file on " + source_key);
+        }
+        prim.asset_references.clear();
+        append_asset_reference(file.GetAttr(), source_key, prim.asset_references);
+        if (prim.asset_references.size() != 1) {
+            throw std::invalid_argument(
+                "UsdUVTexture requires one authored asset on " + source_key);
+        }
+        texture.node = SceneTextureNode::image;
+        texture.node_definition = "ND_image_color3";
+        texture.color_space = SceneColorSpace::srgb_texture;
+    } else if (shader_id == pxr::TfToken {"ND_constant_color3"}) {
         require_supported_inputs(shader, std::array<std::string_view, 1> {"value"});
         texture.node = SceneTextureNode::constant_color;
         texture.node_definition = "ND_constant_color3";
@@ -786,6 +965,78 @@ SceneOpenPbrSurface import_openpbr_surface(const pxr::UsdShadeShader& shader,
     return surface;
 }
 
+SceneOpenPbrSurface import_usd_preview_surface(const pxr::UsdShadeShader& shader,
+    MaterialGraphImport& graph) {
+    const std::string shader_path = shader.GetPath().GetString();
+    SceneOpenPbrSurface surface;
+    surface.base_color = Eigen::Vector3d::Constant(0.18);
+    surface.specular_roughness = 0.5;
+    surface.specular_ior = 1.5;
+
+    for (const pxr::UsdShadeInput& input : shader.GetInputs(true)) {
+        const std::string input_name = input.GetBaseName().GetString();
+        const std::string input_path = shader_path + ".inputs:" + input_name;
+        if (input_name == "diffuseColor") {
+            const std::optional<pxr::UsdShadeShader> connected = connected_texture_shader(input);
+            if (connected) {
+                surface.connections.push_back({"base_color", SceneMaterialValueType::color3,
+                    import_texture_shader(*connected, graph), SceneTextureChannel::rgb});
+            } else {
+                pxr::VtValue value;
+                if (!input.Get(&value, pxr::UsdTimeCode::Default())) {
+                    throw std::invalid_argument(
+                        "failed to read authored UsdPreviewSurface input: " + input_path);
+                }
+                surface.base_color = material_color(value, input_path);
+            }
+        } else if (input_name == "roughness") {
+            pxr::VtValue value;
+            if (!input.Get(&value, pxr::UsdTimeCode::Default())) {
+                throw std::invalid_argument(
+                    "failed to read authored UsdPreviewSurface input: " + input_path);
+            }
+            surface.specular_roughness = material_scalar(value, input_path);
+        } else if (input_name == "metallic") {
+            pxr::VtValue value;
+            if (!input.Get(&value, pxr::UsdTimeCode::Default())) {
+                throw std::invalid_argument(
+                    "failed to read authored UsdPreviewSurface input: " + input_path);
+            }
+            surface.base_metalness = material_scalar(value, input_path);
+        } else if (input_name == "opacity") {
+            pxr::VtValue value;
+            if (!input.Get(&value, pxr::UsdTimeCode::Default())) {
+                throw std::invalid_argument(
+                    "failed to read authored UsdPreviewSurface input: " + input_path);
+            }
+            surface.geometry_opacity = material_scalar(value, input_path);
+        } else if (input_name == "ior") {
+            pxr::VtValue value;
+            if (!input.Get(&value, pxr::UsdTimeCode::Default())) {
+                throw std::invalid_argument(
+                    "failed to read authored UsdPreviewSurface input: " + input_path);
+            }
+            surface.specular_ior = material_scalar(value, input_path);
+        } else if (input_name == "clearcoat" || input_name == "clearcoatRoughness") {
+            pxr::VtValue value;
+            if (!input.Get(&value, pxr::UsdTimeCode::Default())) {
+                throw std::invalid_argument(
+                    "failed to read authored UsdPreviewSurface input: " + input_path);
+            }
+            const double scalar = material_scalar(value, input_path);
+            if (input_name == "clearcoat") {
+                surface.coat_weight = scalar;
+            } else {
+                surface.coat_roughness = scalar;
+            }
+        } else {
+            throw std::invalid_argument(
+                "unsupported authored UsdPreviewSurface input: " + input_path);
+        }
+    }
+    return surface;
+}
+
 SceneMaterial import_material(const pxr::UsdShadeMaterial& material, MaterialGraphImport& graph) {
     pxr::TfToken source_name;
     pxr::UsdShadeAttributeType source_type;
@@ -795,6 +1046,11 @@ SceneMaterial import_material(const pxr::UsdShadeMaterial& material, MaterialGra
     if (!shader) {
         throw std::invalid_argument("OpenUSD material has no resolved universal surface source: "
                                     + material.GetPath().GetString());
+    }
+    const pxr::TfToken shader_id = read_attribute<pxr::TfToken>(shader.GetIdAttr(),
+        shader.GetPath().GetString(), "shader info:id");
+    if (shader_id == pxr::TfToken {"UsdPreviewSurface"}) {
+        return import_usd_preview_surface(shader, graph);
     }
     return import_openpbr_surface(shader, graph);
 }
@@ -1021,6 +1277,10 @@ void import_prim(const pxr::UsdPrim& usd_prim, ImportContext& context) {
     if (const pxr::UsdShadeShader shader {usd_prim}) {
         // Shader payloads are owned by their material prim and compiled through the
         // resolved material surface source instead of becoming standalone SceneIR prims.
+        return;
+    }
+    if (const pxr::UsdGeomSubset subset {usd_prim}) {
+        // Material-binding subsets are compiled into their parent mesh prototype.
         return;
     }
 

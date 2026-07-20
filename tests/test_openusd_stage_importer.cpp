@@ -1,6 +1,7 @@
 #include "scene/openusd_stage_importer.h"
 #include "test_support.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
@@ -200,6 +201,44 @@ int main(int argc, char** argv) {
     expect_true(image.asset_references.size() == 1
                     && image.asset_references[0].authored_path == "textures/emission.png",
         "image authored asset identity");
+
+    const std::filesystem::path preview_fixture =
+        fixture.parent_path() / "preview_surface_subset.usda";
+    const rt::scene::SceneIRv2 preview_scene = rt::scene::import_openusd_stage(preview_fixture);
+    rt::scene::require_valid_scene_ir_v2(preview_scene);
+    const rt::scene::ScenePrim& panel = require_prim(preview_scene, "/World/Panel");
+    const auto& panel_mesh = std::get<rt::scene::SceneMeshGeometry>(
+        *require_prim(preview_scene, panel.prototype_path).geometry);
+    expect_true(panel_mesh.material_subset_family_type
+                        == rt::scene::SceneMaterialSubsetFamilyType::partition
+                    && panel_mesh.material_subsets.size() == 1
+                    && panel_mesh.material_subsets[0].face_indices
+                           == std::vector<std::int32_t> {0, 1}
+                    && panel_mesh.material_subsets[0].material_path == "/World/Looks/Paint",
+        "materialBind GeomSubset compiles into the parent mesh prototype");
+    expect_true(panel_mesh.primvars.size() == 3,
+        "authored display color, UV, and normal primvars compile without fallback");
+    const auto normals = std::find_if(panel_mesh.primvars.begin(), panel_mesh.primvars.end(),
+        [](const rt::scene::ScenePrimvar& primvar) { return primvar.name == "normals"; });
+    expect_true(normals != panel_mesh.primvars.end()
+                    && normals->role == rt::scene::ScenePrimvarRole::normal,
+        "float3 normals from DCC-authored USD retain normal semantics");
+
+    const auto& preview_surface = std::get<rt::scene::SceneOpenPbrSurface>(
+        *require_prim(preview_scene, "/World/Looks/Paint").material);
+    expect_near(preview_surface.base_metalness, 0.2, 1e-6,
+        "UsdPreviewSurface metallic maps to OpenPBR base metalness");
+    expect_near(preview_surface.specular_roughness, 0.35, 1e-6,
+        "UsdPreviewSurface roughness maps to OpenPBR specular roughness");
+    const rt::scene::ScenePrim& preview_texture =
+        require_prim(preview_scene, require_connection(preview_surface, "base_color").texture_path);
+    expect_true(preview_texture.texture->node == rt::scene::SceneTextureNode::image
+                    && preview_texture.texture->node_definition == "ND_image_color3"
+                    && preview_texture.texture->color_space
+                           == rt::scene::SceneColorSpace::srgb_texture
+                    && preview_texture.asset_references.size() == 1
+                    && preview_texture.asset_references[0].authored_path == "paint.png",
+        "UsdPreviewSurface diffuseColor maps its UsdUVTexture without silent fallback");
 
     const std::filesystem::path unsupported_fixture =
         fixture.parent_path() / "unsupported_connected_material.usda";
