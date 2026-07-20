@@ -35,6 +35,7 @@ struct HitInfo {
 struct PathState {
     float3 throughput = make_float3(1.0f, 1.0f, 1.0f);
     float3 radiance = make_float3(0.0f, 0.0f, 0.0f);
+    OpenPbrTransportContext openpbr_context {};
     Ray ray {};
     bool alive = true;
 };
@@ -108,6 +109,12 @@ __device__ OpenPbrVec3 to_openpbr_vec3(const float3& value) {
 
 __device__ float3 from_openpbr_vec3(const OpenPbrVec3& value) {
     return make_float3(value.x, value.y, value.z);
+}
+
+__device__ OpenPbrTransportContext openpbr_context_for(const PathState& state) {
+    OpenPbrTransportContext context = state.openpbr_context;
+    context.path_throughput = to_openpbr_vec3(state.throughput);
+    return context;
 }
 
 __device__ float3 packed_medium_world_to_local_point(const PackedMedium& medium,
@@ -613,7 +620,7 @@ __device__ float3 direct_material_response(const DeviceSceneView& scene, const H
         make_openpbr_frame(to_openpbr_vec3(hit.geometric_normal), OpenPbrVec3 {});
     const OpenPbrEvaluation evaluation = evaluate_openpbr_core(parameters, frame,
         to_openpbr_vec3(mul3(normalize3(state.ray.direction), -1.0f)),
-        to_openpbr_vec3(light_direction));
+        to_openpbr_vec3(light_direction), openpbr_context_for(state));
     const float cosine = fabsf(dot3(hit.shading_normal, light_direction));
     return mul3(from_openpbr_vec3(evaluation.value), cosine);
 }
@@ -1373,7 +1380,7 @@ __device__ void sample_bsdf(const LaunchParams& params, const HitInfo& hit, std:
             make_openpbr_frame(to_openpbr_vec3(hit.geometric_normal), OpenPbrVec3 {});
         const OpenPbrSample sample = sample_openpbr_core(parameters, frame,
             to_openpbr_vec3(mul3(normalize3(state.ray.direction), -1.0f)), random_float01(rng),
-            random_float01(rng), random_float01(rng));
+            random_float01(rng), random_float01(rng), openpbr_context_for(state));
         if (sample.valid == 0) {
             state.alive = false;
             return;

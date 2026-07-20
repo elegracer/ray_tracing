@@ -23,10 +23,9 @@ void require_production_core_support(const SceneOpenPbrSurface& material) {
             "OpenPBR production core does not yet support active subsurface lobes");
     }
     if (material.transmission_scatter.squaredNorm() > 0.0
-        || material.transmission_scatter_anisotropy != 0.0
-        || material.transmission_dispersion_scale > 0.0) {
+        || material.transmission_scatter_anisotropy != 0.0) {
         throw std::invalid_argument(
-            "OpenPBR production core does not yet support scattering or dispersion");
+            "OpenPBR production core does not yet support transmission scattering");
     }
     if (material.geometry_normal_default_geomprop != "Nworld"
         || material.geometry_tangent_default_geomprop != "Tworld"
@@ -123,6 +122,10 @@ OpenPbrCompiledMaterial compile_openpbr_core_material(const SceneOpenPbrSurface&
                 .transmission_weight = static_cast<float>(material.transmission_weight),
                 .transmission_color = to_openpbr_vec3(material.transmission_color),
                 .transmission_depth = static_cast<float>(material.transmission_depth),
+                .transmission_dispersion_scale =
+                    static_cast<float>(material.transmission_dispersion_scale),
+                .transmission_dispersion_abbe_number =
+                    static_cast<float>(material.transmission_dispersion_abbe_number),
                 .fuzz_weight = static_cast<float>(material.fuzz_weight),
                 .fuzz_color = to_openpbr_vec3(material.fuzz_color),
                 .fuzz_roughness = static_cast<float>(material.fuzz_roughness),
