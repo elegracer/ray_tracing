@@ -3,7 +3,60 @@ set(RT_PUBLIC_ACCEPTANCE_REQUIRED_GATES
     "usd_stage_import"
     "openpbr_material_compile"
     "realtime_render"
+    "offline_render_artifacts"
+    "multi_pose_coverage"
+    "camera_model_coverage"
+    "simultaneous_multiview"
     "deterministic_reference_image"
+)
+set(RT_PUBLIC_ACCEPTANCE_RENDER_OUTPUT_SCHEMA "public_acceptance_render_outputs_v1")
+set(RT_PUBLIC_ACCEPTANCE_RENDER_WIDTH 640)
+set(RT_PUBLIC_ACCEPTANCE_RENDER_HEIGHT 480)
+set(RT_PUBLIC_ACCEPTANCE_RENDER_FORMATS
+    "linear_exr"
+    "display_png"
+)
+set(RT_PUBLIC_ACCEPTANCE_MIN_VIEW_OUTPUTS 10)
+set(RT_PUBLIC_ACCEPTANCE_MIN_IMAGE_ARTIFACTS 20)
+set(RT_PUBLIC_ACCEPTANCE_MANIFEST_FIELDS
+    "source_revisions"
+    "render_settings"
+    "sample_seed"
+    "cameras"
+    "outputs"
+    "simultaneous_submission_id"
+    "reference_metrics"
+)
+set(RT_PUBLIC_ACCEPTANCE_CAMERA_MODELS
+    "pinhole32"
+    "equi62_lut1d"
+)
+set(RT_PUBLIC_ACCEPTANCE_POSES
+    "front_three_quarter"
+    "rear_three_quarter"
+    "elevated_three_quarter"
+)
+set(RT_PUBLIC_ACCEPTANCE_SINGLE_VIEW_CASES
+    "front_three_quarter:pinhole32"
+    "front_three_quarter:equi62_lut1d"
+    "rear_three_quarter:pinhole32"
+    "rear_three_quarter:equi62_lut1d"
+    "elevated_three_quarter:pinhole32"
+    "elevated_three_quarter:equi62_lut1d"
+)
+set(RT_PUBLIC_ACCEPTANCE_MULTIVIEW_CASE_ID "orbit_4_mixed_models")
+set(RT_PUBLIC_ACCEPTANCE_MULTIVIEW_CAMERA_COUNT 4)
+set(RT_PUBLIC_ACCEPTANCE_MULTIVIEW_AZIMUTHS_DEG
+    45
+    135
+    225
+    315
+)
+set(RT_PUBLIC_ACCEPTANCE_MULTIVIEW_CAMERA_MODELS
+    "pinhole32"
+    "equi62_lut1d"
+    "pinhole32"
+    "equi62_lut1d"
 )
 set(RT_PUBLIC_ACCEPTANCE_ASSET_IDS
     "usd_wg_vehicles"

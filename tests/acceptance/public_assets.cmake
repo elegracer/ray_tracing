@@ -27,10 +27,97 @@ if(NOT RT_PUBLIC_ACCEPTANCE_ASSET_SCHEMA STREQUAL "public_acceptance_assets_v1")
 endif()
 
 foreach(required_gate IN ITEMS
-        usd_stage_import openpbr_material_compile realtime_render deterministic_reference_image)
+        usd_stage_import
+        openpbr_material_compile
+        realtime_render
+        offline_render_artifacts
+        multi_pose_coverage
+        camera_model_coverage
+        simultaneous_multiview
+        deterministic_reference_image)
     list(FIND RT_PUBLIC_ACCEPTANCE_REQUIRED_GATES "${required_gate}" gate_index)
     if(gate_index EQUAL -1)
         message(FATAL_ERROR "public acceptance lock dropped required gate ${required_gate}")
+    endif()
+endforeach()
+
+if(NOT RT_PUBLIC_ACCEPTANCE_RENDER_OUTPUT_SCHEMA STREQUAL
+        "public_acceptance_render_outputs_v1")
+    message(FATAL_ERROR "unsupported public acceptance render output schema")
+endif()
+if(RT_PUBLIC_ACCEPTANCE_RENDER_WIDTH LESS 1 OR RT_PUBLIC_ACCEPTANCE_RENDER_HEIGHT LESS 1)
+    message(FATAL_ERROR "public acceptance render dimensions must be positive")
+endif()
+
+foreach(required_format IN ITEMS linear_exr display_png)
+    list(FIND RT_PUBLIC_ACCEPTANCE_RENDER_FORMATS "${required_format}" format_index)
+    if(format_index EQUAL -1)
+        message(FATAL_ERROR "public acceptance dropped required format ${required_format}")
+    endif()
+endforeach()
+foreach(required_manifest_field IN ITEMS
+        source_revisions
+        render_settings
+        sample_seed
+        cameras
+        outputs
+        simultaneous_submission_id
+        reference_metrics)
+    list(FIND RT_PUBLIC_ACCEPTANCE_MANIFEST_FIELDS
+        "${required_manifest_field}" manifest_field_index)
+    if(manifest_field_index EQUAL -1)
+        message(FATAL_ERROR
+            "public acceptance manifest dropped field ${required_manifest_field}")
+    endif()
+endforeach()
+foreach(required_model IN ITEMS pinhole32 equi62_lut1d)
+    list(FIND RT_PUBLIC_ACCEPTANCE_CAMERA_MODELS "${required_model}" model_index)
+    if(model_index EQUAL -1)
+        message(FATAL_ERROR "public acceptance dropped camera model ${required_model}")
+    endif()
+endforeach()
+
+list(LENGTH RT_PUBLIC_ACCEPTANCE_SINGLE_VIEW_CASES single_view_count)
+math(EXPR total_view_output_count
+    "${single_view_count} + ${RT_PUBLIC_ACCEPTANCE_MULTIVIEW_CAMERA_COUNT}")
+list(LENGTH RT_PUBLIC_ACCEPTANCE_RENDER_FORMATS render_format_count)
+math(EXPR total_image_artifact_count "${total_view_output_count} * ${render_format_count}")
+if(RT_PUBLIC_ACCEPTANCE_MIN_VIEW_OUTPUTS LESS 10
+        OR RT_PUBLIC_ACCEPTANCE_MIN_IMAGE_ARTIFACTS LESS 20
+        OR total_view_output_count LESS RT_PUBLIC_ACCEPTANCE_MIN_VIEW_OUTPUTS
+        OR total_image_artifact_count LESS RT_PUBLIC_ACCEPTANCE_MIN_IMAGE_ARTIFACTS)
+    message(FATAL_ERROR "public acceptance render artifact matrix is incomplete")
+endif()
+foreach(required_pose IN ITEMS
+        front_three_quarter rear_three_quarter elevated_three_quarter)
+    list(FIND RT_PUBLIC_ACCEPTANCE_POSES "${required_pose}" pose_index)
+    if(pose_index EQUAL -1)
+        message(FATAL_ERROR "public acceptance dropped pose ${required_pose}")
+    endif()
+    foreach(required_model IN LISTS RT_PUBLIC_ACCEPTANCE_CAMERA_MODELS)
+        set(required_case "${required_pose}:${required_model}")
+        list(FIND RT_PUBLIC_ACCEPTANCE_SINGLE_VIEW_CASES "${required_case}" case_index)
+        if(case_index EQUAL -1)
+            message(FATAL_ERROR "public acceptance dropped single-view case ${required_case}")
+        endif()
+    endforeach()
+endforeach()
+
+if(NOT RT_PUBLIC_ACCEPTANCE_MULTIVIEW_CASE_ID STREQUAL "orbit_4_mixed_models"
+        OR NOT RT_PUBLIC_ACCEPTANCE_MULTIVIEW_CAMERA_COUNT EQUAL 4)
+    message(FATAL_ERROR "public acceptance must keep the four-camera orbit case")
+endif()
+list(LENGTH RT_PUBLIC_ACCEPTANCE_MULTIVIEW_AZIMUTHS_DEG multiview_azimuth_count)
+list(LENGTH RT_PUBLIC_ACCEPTANCE_MULTIVIEW_CAMERA_MODELS multiview_model_count)
+if(NOT multiview_azimuth_count EQUAL RT_PUBLIC_ACCEPTANCE_MULTIVIEW_CAMERA_COUNT
+        OR NOT multiview_model_count EQUAL RT_PUBLIC_ACCEPTANCE_MULTIVIEW_CAMERA_COUNT)
+    message(FATAL_ERROR "public acceptance multiview arrays must match camera count")
+endif()
+foreach(required_model IN LISTS RT_PUBLIC_ACCEPTANCE_CAMERA_MODELS)
+    list(FIND RT_PUBLIC_ACCEPTANCE_MULTIVIEW_CAMERA_MODELS
+        "${required_model}" multiview_model_index)
+    if(multiview_model_index EQUAL -1)
+        message(FATAL_ERROR "public multiview case dropped camera model ${required_model}")
     endif()
 endforeach()
 

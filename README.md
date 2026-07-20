@@ -93,7 +93,11 @@ cmake --build build-clang-vcpkg-settings --target verify_public_acceptance_asset
 This fetch/integrity gate does not by itself satisfy renderer acceptance. The
 USD stage must import through the product path, the OpenPBR materials must
 compile without silent fallback, and deterministic realtime linear renders
-must pass the `VAL-02` reference comparisons.
+must pass the `VAL-02` reference comparisons. Acceptance also requires an
+offline artifact bundle: scene-linear EXR plus display PNG outputs for three
+poses across `pinhole32` and `equi62_lut1d`, a simultaneous mixed-model
+four-camera orbit render, and a manifest containing exact camera transforms,
+provenance, hashes, and image-error results.
 
 Set `RT_ENABLE_PUBLIC_ACCEPTANCE_PROBES=ON` together with
 `RT_ENABLE_OPENUSD=ON` to register the real public Vehicles importer probe in

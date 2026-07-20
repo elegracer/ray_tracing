@@ -28,6 +28,26 @@ OpenPBR materials, render them through the realtime GPU backend, and compare
 deterministic linear output against approved references. Unsupported-schema
 failures are product gaps, not successful acceptance results.
 
+The required render artifact matrix is locked in `public_assets.lock.cmake`:
+
+- Render `front_three_quarter`, `rear_three_quarter`, and
+  `elevated_three_quarter` poses derived from the composed stage bounds with
+  both `pinhole32` and `equi62_lut1d` cameras. This produces six single-view
+  samples.
+- Render `orbit_4_mixed_models` as one four-camera `RendererPool::render_frame`
+  submission. Cameras sit at 45, 135, 225, and 315 degree azimuths, all look at
+  the stage bounds center, and alternate the two supported camera models.
+- Emit both a scene-linear floating-point EXR and a display-transformed PNG for
+  every sample: at least 20 images for the ten required views.
+- Emit `manifest.json` with source revisions, render settings, sample seed,
+  exact world-space camera transforms and intrinsics, output SHA-256 values,
+  simultaneous submission id, and linear/perceptual reference error results.
+
+The pose labels are stable acceptance identities; their exact transforms are
+fit from the version-pinned composed stage bounds and recorded in the manifest.
+Non-empty images alone do not pass: every declared artifact and reference
+comparison must be present and valid.
+
 Configure with `RT_ENABLE_PUBLIC_ACCEPTANCE_PROBES=ON` after fetching to add
 the corpus integrity test and the real `import_openusd_stage` Vehicles probe to
 CTest. The probe intentionally remains outside the default compatibility suite:
