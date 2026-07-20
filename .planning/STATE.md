@@ -11,10 +11,10 @@ See: .planning/PROJECT.md (updated 2026-07-19)
 
 Phase: 5 of 6 — Scalable Lighting And GPU Scheduling
 Plan: Add explicit light distributions, solid-angle PDFs, MIS, ReSTIR DI, persistent launch data, and measured AS update/refit/instancing paths
-Status: Active milestone, Phase 4 complete and Phase 5 starting
-Last activity: 2026-07-20 - Completed shared CPU/GPU OpenPBR subsurface transport
+Status: Active milestone, Phase 5 unbiased direct-lighting baseline in progress
+Last activity: 2026-07-20 - Added explicit emissive/environment sampling and CPU transformed-emitter support
 
-Progress: [##########] Phase 4 complete; Phase 5 starts with an unbiased direct-lighting/MIS baseline
+Progress: Phase 4 complete; Phase 5 emissive/environment baseline is green, with analytic-light execution and estimator agreement still open
 
 ## v2.0 Phase 1 Evidence
 
@@ -122,6 +122,14 @@ The final PBR-03 subsurface slice maps the existing OpenPBR weight, observed col
 
 Thin-walled subsurface follows the OpenPBR 1.1.1 sheet model instead of starting or rejecting a volume: radius inputs are ignored, while anisotropy splits the observed color between matched diffuse reflection and transmission lobes. Physical gates reconstruct the observed-color mapping, verify RGB free-flight expectation and HG mean cosine, match boundary sampling/PDFs, exercise CPU and OptiX production random walks, bound a white furnace, prove radius-invariant thin-wall behavior, and compare both volume and sheet cases on a real CUDA device. Default SDK-OFF full build and CTest pass 63/63. Implementation commit `4bb164f` and gate commit `fe16ae2` provide the review boundary.
 
+## v2.0 Phase 5 Evidence
+
+The first LIGHT-01 slice replaces the GPU all-light scan and centroid/nearest-point heuristic with a prepared power-area CDF over emissive spheres, quads, triangles, and the constant environment. Sphere lights sample their subtended cone; quads and triangles use uniform area samples converted to solid angle. Visibility rays, BSDF-hit emission weighting, and next-event estimates use matched selection and conditional PDFs with the power heuristic. Gates verify distribution weights, PDF normalization, emitter sidedness, occlusion, finite radiance, and direct-light energy agreement between light-only and light-plus-BSDF paths.
+
+The CPU reference path now includes its constant environment in the BSDF/direct-light mixture and correctly transforms `pdf_value` and sampled directions through translated and Y-rotated emitters. Transformed emissive geometry therefore remains eligible for direct-light sampling instead of being silently excluded; the black-environment/no-light path returns the original BSDF PDF unchanged. The rebuilt default suite passes 64/64. GPU implementation/gate commits are `9a14c7d`, `de344dc`, `118d461`, and `dc773b4`; CPU implementation/gate commits are `069f93a` and `fbd3c0b`.
+
+LIGHT-01 remains open because supported SceneIR v2 analytic and dome light payloads are preserved by OpenUSD import/export but are not yet compiled into the CPU/GPU execution tables. LIGHT-02 also remains open until normalized-PDF, furnace/finite-energy, and estimator-agreement gates cover both backends rather than only the current focused cases.
+
 ## Performance Metrics
 
 **Velocity:**
@@ -171,7 +179,8 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- Build explicit emissive-geometry and environment sampling distributions with solid-angle PDFs, visibility, and matched light/BSDF MIS as the unbiased Phase 5 baseline.
+- Compile supported SceneIR v2 sphere/disk/rect/cylinder/distant/dome lights into production CPU/GPU sampling tables, then close LIGHT-01 with analytic-light visibility and MIS gates.
+- Complete LIGHT-02 with CPU/GPU normalized-PDF, furnace/finite-energy, finite-radiance, and estimator-agreement gates before ReSTIR DI.
 
 ### Blockers/Concerns
 
@@ -183,7 +192,7 @@ Recent decisions affecting current work:
 - CUDA memory telemetry is device-global rather than per-process; concurrent GPU workloads can perturb baseline and peak values.
 - OpenUSD is an optional system SDK dependency with verified OFF/ON paths; supported direct MaterialX color3 graphs compile, coat/fuzz/thin-film/dispersion/subsurface constants execute, and connected coat/fuzz/subsurface colors, NodeGraph interfaces, and fields outside the declared SceneIR subset remain fail-closed.
 - Dispersion currently uses fixed C/d/F RGB anchors. Stochastic wavelengths from measured sensor sensitivity curves remain a later spectral-quality extension; the current model is path-consistent but three-band.
-- Direct-light sampling still uses the existing center/nearest-point heuristic without solid-angle/area PDFs or MIS. OpenPBR surfaces now use the shared BSDF response and emissive materials participate, but unbiased light transport remains a Phase 5 gate before ReSTIR DI.
+- Emissive geometry and the constant environment now use explicit distributions, solid-angle PDFs, visibility, and MIS. SceneIR v2 analytic/dome lights still stop at the authored/imported contract and must enter both execution backends before LIGHT-01 closes.
 - The current `gpt-5.6-*` Codex IDE route still returns HTTP 404 from the built-in web tool. This is not a renderer delivery blocker: bounded public research uses direct read-only HTTP against official primary sources and records the pinned source revision. Do not spend renderer goal turns repairing host search unless the user explicitly reopens that task.
 
 ## Deferred Items
@@ -200,5 +209,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-07-20
-Stopped at: Phase 4 is closed with scoped OpenUSD/MaterialX I/O and shared advanced OpenPBR transport; Phase 5 starts with explicit light distributions, solid-angle PDFs, and MIS
+Stopped at: Phase 5 emissive/environment MIS baseline is green; next compile SceneIR v2 analytic and dome lights into the production sampling tables
 Resume file: .planning/milestones/v2.0-REQUIREMENTS.md

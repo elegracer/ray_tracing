@@ -28,4 +28,4 @@ Baseline: `.planning/v2.0-BASELINE.json`
 
 ## Immediate Next Step
 
-Build the unbiased Phase 5 direct-lighting baseline: explicit emissive-geometry and environment distributions, solid-angle PDFs, visibility, and matched light/BSDF MIS before any ReSTIR DI reuse.
+Compile supported SceneIR v2 sphere/disk/rect/cylinder/distant/dome lights into the production CPU/GPU sampling tables, then close LIGHT-01 with analytic-light visibility and matched light/BSDF MIS gates before any ReSTIR DI reuse.
