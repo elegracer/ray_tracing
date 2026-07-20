@@ -135,6 +135,23 @@ int main() {
     const std::vector<rt::CameraRenderResult> four_result =
         four_pool.render_frame(packed_rig, profile, 4);
 
+    const rt::RendererPoolDiagnostics first_pool_diagnostics = four_pool.diagnostics();
+    expect_true(first_pool_diagnostics.worker_count == 4, "four persistent renderer workers");
+    expect_true(first_pool_diagnostics.worker_start_count == 4,
+        "each persistent renderer worker starts exactly once");
+    expect_true(first_pool_diagnostics.acceleration.kind == rt::AccelerationUpdateKind::rebuild,
+        "first shared scene preparation rebuilds acceleration");
+
+    const std::vector<rt::CameraRenderResult> four_result_repeat =
+        four_pool.render_frame(packed_rig, profile, 4);
+    const rt::RendererPoolDiagnostics repeated_pool_diagnostics = four_pool.diagnostics();
+    expect_true(repeated_pool_diagnostics.worker_start_count == 4,
+        "repeated frame does not create new renderer workers");
+    expect_true(repeated_pool_diagnostics.task_submission_count
+                    == first_pool_diagnostics.task_submission_count + 4,
+        "repeated frame submits one task per existing worker");
+    expect_true(four_result_repeat.size() == four_result.size(), "repeated pooled frame count");
+
     expect_true(four_result.size() == 4, "four-camera pooled count");
     for (int i = 0; i < 4; ++i) {
         const auto idx = static_cast<std::size_t>(i);

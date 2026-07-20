@@ -1242,8 +1242,7 @@ __device__ DirectLightSample sample_analytic_direct_light_candidate(const Device
         const float3 axis = normalize3(packed_light_vector_to_float3(light.basis_z));
         sample.direction = light.delta != 0
                                ? axis
-                               : sample_uniform_cone_direction(axis, light.cos_theta_max,
-                                     u0, u1);
+                               : sample_uniform_cone_direction(axis, light.cos_theta_max, u0, u1);
         sample.distance = kRayFar;
         sample.pdf = light.selection_pdf
                      * (light.delta != 0 ? 1.0f : light_uniform_cone_pdf(light.cos_theta_max));
@@ -1274,8 +1273,8 @@ __device__ DirectLightSample sample_analytic_direct_light_candidate(const Device
             return sample;
         }
         const float cos_theta_max = sqrtf(fmaxf(0.0f, 1.0f - radius_squared / distance_squared));
-        sample.direction = sample_uniform_cone_direction(normalize3(to_center), cos_theta_max,
-            u0, u1);
+        sample.direction =
+            sample_uniform_cone_direction(normalize3(to_center), cos_theta_max, u0, u1);
         AnalyticLightHit surface_hit {};
         if (!try_intersect_analytic_light(light,
                 Ray {.origin = surface_point, .direction = sample.direction}, kRayEpsilon, kRayFar,
@@ -1336,8 +1335,8 @@ __device__ DirectLightSample sample_analytic_direct_light(const DeviceSceneView&
     const HitInfo& receiver, std::uint32_t& rng) {
     const int light_index = sample_packed_analytic_light(scene.analytic_lights,
         scene.analytic_light_count, random_float01(rng));
-    return sample_analytic_direct_light_candidate(scene, receiver, light_index,
-        random_float01(rng), random_float01(rng));
+    return sample_analytic_direct_light_candidate(scene, receiver, light_index, random_float01(rng),
+        random_float01(rng));
 }
 
 __device__ bool hit_medium_boundary(const PackedMedium& medium, const Ray& ray, float t_min,
@@ -1533,58 +1532,168 @@ __device__ void try_hit_triangle(const PackedTriangle& triangle, const Ray& ray,
     }
 }
 
+__device__ bool hit_acceleration_bounds(const PackedBvhNode& node, const Ray& ray, float t_min,
+    float t_max) {
+    for (int axis = 0; axis < 3; ++axis) {
+        const float origin = axis == 0 ? ray.origin.x : (axis == 1 ? ray.origin.y : ray.origin.z);
+        const float direction =
+            axis == 0 ? ray.direction.x : (axis == 1 ? ray.direction.y : ray.direction.z);
+        const float bounds_min = node.bounds_min[axis];
+        const float bounds_max = node.bounds_max[axis];
+        if (fabsf(direction) <= 1e-12f) {
+            if (origin < bounds_min || origin > bounds_max) {
+                return false;
+            }
+            continue;
+        }
+        const float inverse = 1.0f / direction;
+        float near_t = (bounds_min - origin) * inverse;
+        float far_t = (bounds_max - origin) * inverse;
+        if (near_t > far_t) {
+            const float temporary = near_t;
+            near_t = far_t;
+            far_t = temporary;
+        }
+        t_min = fmaxf(t_min, near_t);
+        t_max = fminf(t_max, far_t);
+        if (t_max < t_min) {
+            return false;
+        }
+    }
+    return true;
+}
+
+__device__ void try_hit_acceleration_reference(const DeviceSceneView& scene,
+    const PackedPrimitiveRef& reference, const Ray& ray, float t_min, float& closest, HitInfo& hit,
+    bool& found) {
+    HitInfo candidate {};
+    bool candidate_hit = false;
+    int material_index = -1;
+    switch (static_cast<PackedPrimitiveType>(reference.primitive_type)) {
+        case PackedPrimitiveType::sphere: {
+            const PackedSphere& sphere = scene.spheres[reference.primitive_index];
+            try_hit_sphere(sphere, ray, t_min, closest, candidate, candidate_hit);
+            material_index = sphere.material_index;
+            candidate.primitive_type = static_cast<int>(PackedLightType::sphere);
+            break;
+        }
+        case PackedPrimitiveType::quad: {
+            const PackedQuad& quad = scene.quads[reference.primitive_index];
+            try_hit_quad(quad, ray, t_min, closest, candidate, candidate_hit);
+            material_index = quad.material_index;
+            candidate.primitive_type = static_cast<int>(PackedLightType::quad);
+            break;
+        }
+        case PackedPrimitiveType::triangle: {
+            const PackedTriangle& triangle = scene.triangles[reference.primitive_index];
+            try_hit_triangle(triangle, ray, t_min, closest, candidate, candidate_hit);
+            material_index = triangle.material_index;
+            candidate.primitive_type = static_cast<int>(PackedLightType::triangle);
+            break;
+        }
+    }
+    if (!candidate_hit) {
+        return;
+    }
+    candidate.primitive_index = reference.primitive_index;
+    populate_material(scene, material_index, candidate);
+    closest = candidate.t;
+    hit = candidate;
+    found = true;
+}
+
+__device__ void intersect_accelerated_surfaces(const DeviceSceneView& scene, const Ray& ray,
+    float t_min, float& closest, HitInfo& hit, bool& found) {
+    constexpr int kTraversalStackSize = 64;
+    int stack[kTraversalStackSize];
+    int stack_size = 1;
+    stack[0] = 0;
+    while (stack_size > 0) {
+        const int node_index = stack[--stack_size];
+        if (node_index < 0 || node_index >= scene.acceleration_node_count) {
+            continue;
+        }
+        const PackedBvhNode& node = scene.acceleration_nodes[node_index];
+        if (!hit_acceleration_bounds(node, ray, t_min, closest)) {
+            continue;
+        }
+        if (node.reference_count > 0) {
+            for (int i = 0; i < node.reference_count; ++i) {
+                const int reference_index = node.first_reference + i;
+                if (reference_index < 0 || reference_index >= scene.acceleration_reference_count) {
+                    continue;
+                }
+                try_hit_acceleration_reference(scene,
+                    scene.acceleration_references[reference_index], ray, t_min, closest, hit,
+                    found);
+            }
+            continue;
+        }
+        if (stack_size + 2 > kTraversalStackSize) {
+            continue;
+        }
+        stack[stack_size++] = node.right_child;
+        stack[stack_size++] = node.left_child;
+    }
+}
+
 __device__ HitInfo intersect_scene(const DeviceSceneView& scene, const Ray& ray, float t_min,
     float t_max, std::uint32_t* rng = nullptr) {
     HitInfo hit {};
     float closest = t_max;
     bool found = false;
 
-    for (int i = 0; i < scene.sphere_count; ++i) {
-        const PackedSphere& sphere = scene.spheres[i];
-        HitInfo candidate {};
-        bool candidate_hit = false;
-        try_hit_sphere(sphere, ray, t_min, closest, candidate, candidate_hit);
-        if (!candidate_hit) {
-            continue;
+    if (scene.acceleration_nodes != nullptr && scene.acceleration_references != nullptr
+        && scene.acceleration_node_count > 0 && scene.acceleration_reference_count > 0) {
+        intersect_accelerated_surfaces(scene, ray, t_min, closest, hit, found);
+    } else {
+        for (int i = 0; i < scene.sphere_count; ++i) {
+            const PackedSphere& sphere = scene.spheres[i];
+            HitInfo candidate {};
+            bool candidate_hit = false;
+            try_hit_sphere(sphere, ray, t_min, closest, candidate, candidate_hit);
+            if (!candidate_hit) {
+                continue;
+            }
+            candidate.primitive_type = static_cast<int>(PackedLightType::sphere);
+            candidate.primitive_index = i;
+            populate_material(scene, sphere.material_index, candidate);
+            closest = candidate.t;
+            hit = candidate;
+            found = true;
         }
-        candidate.primitive_type = static_cast<int>(PackedLightType::sphere);
-        candidate.primitive_index = i;
-        populate_material(scene, sphere.material_index, candidate);
-        closest = candidate.t;
-        hit = candidate;
-        found = true;
-    }
 
-    for (int i = 0; i < scene.quad_count; ++i) {
-        const PackedQuad& quad = scene.quads[i];
-        HitInfo candidate {};
-        bool candidate_hit = false;
-        try_hit_quad(quad, ray, t_min, closest, candidate, candidate_hit);
-        if (!candidate_hit) {
-            continue;
+        for (int i = 0; i < scene.quad_count; ++i) {
+            const PackedQuad& quad = scene.quads[i];
+            HitInfo candidate {};
+            bool candidate_hit = false;
+            try_hit_quad(quad, ray, t_min, closest, candidate, candidate_hit);
+            if (!candidate_hit) {
+                continue;
+            }
+            candidate.primitive_type = static_cast<int>(PackedLightType::quad);
+            candidate.primitive_index = i;
+            populate_material(scene, quad.material_index, candidate);
+            closest = candidate.t;
+            hit = candidate;
+            found = true;
         }
-        candidate.primitive_type = static_cast<int>(PackedLightType::quad);
-        candidate.primitive_index = i;
-        populate_material(scene, quad.material_index, candidate);
-        closest = candidate.t;
-        hit = candidate;
-        found = true;
-    }
 
-    for (int i = 0; i < scene.triangle_count; ++i) {
-        const PackedTriangle& triangle = scene.triangles[i];
-        HitInfo candidate {};
-        bool candidate_hit = false;
-        try_hit_triangle(triangle, ray, t_min, closest, candidate, candidate_hit);
-        if (!candidate_hit) {
-            continue;
+        for (int i = 0; i < scene.triangle_count; ++i) {
+            const PackedTriangle& triangle = scene.triangles[i];
+            HitInfo candidate {};
+            bool candidate_hit = false;
+            try_hit_triangle(triangle, ray, t_min, closest, candidate, candidate_hit);
+            if (!candidate_hit) {
+                continue;
+            }
+            candidate.primitive_type = static_cast<int>(PackedLightType::triangle);
+            candidate.primitive_index = i;
+            populate_material(scene, triangle.material_index, candidate);
+            closest = candidate.t;
+            hit = candidate;
+            found = true;
         }
-        candidate.primitive_type = static_cast<int>(PackedLightType::triangle);
-        candidate.primitive_index = i;
-        populate_material(scene, triangle.material_index, candidate);
-        closest = candidate.t;
-        hit = candidate;
-        found = true;
     }
 
     if (rng != nullptr) {
@@ -1794,11 +1903,10 @@ __global__ void radiance_kernel(const LaunchParams* params_ptr) {
             const bool use_restir = params.restir_di_enabled != 0 && bounce == 0
                                     && params.scene.analytic_light_count >= restir_min_lights;
             if (use_restir) {
-                accumulate_restir_analytic_direct_light(
-                    params, hit, x, y, rng, bsdf_technique_available, state);
+                accumulate_restir_analytic_direct_light(params, hit, x, y, rng,
+                    bsdf_technique_available, state);
             } else {
-                accumulate_analytic_direct_light(
-                    params, hit, rng, bsdf_technique_available, state);
+                accumulate_analytic_direct_light(params, hit, rng, bsdf_technique_available, state);
             }
             if (!bsdf_technique_available) {
                 state.alive = false;
@@ -2149,8 +2257,8 @@ __device__ void accumulate_restir_analytic_direct_light(const LaunchParams& para
         const DirectLightSample light = sample_analytic_direct_light_candidate(params.scene, hit,
             candidate.light_index, candidate.sample_u0, candidate.sample_u1);
         float target_density = 0.0f;
-        restir_unshadowed_numerator(
-            params, hit, state, light, bsdf_technique_available, target_density);
+        restir_unshadowed_numerator(params, hit, state, light, bsdf_technique_available,
+            target_density);
         const float candidate_weight = light.pdf > 0.0f ? target_density / light.pdf : 0.0f;
         restir_update(reservoir, candidate, target_density, candidate_weight, 1,
             random_float01(rng));
@@ -2159,12 +2267,12 @@ __device__ void accumulate_restir_analytic_direct_light(const LaunchParams& para
     if (params.restir_temporal_reuse != 0) {
         RestirReservoir previous {};
         if (restir_temporal_candidate(params, hit, previous)) {
-            const DirectLightSample light = sample_analytic_direct_light_candidate(params.scene, hit,
-                previous.selected.light_index, previous.selected.sample_u0,
+            const DirectLightSample light = sample_analytic_direct_light_candidate(params.scene,
+                hit, previous.selected.light_index, previous.selected.sample_u0,
                 previous.selected.sample_u1);
             float target_density = 0.0f;
-            restir_unshadowed_numerator(
-                params, hit, state, light, bsdf_technique_available, target_density);
+            restir_unshadowed_numerator(params, hit, state, light, bsdf_technique_available,
+                target_density);
             restir_merge_temporal(reservoir, previous, target_density,
                 params.restir_max_temporal_candidates, random_float01(rng));
         }
@@ -2180,8 +2288,8 @@ __device__ void accumulate_restir_analytic_direct_light(const LaunchParams& para
     const DirectLightSample light = sample_analytic_direct_light_candidate(params.scene, hit,
         reservoir.selected.light_index, reservoir.selected.sample_u0, reservoir.selected.sample_u1);
     float target_density = 0.0f;
-    const float3 numerator = restir_unshadowed_numerator(
-        params, hit, state, light, bsdf_technique_available, target_density);
+    const float3 numerator = restir_unshadowed_numerator(params, hit, state, light,
+        bsdf_technique_available, target_density);
     if (!light.valid || target_density <= 0.0f) {
         return;
     }
@@ -2334,42 +2442,30 @@ void launch_direction_debug_kernel(const DeviceActiveCamera& camera, std::uint8_
     }
 }
 
-void launch_radiance_kernel(const LaunchParams& params, cudaStream_t stream) {
-    LaunchParams* device_params = nullptr;
-    throw_cuda_error(cudaMalloc(reinterpret_cast<void**>(&device_params), sizeof(LaunchParams)),
-        "cudaMalloc()");
-    try {
-        throw_cuda_error(cudaMemcpyAsync(device_params, &params, sizeof(LaunchParams),
-                             cudaMemcpyHostToDevice, stream),
-            "cudaMemcpyAsync()");
-        const dim3 block_size(8, 8, 1);
-        radiance_kernel<<<make_grid(params.width, params.height, block_size), block_size, 0,
-            stream>>>(device_params);
-        throw_cuda_error(cudaGetLastError(), "cudaGetLastError()");
-        throw_cuda_error(cudaFree(device_params), "cudaFree()");
-    } catch (...) {
-        cudaFree(device_params);
-        throw;
+void upload_launch_params(LaunchParams* device_params, const LaunchParams& params,
+    cudaStream_t stream) {
+    if (device_params == nullptr) {
+        throw std::invalid_argument("upload_launch_params requires persistent device storage");
     }
+    throw_cuda_error(cudaMemcpyAsync(device_params, &params, sizeof(LaunchParams),
+                         cudaMemcpyHostToDevice, stream),
+        "cudaMemcpyAsync()");
 }
 
-void launch_resolve_kernel(const LaunchParams& params, cudaStream_t stream) {
-    LaunchParams* device_params = nullptr;
-    throw_cuda_error(cudaMalloc(reinterpret_cast<void**>(&device_params), sizeof(LaunchParams)),
-        "cudaMalloc()");
-    try {
-        throw_cuda_error(cudaMemcpyAsync(device_params, &params, sizeof(LaunchParams),
-                             cudaMemcpyHostToDevice, stream),
-            "cudaMemcpyAsync()");
-        const dim3 block_size(8, 8, 1);
-        resolve_reprojection_kernel<<<make_grid(params.width, params.height, block_size),
-            block_size, 0, stream>>>(device_params);
-        throw_cuda_error(cudaGetLastError(), "cudaGetLastError()");
-        throw_cuda_error(cudaFree(device_params), "cudaFree()");
-    } catch (...) {
-        cudaFree(device_params);
-        throw;
-    }
+void launch_radiance_kernel(const LaunchParams& params, const LaunchParams* device_params,
+    cudaStream_t stream) {
+    const dim3 block_size(8, 8, 1);
+    radiance_kernel<<<make_grid(params.width, params.height, block_size), block_size, 0, stream>>>(
+        device_params);
+    throw_cuda_error(cudaGetLastError(), "cudaGetLastError()");
+}
+
+void launch_resolve_kernel(const LaunchParams& params, const LaunchParams* device_params,
+    cudaStream_t stream) {
+    const dim3 block_size(8, 8, 1);
+    resolve_reprojection_kernel<<<make_grid(params.width, params.height, block_size), block_size, 0,
+        stream>>>(device_params);
+    throw_cuda_error(cudaGetLastError(), "cudaGetLastError()");
 }
 
 } // namespace rt

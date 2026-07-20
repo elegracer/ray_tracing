@@ -84,6 +84,8 @@ struct SpherePrimitive {
     Eigen::Vector3d center;
     double radius;
     bool dynamic;
+    int acceleration_prototype_id = -1;
+    int acceleration_instance_id = -1;
 };
 
 struct QuadPrimitive {
@@ -92,6 +94,8 @@ struct QuadPrimitive {
     Eigen::Vector3d edge_u;
     Eigen::Vector3d edge_v;
     bool dynamic;
+    int acceleration_prototype_id = -1;
+    int acceleration_instance_id = -1;
 };
 
 struct TrianglePrimitive {
@@ -108,6 +112,8 @@ struct TrianglePrimitive {
     bool has_vertex_normals = false;
     bool has_texcoords = false;
     bool dynamic = false;
+    int acceleration_prototype_id = -1;
+    int acceleration_instance_id = -1;
 };
 
 struct HomogeneousMediumPrimitive {

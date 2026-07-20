@@ -19,6 +19,8 @@ struct PackedTriangle;
 struct PackedMedium;
 struct PackedTexture;
 struct MaterialSample;
+struct PackedBvhNode;
+struct PackedPrimitiveRef;
 
 struct DeviceFrameBuffers {
     float4* beauty = nullptr;
@@ -42,6 +44,8 @@ struct DeviceSceneView {
     OpenPbrCompiledMaterial* openpbr_materials = nullptr;
     PackedLight* lights = nullptr;
     PackedAnalyticLight* analytic_lights = nullptr;
+    PackedBvhNode* acceleration_nodes = nullptr;
+    PackedPrimitiveRef* acceleration_references = nullptr;
     int sphere_count = 0;
     int quad_count = 0;
     int triangle_count = 0;
@@ -52,6 +56,8 @@ struct DeviceSceneView {
     int openpbr_material_count = 0;
     int light_count = 0;
     int analytic_light_count = 0;
+    int acceleration_node_count = 0;
+    int acceleration_reference_count = 0;
 };
 
 struct DevicePinhole32Params {
@@ -127,6 +133,8 @@ struct PackedSphere {
     Eigen::Vector3f center;
     float radius;
     int material_index;
+    int acceleration_prototype_id = -1;
+    int acceleration_instance_id = -1;
 };
 
 struct PackedQuad {
@@ -136,6 +144,8 @@ struct PackedQuad {
     float pad1 = 0.0f;
     Eigen::Vector3f edge_v;
     int material_index;
+    int acceleration_prototype_id = -1;
+    int acceleration_instance_id = -1;
 };
 
 struct PackedTriangle {
@@ -155,6 +165,34 @@ struct PackedTriangle {
     Eigen::Vector2f uv1;
     Eigen::Vector2f uv2;
     Eigen::Vector2f pad3 = Eigen::Vector2f::Zero();
+    int acceleration_prototype_id = -1;
+    int acceleration_instance_id = -1;
+    int acceleration_pad0 = 0;
+    int acceleration_pad1 = 0;
+};
+
+enum class PackedPrimitiveType : int {
+    sphere = 0,
+    quad = 1,
+    triangle = 2,
+};
+
+struct PackedPrimitiveRef {
+    int primitive_type = 0;
+    int primitive_index = -1;
+    int prototype_id = -1;
+    int instance_id = -1;
+};
+
+struct PackedBvhNode {
+    Eigen::Vector3f bounds_min = Eigen::Vector3f::Zero();
+    int left_child = -1;
+    Eigen::Vector3f bounds_max = Eigen::Vector3f::Zero();
+    int right_child = -1;
+    int first_reference = 0;
+    int reference_count = 0;
+    int pad0 = 0;
+    int pad1 = 0;
 };
 
 struct PackedMedium {

@@ -41,6 +41,8 @@ PackedSphere pack_sphere(const SpherePrimitive& sphere) {
         .center = sphere.center.cast<float>(),
         .radius = static_cast<float>(sphere.radius),
         .material_index = sphere.material_index,
+        .acceleration_prototype_id = sphere.acceleration_prototype_id,
+        .acceleration_instance_id = sphere.acceleration_instance_id,
     };
 }
 
@@ -50,6 +52,8 @@ PackedQuad pack_quad(const QuadPrimitive& quad) {
         .edge_u = quad.edge_u.cast<float>(),
         .edge_v = quad.edge_v.cast<float>(),
         .material_index = quad.material_index,
+        .acceleration_prototype_id = quad.acceleration_prototype_id,
+        .acceleration_instance_id = quad.acceleration_instance_id,
     };
 }
 
@@ -67,6 +71,8 @@ PackedTriangle pack_triangle(const TrianglePrimitive& triangle) {
         .uv0 = triangle.uv0.cast<float>(),
         .uv1 = triangle.uv1.cast<float>(),
         .uv2 = triangle.uv2.cast<float>(),
+        .acceleration_prototype_id = triangle.acceleration_prototype_id,
+        .acceleration_instance_id = triangle.acceleration_instance_id,
     };
 }
 

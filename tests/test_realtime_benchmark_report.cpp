@@ -44,6 +44,21 @@ int main() {
         .peak_delta_bytes = 200,
         .final_used_bytes = 250,
     };
+    report.gpu_scheduling = profiling::GpuSchedulingReport {
+        .persistent_worker_count = 2,
+        .worker_start_count = 2,
+        .task_submission_count = 10,
+        .launch_parameter_allocation_count = 2,
+        .launch_parameter_upload_count = 8,
+        .acceleration_update_kind = "rebuild",
+        .acceleration_update_ms = 0.25,
+        .acceleration_node_count = 7,
+        .acceleration_reference_count = 8,
+        .acceleration_prototype_count = 3,
+        .acceleration_instance_count = 4,
+        .acceleration_instanced_primitive_count = 6,
+        .acceleration_generation = 1,
+    };
     report.scene = "final_room";
     report.profile = tricky_profile;
     report.camera_count = 2;
@@ -208,6 +223,14 @@ int main() {
     expect_true(json_text.find("\"peak_used_bytes\": 300") != std::string::npos, "json GPU memory");
     expect_true(json_text.find("\"peak_delta_bytes\": 200") != std::string::npos,
         "json GPU memory delta");
+    expect_true(json_text.find("\"gpu_scheduling\"") != std::string::npos,
+        "json GPU scheduling evidence");
+    expect_true(json_text.find("\"persistent_worker_count\": 2") != std::string::npos,
+        "json persistent worker count");
+    expect_true(json_text.find("\"launch_parameter_allocation_count\": 2") != std::string::npos,
+        "json persistent launch parameter allocations");
+    expect_true(json_text.find("\"acceleration_update_kind\": \"rebuild\"") != std::string::npos,
+        "json acceleration lifecycle kind");
     expect_true(json_text.find("\"nvidia_driver_version\": \"595.71.05\"") != std::string::npos,
         "json NVIDIA driver version");
     expect_true(json_text.find("\"pipeline_ms\"") != std::string::npos, "json pipeline timing");

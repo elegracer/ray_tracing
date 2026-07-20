@@ -74,7 +74,7 @@ rt::MaterialDesc adapt_material(const scene::MaterialDesc& material) {
 }
 
 void add_box_quads(rt::SceneDescription& out, int material_index, const BoxShape& box,
-    const Transform& transform) {
+    const Transform& transform, int prototype_id, int instance_id) {
     const Eigen::Vector3d p000 {box.min_corner.x(), box.min_corner.y(), box.min_corner.z()};
     const Eigen::Vector3d p001 {box.min_corner.x(), box.min_corner.y(), box.max_corner.z()};
     const Eigen::Vector3d p010 {box.min_corner.x(), box.max_corner.y(), box.min_corner.z()};
@@ -92,6 +92,8 @@ void add_box_quads(rt::SceneDescription& out, int material_index, const BoxShape
             .edge_u = transform_vector(transform, edge_u),
             .edge_v = transform_vector(transform, edge_v),
             .dynamic = false,
+            .acceleration_prototype_id = prototype_id,
+            .acceleration_instance_id = instance_id,
         });
     };
 
@@ -286,7 +288,8 @@ std::vector<int> face_material_indices(const SceneMeshGeometry& mesh, int fallba
 
 void add_v2_mesh(rt::SceneDescription& out, const SceneMeshGeometry& mesh,
     const Eigen::Matrix4d& world, int fallback_material,
-    const std::unordered_map<std::string, int>& material_indices) {
+    const std::unordered_map<std::string, int>& material_indices, int prototype_id,
+    int instance_id) {
     const ScenePrimvar* normals = find_primvar(mesh, "normals", ScenePrimvarRole::normal);
     const ScenePrimvar* texcoords = find_primvar(mesh, "st", ScenePrimvarRole::texcoord);
     const std::vector<int> materials =
@@ -317,6 +320,8 @@ void add_v2_mesh(rt::SceneDescription& out, const SceneMeshGeometry& mesh,
                 .p0 = transform_point(world, mesh.points[points[0]]),
                 .p1 = transform_point(world, mesh.points[points[1]]),
                 .p2 = transform_point(world, mesh.points[points[2]]),
+                .acceleration_prototype_id = prototype_id,
+                .acceleration_instance_id = instance_id,
             };
             if (normals != nullptr) {
                 triangle.n0 = transform_normal(world,
@@ -340,7 +345,7 @@ void add_v2_mesh(rt::SceneDescription& out, const SceneMeshGeometry& mesh,
 }
 
 void add_v2_sphere(rt::SceneDescription& out, const SceneSphereGeometry& sphere,
-    const Eigen::Matrix4d& world, int material_index) {
+    const Eigen::Matrix4d& world, int material_index, int prototype_id, int instance_id) {
     const Eigen::Matrix3d linear = world.topLeftCorner<3, 3>();
     const double sx = linear.col(0).norm();
     const double sy = linear.col(1).norm();
@@ -356,6 +361,8 @@ void add_v2_sphere(rt::SceneDescription& out, const SceneSphereGeometry& sphere,
         .center = transform_point(world, sphere.center),
         .radius = sphere.radius * scale,
         .dynamic = false,
+        .acceleration_prototype_id = prototype_id,
+        .acceleration_instance_id = instance_id,
     });
 }
 
@@ -392,7 +399,9 @@ rt::SceneDescription adapt_to_realtime_impl(const SceneIR& scene,
 
     const std::vector<ShapeDesc>& shapes = scene.shapes();
 
+    int acceleration_instance_id = 0;
     for (const SurfaceInstance& instance : scene.surface_instances()) {
+        const int instance_id = acceleration_instance_id++;
         const ShapeDesc& shape = shapes[static_cast<std::size_t>(instance.shape_index)];
         std::visit(
             [&](const auto& desc) {
@@ -403,6 +412,8 @@ rt::SceneDescription adapt_to_realtime_impl(const SceneIR& scene,
                         .center = transform_point(instance.transform, desc.center),
                         .radius = desc.radius,
                         .dynamic = false,
+                        .acceleration_prototype_id = instance.shape_index,
+                        .acceleration_instance_id = instance_id,
                     });
                 } else if constexpr (std::is_same_v<T, QuadShape>) {
                     out.add_quad(QuadPrimitive {
@@ -411,9 +422,12 @@ rt::SceneDescription adapt_to_realtime_impl(const SceneIR& scene,
                         .edge_u = transform_vector(instance.transform, desc.edge_u),
                         .edge_v = transform_vector(instance.transform, desc.edge_v),
                         .dynamic = false,
+                        .acceleration_prototype_id = instance.shape_index,
+                        .acceleration_instance_id = instance_id,
                     });
                 } else if constexpr (std::is_same_v<T, BoxShape>) {
-                    add_box_quads(out, instance.material_index, desc, instance.transform);
+                    add_box_quads(out, instance.material_index, desc, instance.transform,
+                        instance.shape_index, instance_id);
                 } else if constexpr (std::is_same_v<T, TriangleMeshShape>) {
                     for (const Eigen::Vector3i& tri : desc.triangles) {
                         out.add_triangle(TrianglePrimitive {
@@ -422,6 +436,8 @@ rt::SceneDescription adapt_to_realtime_impl(const SceneIR& scene,
                             .p1 = transform_point(instance.transform, desc.positions[tri.y()]),
                             .p2 = transform_point(instance.transform, desc.positions[tri.z()]),
                             .dynamic = false,
+                            .acceleration_prototype_id = instance.shape_index,
+                            .acceleration_instance_id = instance_id,
                         });
                     }
                 } else {
@@ -519,6 +535,9 @@ rt::SceneDescription adapt_scene_ir_v2_to_realtime(const SceneIRv2& scene_v2) {
     }
 
     const double time_code = scene_v2.stage_metadata().start_time_code.value_or(0.0);
+    std::unordered_map<std::string, int> acceleration_prototypes;
+    int next_prototype_id = 0;
+    int next_instance_id = 0;
     for (const ScenePrim& prim : scene_v2.prims()) {
         if (prim.kind != ScenePrimKind::surface || !compute_scene_visibility(scene_v2, prim.path)) {
             continue;
@@ -533,15 +552,23 @@ rt::SceneDescription adapt_scene_ir_v2_to_realtime(const SceneIRv2& scene_v2) {
             throw std::invalid_argument(
                 "SceneIR v2 surface has no resolved geometry: " + prim.path);
         }
+        const auto [prototype_it, inserted] =
+            acceleration_prototypes.emplace(prototype->path, next_prototype_id);
+        if (inserted) {
+            ++next_prototype_id;
+        }
+        const int prototype_id = prototype_it->second;
+        const int instance_id = next_instance_id++;
         const int material = resolve_material_index(material_indices, prim.material_path);
         const Eigen::Matrix4d world = compute_scene_world_transform(scene_v2, prim.path, time_code);
         std::visit(
             [&](const auto& geometry) {
                 using T = std::decay_t<decltype(geometry)>;
                 if constexpr (std::is_same_v<T, SceneSphereGeometry>) {
-                    add_v2_sphere(result, geometry, world, material);
+                    add_v2_sphere(result, geometry, world, material, prototype_id, instance_id);
                 } else if constexpr (std::is_same_v<T, SceneMeshGeometry>) {
-                    add_v2_mesh(result, geometry, world, material, material_indices);
+                    add_v2_mesh(result, geometry, world, material, material_indices, prototype_id,
+                        instance_id);
                 }
             },
             *prototype->geometry);

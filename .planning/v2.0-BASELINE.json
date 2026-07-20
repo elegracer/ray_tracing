@@ -402,5 +402,53 @@
         }
       ]
     }
+  },
+  "phase5_gpu_scheduling": {
+    "captured_at_utc": "2026-07-20T22:00:00Z",
+    "hardware": "NVIDIA GeForce RTX 3090",
+    "implementation": [
+      "One persistent render worker and one persistent CUDA LaunchParams allocation are retained per camera renderer.",
+      "All camera renderers share one read-only device scene while retaining independent streams, outputs, temporal histories, and denoisers.",
+      "The production CUDA intersection path traverses a device BVH whose lifecycle distinguishes rebuild, update, refit, and reuse.",
+      "SceneIR prototype and instance identities survive realtime adaptation and are reported by the acceleration lifecycle benchmark."
+    ],
+    "workload": "smoke / 640x480 / 1,2,4 cameras / 8 warmup / 100 measured / seed 0 / skip image write",
+    "matrix": [
+      {"profile": "realtime", "cameras": 1, "avg_frame_ms": 6.41194, "p95_frame_ms": 6.69238, "p99_frame_ms": 6.79170, "fps": 155.9590},
+      {"profile": "realtime", "cameras": 2, "avg_frame_ms": 10.2016, "p95_frame_ms": 10.8159, "p99_frame_ms": 11.7864, "fps": 98.0238},
+      {"profile": "realtime", "cameras": 4, "avg_frame_ms": 18.4988, "p95_frame_ms": 20.2998, "p99_frame_ms": 22.3606, "fps": 54.0576},
+      {"profile": "balanced", "cameras": 1, "avg_frame_ms": 6.46937, "p95_frame_ms": 6.83186, "p99_frame_ms": 7.05399, "fps": 154.5746},
+      {"profile": "balanced", "cameras": 2, "avg_frame_ms": 10.2787, "p95_frame_ms": 10.8451, "p99_frame_ms": 11.3497, "fps": 97.2886},
+      {"profile": "balanced", "cameras": 4, "avg_frame_ms": 18.3659, "p95_frame_ms": 19.1314, "p99_frame_ms": 19.5835, "fps": 54.4487}
+    ],
+    "persistent_scheduling_evidence": {
+      "four_camera_worker_count": 4,
+      "four_camera_worker_start_count": 4,
+      "four_camera_launch_parameter_allocations": 4,
+      "four_camera_launch_parameter_uploads": 432
+    },
+    "acceleration_lifecycle": {
+      "iterations": 20,
+      "primitive_count": 1024,
+      "node_count": 511,
+      "prototype_count": 1,
+      "instance_count": 1024,
+      "instanced_primitive_count": 1024,
+      "rebuild_avg_ms": 0.290565,
+      "update_avg_ms": 0.163535,
+      "refit_avg_ms": 0.178870,
+      "reuse_avg_ms": 0.160523
+    },
+    "validation": {
+      "default_tests_passed": 73,
+      "default_tests_failed": 0,
+      "openusd_public_tests_passed": 76,
+      "openusd_public_tests_failed": 0,
+      "public_camera_count": 10,
+      "public_image_file_count": 20,
+      "public_reference_gate_passed": true,
+      "public_max_linear_error": 0.0000005662441253662109,
+      "public_max_perceptual_error": 0.0
+    }
   }
 }

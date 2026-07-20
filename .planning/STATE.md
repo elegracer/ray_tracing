@@ -5,22 +5,22 @@
 See: .planning/PROJECT.md (updated 2026-07-19)
 
 **Core value:** Composed scene, camera, light, and material meaning must stay consistent across offline and realtime rendering, while measured changes improve physical correctness and realtime performance together.
-**Current focus:** v2.0 Phase 5 — Scalable Lighting And GPU Scheduling
+**Current focus:** v2.0 Phase 6 — Quality/Performance Closure And Advanced Reuse
 
 ## Current Position
 
-Phase: 5 of 6 — Scalable Lighting And GPU Scheduling
-Plan: Add explicit light distributions, solid-angle PDFs, MIS, ReSTIR DI, persistent launch data, and measured AS update/refit/instancing paths
-Status: Active milestone, LIGHT-01, LIGHT-02, and RESTIR-01 complete; GPU-02 remains open
-Last activity: 2026-07-21 - Closed RESTIR-01 equal-quality many-light performance and temporal-validity gates
+Phase: 6 of 6 — Quality/Performance Closure And Advanced Reuse
+Plan: Audit equal-quality RTX 3090 claims, then evaluate NRD and capability-gated advanced reuse against the validated product path
+Status: Phase 5 complete; GPU-02, LIGHT-01, LIGHT-02, RESTIR-01, and VAL-02 are green
+Last activity: 2026-07-21 - Closed GPU-02 persistent scheduling, BVH lifecycle, and instancing gates
 
-Progress: Phase 4 complete; VAL-02, LIGHT-01, LIGHT-02, and RESTIR-01 are green; Phase 5 persistent GPU scheduling and measured AS lifecycle paths remain open
+Progress: Phases 1-5 complete; Phase 6 VAL-03/VAL-04 closure and evidence-gated advanced reuse remain
 
 ## VAL-02 Public Corpus Evidence
 
 The pinned ASWF USD WG `Vehicles` stage at `1b91f3c464891af259d51d9ee9ee9e6c357f7079` imports through OpenUSD into SceneIR v2 and the production realtime adapter. The probe preserves 74 prims, compiles 1,988 realtime triangles, 15 materials, and 14 image textures, and covers indexed primvars, material subsets, instances, affine transforms, and resolved assets. All 83 official OpenPBR v1.1.1 MaterialX examples at `f8d6d947dfae4c9b599965a86c22826ea7a8dbfb` parse with the official MaterialX API and compile through the production OpenPBR core without fallback.
 
-The fixed-seed acceptance runner emits 10 views at 640x480 and 16 samples per pixel: three bounds-fitted poses under both `pinhole32` and `equi62_lut1d`, plus one simultaneous mixed-model four-camera orbit submission. Every view has a scene-linear float EXR and display PNG, for 20 image files total. The manifest records source revisions, render settings, seed, exact camera transforms and intrinsics, output SHA-256 values, and the simultaneous submission identity. Approved references are checked with linear RMSE <= 0.005, linear max absolute error <= 0.05, perceptual mean absolute error <= 1, and perceptual max absolute error <= 8; the final deterministic readback is exact. The OpenUSD/public-probe configuration passes 69/69 tests and the default dependency-off configuration passes 65/65 tests.
+The fixed-seed acceptance runner emits 10 views at 640x480 and 16 samples per pixel: three bounds-fitted poses under both `pinhole32` and `equi62_lut1d`, plus one simultaneous mixed-model four-camera orbit submission. Every view has a scene-linear float EXR and display PNG, for 20 image files total. The manifest records source revisions, render settings, seed, exact camera transforms and intrinsics, output SHA-256 values, and the simultaneous submission identity. Approved references are checked with linear RMSE <= 0.005, linear max absolute error <= 0.05, perceptual mean absolute error <= 1, and perceptual max absolute error <= 8. After GPU-02 BVH traversal, all PNG comparisons remain exact and the largest scene-linear EXR difference is `5.66244e-7`. The OpenUSD/public-probe configuration passes 76/76 tests and the default dependency-off configuration passes 73/73 tests.
 
 ## v2.0 Phase 1 Evidence
 
@@ -146,6 +146,12 @@ RESTIR-01 adds a host/device reservoir contract carrying the selected analytic-l
 
 The fixed RTX 3090 gate renders 64 nonuniform analytic lights at 128x128 with 128 additional scene primitives to exercise the production traversal cost. A 256-spp conventional render is the reference; the comparison gives both the baseline and ReSTIR exactly 16 light candidates per pixel (`16 spp` versus `4 frames x 4 candidates`). Linear MSE is `0.021958989` for the baseline and `0.025011288` for ReSTIR, inside the declared equal-quality ratio `1.15`. Across five isolated repeats, baseline GPU render time is `0.768-0.788 ms` and ReSTIR is `0.707-0.742 ms`; the final recorded run is `0.764928 ms` versus `0.712032 ms`. Static reuse reaches all 16,384 receiver pixels, while the first frame and post-`prepare_scene` frame both report zero reused pixels. Three approved PNGs pass with zero display error and pinned, independently re-read SHA-256 values in `tests/references/restir_di/manifest.json`. The complete default suite passes 71/71; the OpenUSD/public-assets suite passes 74/74 and regenerates the existing 10-camera, 20-image bundle with zero linear/perceptual reference error. RESTIR-01 is complete.
 
+GPU-02 replaces per-launch `cudaMalloc/cudaFree` with one persistent `LaunchParams` device block per camera renderer and replaces per-frame `std::async` creation with one fixed worker per camera. The renderer pool uploads one shared read-only scene for all active cameras while preserving independent streams, frame buffers, temporal histories, and denoisers. SceneIR compatibility and v2 adapters retain prototype/instance identities, and the production CUDA intersection path traverses an uploaded BVH rather than linearly scanning every surface. Scene preparation classifies unchanged, data-only, same-topology geometry, and topology changes as reuse, update, refit, and rebuild; capacity-backed device buffers update only the required data.
+
+The fixed-seed RTX 3090 matrix uses `smoke`, 640x480, eight warmup frames, 100 measured frames, no image writes, and both realtime and balanced profiles. Realtime measures `6.41194/10.2016/18.4988 ms` at `1/2/4` cameras (`155.96/98.02/54.06 FPS`); balanced measures `6.46937/10.2787/18.3659 ms` (`154.57/97.29/54.45 FPS`). The four-camera realtime result reduces average frame time by 34.0% against the best recent same-workload `28.022 ms` record while preserving the ReSTIR and public image gates. Each report proves worker starts equal the camera count, one launch-parameter allocation per renderer, and one upload per frame/camera; four-camera runs record four allocations and 432 uploads across preparation, warmup, and measurement.
+
+The product-callsite lifecycle benchmark runs 20 post-warmup iterations over 1,024 instances sharing one prototype and a 511-node BVH. Average measured prepare times are rebuild `0.290565 ms`, update `0.163535 ms`, refit `0.178870 ms`, and reuse `0.160523 ms`; all 1,024 instance identities remain attributable to one prototype. The default Clang/CUDA/OptiX suite passes 73/73. The OpenUSD/public-assets suite passes 76/76 and regenerates all 20 EXR/PNG files; PNG error remains zero and the maximum linear error is `5.66244e-7`. GPU-02 and Phase 5 are complete.
+
 ## Performance Metrics
 
 **Velocity:**
@@ -195,7 +201,8 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- Close GPU-02 with persistent launch parameters/workers and measured rebuild, update/refit, and instancing paths while preserving RESTIR-01 and VAL-02.
+- Audit VAL-03/VAL-04 against every recorded performance claim and the RTX 3090 capability boundary.
+- Compare NRD and capability-gated ReSTIR GI/PT or neural-cache experiments against the validated product path; retain only measured equal-quality improvements.
 
 ### Blockers/Concerns
 
@@ -224,5 +231,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-07-21
-Stopped at: RESTIR-01 equal-quality many-light and temporal-validity gates are closed; next close GPU-02 persistent scheduling and AS lifecycle paths
+Stopped at: GPU-02 and Phase 5 are closed; next audit VAL-03/VAL-04 before any Phase 6 advanced-reuse experiment
 Resume file: .planning/milestones/v2.0-REQUIREMENTS.md

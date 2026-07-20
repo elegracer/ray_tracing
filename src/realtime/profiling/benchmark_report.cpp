@@ -295,6 +295,34 @@ void write_json(const RunReport& report, const std::filesystem::path& path) {
     out << "    \"final_used_bytes\": " << report.gpu_memory.final_used_bytes << "\n";
     out << "  },\n";
 
+    out << "  \"gpu_scheduling\": {\n";
+    out << "    \"persistent_worker_count\": " << report.gpu_scheduling.persistent_worker_count
+        << ",\n";
+    out << "    \"worker_start_count\": " << report.gpu_scheduling.worker_start_count << ",\n";
+    out << "    \"task_submission_count\": " << report.gpu_scheduling.task_submission_count
+        << ",\n";
+    out << "    \"launch_parameter_allocation_count\": "
+        << report.gpu_scheduling.launch_parameter_allocation_count << ",\n";
+    out << "    \"launch_parameter_upload_count\": "
+        << report.gpu_scheduling.launch_parameter_upload_count << ",\n";
+    out << "    \"acceleration_update_kind\": \""
+        << escape_json_string(report.gpu_scheduling.acceleration_update_kind) << "\",\n";
+    out << "    \"acceleration_update_ms\": " << report.gpu_scheduling.acceleration_update_ms
+        << ",\n";
+    out << "    \"acceleration_node_count\": " << report.gpu_scheduling.acceleration_node_count
+        << ",\n";
+    out << "    \"acceleration_reference_count\": "
+        << report.gpu_scheduling.acceleration_reference_count << ",\n";
+    out << "    \"acceleration_prototype_count\": "
+        << report.gpu_scheduling.acceleration_prototype_count << ",\n";
+    out << "    \"acceleration_instance_count\": "
+        << report.gpu_scheduling.acceleration_instance_count << ",\n";
+    out << "    \"acceleration_instanced_primitive_count\": "
+        << report.gpu_scheduling.acceleration_instanced_primitive_count << ",\n";
+    out << "    \"acceleration_generation\": " << report.gpu_scheduling.acceleration_generation
+        << "\n";
+    out << "  },\n";
+
     out << "  \"aggregate\": {\n";
     write_aggregate_stats(out, "frame_ms", report.aggregate.frame_ms, true);
     write_aggregate_stats(out, "pipeline_ms", report.aggregate.pipeline_ms, true);

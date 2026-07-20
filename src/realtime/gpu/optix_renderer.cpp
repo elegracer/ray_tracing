@@ -11,6 +11,7 @@
 #include <optix_stubs.h>
 
 #include <algorithm>
+#include <chrono>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -18,8 +19,12 @@
 
 namespace rt {
 
-void launch_radiance_kernel(const LaunchParams& params, cudaStream_t stream);
-void launch_resolve_kernel(const LaunchParams& params, cudaStream_t stream);
+void upload_launch_params(LaunchParams* device_params, const LaunchParams& params,
+    cudaStream_t stream);
+void launch_radiance_kernel(const LaunchParams& params, const LaunchParams* device_params,
+    cudaStream_t stream);
+void launch_resolve_kernel(const LaunchParams& params, const LaunchParams* device_params,
+    cudaStream_t stream);
 
 namespace {
 
@@ -66,25 +71,36 @@ int checked_primitive_count(std::size_t count, const char* label) {
     return static_cast<int>(count);
 }
 
-struct PrimitiveCounts {
-    int sphere_count = 0;
-    int quad_count = 0;
-    int triangle_count = 0;
-    int medium_count = 0;
-};
-
-PrimitiveCounts primitive_counts(const PackedScene& scene) {
-    return PrimitiveCounts {
-        .sphere_count = checked_primitive_count(scene.spheres.size(), "sphere"),
-        .quad_count = checked_primitive_count(scene.quads.size(), "quad"),
-        .triangle_count = checked_primitive_count(scene.triangles.size(), "triangle"),
-        .medium_count = checked_primitive_count(scene.media.size(), "medium"),
-    };
-}
-
 } // namespace
 
-OptixRenderer::OptixRenderer() {
+AccelerationUpdateStats SharedGpuSceneState::prepare(const PackedScene& scene) {
+    const auto begin = std::chrono::steady_clock::now();
+    const int surface_count = checked_primitive_count(scene.spheres.size(), "sphere")
+                              + checked_primitive_count(scene.quads.size(), "quad")
+                              + checked_primitive_count(scene.triangles.size(), "triangle");
+    if (surface_count == 0) {
+        throw std::runtime_error("render_radiance requires at least one surface primitive");
+    }
+    const GpuPreparedScene prepared = prepare_gpu_scene(scene);
+    last_acceleration_update_ = acceleration_.update(prepared);
+    buffers_.upload(prepared, acceleration_, last_acceleration_update_.kind);
+    const auto end = std::chrono::steady_clock::now();
+    last_acceleration_update_.elapsed_ms =
+        std::chrono::duration<double, std::milli>(end - begin).count();
+    return last_acceleration_update_;
+}
+
+DeviceSceneView SharedGpuSceneState::view() const {
+    return buffers_.view();
+}
+
+const AccelerationUpdateStats& SharedGpuSceneState::last_acceleration_update() const {
+    return last_acceleration_update_;
+}
+
+OptixRenderer::OptixRenderer(std::shared_ptr<SharedGpuSceneState> shared_scene)
+    : shared_scene_(
+          shared_scene ? std::move(shared_scene) : std::make_shared<SharedGpuSceneState>()) {
     initialize_optix();
     create_direction_debug_pipeline();
 }
@@ -116,6 +132,9 @@ void OptixRenderer::initialize_optix() {
     RT_OPTIX_CHECK(optixDeviceContextCreate(cu_context_, &options, &optix_context_));
 
     RT_CUDA_CHECK(cudaStreamCreate(&stream_));
+    RT_CUDA_CHECK(
+        cudaMalloc(reinterpret_cast<void**>(&device_launch_params_), sizeof(LaunchParams)));
+    launch_parameter_diagnostics_.allocation_count = 1;
 }
 
 void OptixRenderer::create_direction_debug_pipeline() {
@@ -134,7 +153,7 @@ DirectionDebugFrame OptixRenderer::render_direction_debug(const PackedCameraRig&
 
 void OptixRenderer::upload_scene(const PackedScene& scene) {
     scene_prepared_ = false;
-    scene_buffers_.upload(prepare_gpu_scene(scene));
+    shared_scene_->prepare(scene);
     uploaded_scene_ = scene;
 }
 
@@ -142,8 +161,11 @@ void OptixRenderer::free_device_resources() {
     denoiser_.shutdown();
     frame_buffers_.reset_frame();
     frame_buffers_.reset_history();
-    scene_buffers_.reset();
     host_staging_.reset();
+    if (device_launch_params_ != nullptr) {
+        cudaFree(device_launch_params_);
+        device_launch_params_ = nullptr;
+    }
     uploaded_scene_ = PackedScene {};
     scene_prepared_ = false;
 }
@@ -186,21 +208,12 @@ RestirDiagnostics OptixRenderer::restir_diagnostics() const {
     return diagnostics;
 }
 
-void OptixRenderer::build_or_refit_accels(const PackedScene& scene) {
-    const PrimitiveCounts counts = primitive_counts(scene);
-    if (counts.sphere_count == 0 && counts.quad_count == 0 && counts.triangle_count == 0
-        && counts.medium_count == 0) {
-        throw std::runtime_error("render_radiance requires at least one primitive");
-    }
-    build_geometry_accels(scene);
+LaunchParameterDiagnostics OptixRenderer::launch_parameter_diagnostics() const {
+    return launch_parameter_diagnostics_;
 }
 
-void OptixRenderer::build_geometry_accels(const PackedScene& scene) {
-    const PrimitiveCounts counts = primitive_counts(scene);
-    sphere_gas_count_ = counts.sphere_count;
-    quad_gas_count_ = counts.quad_count;
-    triangle_gas_count_ = counts.triangle_count;
-    tlas_instance_count_ = counts.sphere_count + counts.quad_count + counts.triangle_count;
+const AccelerationUpdateStats& OptixRenderer::acceleration_diagnostics() const {
+    return shared_scene_->last_acceleration_update();
 }
 
 void OptixRenderer::launch_radiance(const PackedCameraRig& rig, const RenderProfile& profile,
@@ -214,7 +227,7 @@ void OptixRenderer::launch_radiance_pipeline(const PackedScene& scene, const Pac
     frame_buffers_.resize_frame(camera.width, camera.height);
     frame_buffers_.resize_history(camera.width, camera.height);
     LaunchParams params =
-        make_radiance_launch_params(scene, scene_buffers_.view(), rig, profile, camera_index,
+        make_radiance_launch_params(scene, shared_scene_->view(), rig, profile, camera_index,
             launch_sample_stream_++, frame_buffers_.frame(), frame_buffers_.history_state());
     const std::size_t pixel_count =
         static_cast<std::size_t>(params.width) * static_cast<std::size_t>(params.height);
@@ -234,8 +247,10 @@ void OptixRenderer::launch_radiance_pipeline(const PackedScene& scene, const Pac
             pixel_count * sizeof(float), stream_));
         RT_CUDA_CHECK(cudaMemsetAsync(params.frame.restir_reservoirs, 0,
             pixel_count * sizeof(RestirReservoir), stream_));
-        launch_radiance_kernel(params, stream_);
-        launch_resolve_kernel(params, stream_);
+        upload_launch_params(device_launch_params_, params, stream_);
+        ++launch_parameter_diagnostics_.upload_count;
+        launch_radiance_kernel(params, device_launch_params_, stream_);
+        launch_resolve_kernel(params, device_launch_params_, stream_);
         frame_buffers_.apply_history_state(capture_launch_history(params));
         frame_buffers_.copy_frame_to_history(stream_);
     };
@@ -385,7 +400,11 @@ std::vector<float> OptixRenderer::download_depth() const {
 
 void OptixRenderer::prepare_scene(const PackedScene& scene) {
     upload_scene(scene);
-    build_or_refit_accels(scene);
+    use_prepared_scene(scene);
+}
+
+void OptixRenderer::use_prepared_scene(const PackedScene& scene) {
+    uploaded_scene_ = scene;
     scene_prepared_ = true;
     launch_sample_stream_ = 0;
     reset_accumulation();
@@ -396,7 +415,6 @@ RadianceFrame OptixRenderer::render_radiance(const PackedScene& scene, const Pac
     validate_render_camera_request(rig, camera_index, "render_radiance");
     reset_accumulation();
     upload_scene(scene);
-    build_or_refit_accels(scene);
     launch_radiance(rig, profile, camera_index);
     const DeviceFrameBuffers& frame = frame_buffers_.frame();
     const float4* beauty_source = frame.beauty;

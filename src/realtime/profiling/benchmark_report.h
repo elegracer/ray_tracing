@@ -100,11 +100,28 @@ struct GpuMemoryReport {
     std::uint64_t final_used_bytes = 0;
 };
 
+struct GpuSchedulingReport {
+    int persistent_worker_count = 0;
+    std::uint64_t worker_start_count = 0;
+    std::uint64_t task_submission_count = 0;
+    std::uint64_t launch_parameter_allocation_count = 0;
+    std::uint64_t launch_parameter_upload_count = 0;
+    std::string acceleration_update_kind;
+    double acceleration_update_ms = 0.0;
+    int acceleration_node_count = 0;
+    int acceleration_reference_count = 0;
+    int acceleration_prototype_count = 0;
+    int acceleration_instance_count = 0;
+    int acceleration_instanced_primitive_count = 0;
+    std::uint64_t acceleration_generation = 0;
+};
+
 struct RunReport {
     int schema_version = 3;
     RunProvenance provenance;
     RunEnvironment environment;
     GpuMemoryReport gpu_memory;
+    GpuSchedulingReport gpu_scheduling;
     std::string scene;
     std::string profile;
     int camera_count = 0;

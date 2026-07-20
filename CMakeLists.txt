@@ -658,6 +658,8 @@ add_library(realtime_gpu STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/device_scene_buffers.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/direction_debug_renderer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/direction_debug_renderer.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/gpu_scene_acceleration.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/gpu_scene_acceleration.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/host_radiance_staging.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/host_radiance_staging.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/realtime/gpu/optix_renderer.cpp
@@ -681,6 +683,15 @@ target_link_libraries(realtime_gpu PUBLIC
     CUDA::cuda_driver
     dl
 )
+
+add_executable(benchmark_gpu_scene_lifecycle
+    ${CMAKE_CURRENT_SOURCE_DIR}/utils/benchmark_gpu_scene_lifecycle.cpp)
+target_link_libraries(benchmark_gpu_scene_lifecycle PRIVATE realtime_gpu)
+add_test(NAME test_gpu_scene_lifecycle_benchmark COMMAND benchmark_gpu_scene_lifecycle
+    ${CMAKE_CURRENT_BINARY_DIR}/gpu02-lifecycle/benchmark_summary.json)
+set_tests_properties(test_gpu_scene_lifecycle_benchmark PROPERTIES
+    LABELS "benchmark;gpu"
+    RUN_SERIAL TRUE)
 
 add_executable(render_restir_acceptance
     ${CMAKE_CURRENT_SOURCE_DIR}/utils/render_restir_acceptance.cpp)
@@ -787,6 +798,11 @@ target_sources(test_device_scene_buffers
 )
 target_link_libraries(test_device_scene_buffers PRIVATE realtime_gpu)
 add_test(NAME test_device_scene_buffers COMMAND test_device_scene_buffers)
+
+add_executable(test_gpu_scene_acceleration
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_gpu_scene_acceleration.cpp)
+target_link_libraries(test_gpu_scene_acceleration PRIVATE realtime_gpu)
+add_test(NAME test_gpu_scene_acceleration COMMAND test_gpu_scene_acceleration)
 
 add_executable(test_device_frame_buffers)
 target_sources(test_device_frame_buffers

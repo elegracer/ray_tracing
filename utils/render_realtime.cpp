@@ -441,6 +441,24 @@ int main(int argc, const char* argv[]) {
                                              ? peak_used_gpu_memory - baseline_memory.used_bytes
                                              : 0;
     report.gpu_memory.final_used_bytes = final_memory.used_bytes;
+    const rt::RendererPoolDiagnostics pool_diagnostics = renderer_pool.diagnostics();
+    report.gpu_scheduling = rt::profiling::GpuSchedulingReport {
+        .persistent_worker_count = pool_diagnostics.worker_count,
+        .worker_start_count = pool_diagnostics.worker_start_count,
+        .task_submission_count = pool_diagnostics.task_submission_count,
+        .launch_parameter_allocation_count = pool_diagnostics.launch_parameter_allocation_count,
+        .launch_parameter_upload_count = pool_diagnostics.launch_parameter_upload_count,
+        .acceleration_update_kind =
+            std::string(rt::acceleration_update_kind_name(pool_diagnostics.acceleration.kind)),
+        .acceleration_update_ms = pool_diagnostics.acceleration.elapsed_ms,
+        .acceleration_node_count = pool_diagnostics.acceleration.node_count,
+        .acceleration_reference_count = pool_diagnostics.acceleration.primitive_reference_count,
+        .acceleration_prototype_count = pool_diagnostics.acceleration.prototype_count,
+        .acceleration_instance_count = pool_diagnostics.acceleration.instance_count,
+        .acceleration_instanced_primitive_count =
+            pool_diagnostics.acceleration.instanced_primitive_count,
+        .acceleration_generation = pool_diagnostics.acceleration.generation,
+    };
     report.aggregate = rt::profiling::compute_aggregate(report.frames);
     const std::filesystem::path csv_path = output_path / "benchmark_frames.csv";
     const std::filesystem::path json_path = output_path / "benchmark_summary.json";
@@ -463,12 +481,22 @@ int main(int argc, const char* argv[]) {
         "summary profile={} warmup_frames={} frames={} seed={} cameras={} resolution={}x{} spp={} "
         "max_bounces={} denoise={} avg_frame_ms={:.3f} avg_denoise_ms={:.3f} "
         "p95_frame_ms={:.3f} p99_frame_ms={:.3f} fps={:.2f} peak_gpu_memory_mib={:.2f} "
-        "peak_gpu_memory_delta_mib={:.2f} "
+        "peak_gpu_memory_delta_mib={:.2f} workers={}/{} launch_param_allocations={} "
+        "launch_param_uploads={} as_update={} as_update_ms={:.3f} as_nodes={} as_refs={} "
+        "as_prototypes={} as_instances={} instanced_primitives={} "
         "artifacts=benchmark_frames.csv,benchmark_summary.json,benchmark_manifest.json "
         "output_dir={}\n",
         profile_name, warmup_frames, frames, random_seed, camera_count, kDefaultWidth,
         kDefaultHeight, profile.samples_per_pixel, profile.max_bounces,
         profile.enable_denoise ? "true" : "false", avg_frame_ms, avg_denoise_ms, p95_frame_ms,
-        p99_frame_ms, fps, peak_gpu_memory_mib, peak_gpu_memory_delta_mib, output_path.string());
+        p99_frame_ms, fps, peak_gpu_memory_mib, peak_gpu_memory_delta_mib,
+        pool_diagnostics.worker_count, pool_diagnostics.worker_start_count,
+        pool_diagnostics.launch_parameter_allocation_count,
+        pool_diagnostics.launch_parameter_upload_count,
+        rt::acceleration_update_kind_name(pool_diagnostics.acceleration.kind),
+        pool_diagnostics.acceleration.elapsed_ms, pool_diagnostics.acceleration.node_count,
+        pool_diagnostics.acceleration.primitive_reference_count,
+        pool_diagnostics.acceleration.prototype_count, pool_diagnostics.acceleration.instance_count,
+        pool_diagnostics.acceleration.instanced_primitive_count, output_path.string());
     return EXIT_SUCCESS;
 }

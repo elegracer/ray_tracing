@@ -16,7 +16,7 @@ Baseline: `.planning/v2.0-BASELINE.json`
 - [x] **Phase 2: SceneIR v2 And OpenUSD Semantics** — USD-01 identity/stage/hierarchy/xform, USD-02 geometry/primvar/subset, prototype/instance, camera, asset, UsdLux light, and full USD-05 legacy texture/material compatibility semantics are complete.
 - [x] **Phase 3: OpenPBR Core And Physical BSDFs** — the official OpenPBR 1.1.1 authoring contract and shared CPU/GPU evaluator run through an opt-in SceneIR v2 production path with matched sampling, direct response, emission, four supported MaterialX color3 connections, explicit source-to-linear conversion, compact GPU sidecar storage, deterministic linear reference gates, documented legacy mappings, and five fixed-seed compatibility image comparisons.
 - [x] **Phase 4: OpenUSD And MaterialX I/O** — all scoped OpenUSD requirements, deterministic round trips, supported connected MaterialX color3 graph import, and shared coat/fuzz/thin-film/dispersion/subsurface transport are complete.
-- [ ] **Phase 5: Scalable Lighting And GPU Scheduling** — explicit light distributions, environment sampling, MIS, ReSTIR DI, persistent scheduling/launch data, and AS update/refit/instancing.
+- [x] **Phase 5: Scalable Lighting And GPU Scheduling** — explicit light distributions, environment sampling, MIS, ReSTIR DI, persistent scheduling/launch data, and measured BVH rebuild/update/refit/instancing are complete.
 - [ ] **Phase 6: Quality/Performance Closure And Advanced Reuse** — the pinned VAL-02 USD/OpenPBR reference corpus and image gates are complete; broader physical/temporal coverage, NRD comparison, and capability-gated ReSTIR GI/PT and neural cache experiments remain.
 
 ## Ordering Rules
@@ -28,4 +28,4 @@ Baseline: `.planning/v2.0-BASELINE.json`
 
 ## Immediate Next Step
 
-Close GPU-02 by persisting launch parameters and render workers across frames, then measure distinct acceleration-structure rebuild, update/refit, and instancing paths without regressing the completed RESTIR-01 and public USD/OpenPBR image gates.
+Close Phase 6 by auditing every performance claim against an equal-or-better-quality image gate on RTX 3090, then evaluate NRD and capability-gated ReSTIR GI/PT or neural-cache experiments only where they beat the validated product path.

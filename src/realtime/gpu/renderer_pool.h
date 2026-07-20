@@ -2,8 +2,8 @@
 
 #include "realtime/gpu/optix_renderer.h"
 
-#include <deque>
-#include <mutex>
+#include <cstdint>
+#include <memory>
 #include <vector>
 
 namespace rt {
@@ -18,10 +18,19 @@ struct CameraDeviceRenderResult {
     ProfiledDeviceRadianceFrame profiled;
 };
 
+struct RendererPoolDiagnostics {
+    int worker_count = 0;
+    std::uint64_t worker_start_count = 0;
+    std::uint64_t task_submission_count = 0;
+    std::uint64_t launch_parameter_allocation_count = 0;
+    std::uint64_t launch_parameter_upload_count = 0;
+    AccelerationUpdateStats acceleration;
+};
+
 class RendererPool {
 public:
     explicit RendererPool(int renderer_count);
-    ~RendererPool() = default;
+    ~RendererPool();
 
     RendererPool(const RendererPool&) = delete;
     RendererPool& operator=(const RendererPool&) = delete;
@@ -36,10 +45,11 @@ public:
         const RenderProfile& profile, int active_cameras);
     std::vector<CameraRenderResult> render_frame(const PackedCameraRig& rig,
         const RenderProfile& profile, int active_cameras);
+    RendererPoolDiagnostics diagnostics() const;
 
 private:
-    std::deque<OptixRenderer> renderers_;
-    mutable std::mutex mutex_;
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
 };
 
 } // namespace rt
