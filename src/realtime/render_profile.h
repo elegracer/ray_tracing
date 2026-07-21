@@ -17,10 +17,12 @@ struct RenderProfile {
     bool restir_temporal_reuse = true;
     int restir_max_history_age = 20;
     int restir_max_temporal_candidates = 64;
+    int restir_spatial_neighbors = 1;
+    int restir_max_spatial_candidates = 4;
     int restir_min_analytic_lights = 16;
 
     static RenderProfile quality() {
-        return RenderProfile{
+        return RenderProfile {
             .samples_per_pixel = 4,
             .max_bounces = 8,
             .enable_denoise = false,
@@ -32,7 +34,7 @@ struct RenderProfile {
     }
 
     static RenderProfile balanced() {
-        return RenderProfile{
+        return RenderProfile {
             .samples_per_pixel = 2,
             .max_bounces = 4,
             .enable_denoise = true,
@@ -44,7 +46,7 @@ struct RenderProfile {
     }
 
     static RenderProfile realtime() {
-        return RenderProfile{
+        return RenderProfile {
             .samples_per_pixel = 1,
             .max_bounces = 2,
             .enable_denoise = true,
@@ -61,4 +63,4 @@ struct RenderProfile {
 std::optional<RenderProfile> render_profile_from_name(const std::string& profile_name);
 std::string render_profile_name(const RenderProfile& profile);
 
-}  // namespace rt
+} // namespace rt

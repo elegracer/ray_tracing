@@ -116,6 +116,8 @@ struct LaunchParams {
     int restir_temporal_reuse = 0;
     int restir_max_history_age = 0;
     int restir_max_temporal_candidates = 0;
+    int restir_spatial_neighbors = 0;
+    int restir_max_spatial_candidates = 0;
     int restir_min_analytic_lights = 0;
 
     // --- temporal reprojection ---

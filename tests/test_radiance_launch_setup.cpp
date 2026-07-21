@@ -41,6 +41,8 @@ int main() {
     profile.restir_temporal_reuse = true;
     profile.restir_max_history_age = 12;
     profile.restir_max_temporal_candidates = 48;
+    profile.restir_spatial_neighbors = 3;
+    profile.restir_max_spatial_candidates = 2;
     profile.restir_min_analytic_lights = 10;
 
     rt::DeviceFrameBuffers frame {};
@@ -68,8 +70,8 @@ int main() {
     history_state.prev_basis_y[1] = 1.0;
     history_state.prev_basis_z[2] = 1.0;
 
-    const rt::LaunchParams params =
-        rt::make_radiance_launch_params(scene, scene_view, rig, profile, 0, 42, frame, history_state);
+    const rt::LaunchParams params = rt::make_radiance_launch_params(scene, scene_view, rig, profile,
+        0, 42, frame, history_state);
 
     expect_true(params.width == 64, "width from camera");
     expect_true(params.height == 48, "height from camera");
@@ -83,11 +85,13 @@ int main() {
     expect_true(params.restir_temporal_reuse == 1, "ReSTIR temporal reuse");
     expect_true(params.restir_max_history_age == 12, "ReSTIR history age");
     expect_true(params.restir_max_temporal_candidates == 48, "ReSTIR temporal M clamp");
+    expect_true(params.restir_spatial_neighbors == 3, "ReSTIR spatial neighbor count");
+    expect_true(params.restir_max_spatial_candidates == 2, "ReSTIR spatial M clamp");
     expect_true(params.restir_min_analytic_lights == 10, "ReSTIR many-light threshold");
     rt::PackedScene sparse_scene = scene;
     sparse_scene.analytic_lights.resize(9);
-    const rt::LaunchParams sparse_params = rt::make_radiance_launch_params(
-        sparse_scene, scene_view, rig, profile, 0, 42, frame, history_state);
+    const rt::LaunchParams sparse_params = rt::make_radiance_launch_params(sparse_scene, scene_view,
+        rig, profile, 0, 42, frame, history_state);
     expect_true(sparse_params.restir_di_enabled == 0,
         "ReSTIR stays off below the configured many-light threshold");
     expect_near(params.background[0], 0.1, 1e-6, "background r");
@@ -132,8 +136,8 @@ int main() {
     expect_near(next_history.prev_basis_z[2], 1.0, 1e-12, "next prev basis z");
 
     rt::LaunchHistoryState empty_history {};
-    const rt::LaunchParams first_params =
-        rt::make_radiance_launch_params(scene, scene_view, rig, profile, 0, 7, frame, empty_history);
+    const rt::LaunchParams first_params = rt::make_radiance_launch_params(scene, scene_view, rig,
+        profile, 0, 7, frame, empty_history);
     const rt::LaunchHistoryState first_next = rt::capture_launch_history(first_params);
     expect_true(first_next.history_length == 1, "first history length becomes one");
 

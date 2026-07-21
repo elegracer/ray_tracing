@@ -43,6 +43,7 @@ struct RestirDiagnostics {
     int pixel_count = 0;
     int active_reservoir_count = 0;
     int temporal_reuse_count = 0;
+    int spatial_reuse_count = 0;
     int max_candidate_count = 0;
     int max_age = 0;
 };

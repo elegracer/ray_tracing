@@ -2168,6 +2168,31 @@ __device__ bool restir_temporal_candidate(const LaunchParams& params, const HitI
         params.restir_max_history_age);
 }
 
+__device__ bool restir_spatial_candidate(const LaunchParams& params, const HitInfo& hit,
+    int reprojected_index, int offset_index, RestirReservoir& previous) {
+    constexpr int kOffsets[8][2] = {
+        {-1, 0},
+        {1, 0},
+        {0, -1},
+        {0, 1},
+        {-1, -1},
+        {1, -1},
+        {-1, 1},
+        {1, 1},
+    };
+    const int base_x = reprojected_index % params.width;
+    const int base_y = reprojected_index / params.width;
+    const int x = base_x + kOffsets[offset_index & 7][0];
+    const int y = base_y + kOffsets[offset_index & 7][1];
+    if (x < 0 || x >= params.width || y < 0 || y >= params.height) {
+        return false;
+    }
+    previous = params.history.restir_reservoirs[y * params.width + x];
+    const float position_tolerance = fmaxf(0.01f, 0.02f * hit.t);
+    return restir_temporal_surface_valid(restir_surface(hit), previous, position_tolerance, 0.95f,
+        params.restir_max_history_age);
+}
+
 __device__ void accumulate_direct_light(const LaunchParams& params, const HitInfo& hit,
     std::uint32_t& rng, bool bsdf_technique_available, PathState& state) {
     if (hit.material_type == 3 || params.scene.light_count <= 0) {
@@ -2275,6 +2300,31 @@ __device__ void accumulate_restir_analytic_direct_light(const LaunchParams& para
                 target_density);
             restir_merge_temporal(reservoir, previous, target_density,
                 params.restir_max_temporal_candidates, random_float01(rng));
+        }
+    }
+
+    const int spatial_neighbor_count =
+        params.restir_spatial_neighbors < 8 ? params.restir_spatial_neighbors : 8;
+    if (spatial_neighbor_count > 0) {
+        int reprojected_index = -1;
+        if (restir_previous_pixel(params, hit, reprojected_index)) {
+            const int offset_rotation =
+                (x * 3 + y * 5 + static_cast<int>(params.sample_stream)) & 7;
+            for (int neighbor = 0; neighbor < spatial_neighbor_count; ++neighbor) {
+                RestirReservoir previous {};
+                if (!restir_spatial_candidate(params, hit, reprojected_index,
+                        offset_rotation + neighbor, previous)) {
+                    continue;
+                }
+                const DirectLightSample light = sample_analytic_direct_light_candidate(params.scene,
+                    hit, previous.selected.light_index, previous.selected.sample_u0,
+                    previous.selected.sample_u1);
+                float target_density = 0.0f;
+                restir_unshadowed_numerator(params, hit, state, light, bsdf_technique_available,
+                    target_density);
+                restir_merge_spatial(reservoir, previous, target_density,
+                    params.restir_max_spatial_candidates, random_float01(rng));
+            }
         }
     }
 

@@ -15,8 +15,7 @@ rt::RestirCandidate candidate(int light_index, float u0 = 0.25f, float u1 = 0.75
     };
 }
 
-rt::RestirSurface surface(float position_x = 0.0f, int material_type = 5,
-    int primitive_index = 7) {
+rt::RestirSurface surface(float position_x = 0.0f, int material_type = 5, int primitive_index = 7) {
     return rt::RestirSurface {
         .position = {.x = position_x, .y = 0.0f, .z = 2.0f},
         .normal = {.x = 0.0f, .y = 0.0f, .z = 1.0f},
@@ -40,8 +39,7 @@ int main() {
         "weighted replacement keeps the deterministic first candidate");
     expect_true(reservoir.candidate_count == 3, "zero-target null events still count in M");
     expect_near(reservoir.weight_sum, 4.0, 1e-7, "reservoir weight sum");
-    expect_near(reservoir.estimator_weight, 4.0 / 3.0, 1e-7,
-        "reservoir estimator normalization");
+    expect_near(reservoir.estimator_weight, 4.0 / 3.0, 1e-7, "reservoir estimator normalization");
 
     rt::RestirReservoir previous {};
     previous.selected = candidate(21, 0.1f, 0.2f);
@@ -65,6 +63,18 @@ int main() {
     expect_near(merged.weight_sum, 6.0, 1e-7, "temporal merge reweights at current target");
     expect_near(merged.estimator_weight, 0.6, 1e-7, "merged estimator normalization");
 
+    rt::RestirReservoir spatial {};
+    rt::restir_update(spatial, candidate(4), 1.0f, 2.0f, 1, 0.0f);
+    rt::restir_merge_spatial(spatial, previous, 2.0f, 3, 0.0f);
+    spatial.surface = surface();
+    rt::restir_finalize(spatial);
+    expect_true(spatial.candidate_count == 4, "spatial M is clamped before merge");
+    expect_true(spatial.spatial_candidate_count == 3, "spatial multiplicity is recorded");
+    expect_true(spatial.temporal_candidate_count == 0,
+        "spatial reuse stays separately attributable");
+    expect_near(spatial.weight_sum, 5.0, 1e-7, "spatial merge reweights at current target");
+    expect_near(spatial.estimator_weight, 0.625, 1e-7, "spatial estimator normalization");
+
     expect_true(rt::restir_temporal_surface_valid(surface(), previous, 0.01f, 0.95f, 20),
         "matching surface accepts temporal reuse");
     expect_true(!rt::restir_temporal_surface_valid(surface(0.02f), previous, 0.01f, 0.95f, 20),
@@ -81,8 +91,8 @@ int main() {
     expect_true(!rt::restir_temporal_surface_valid(surface(), previous, 0.01f, 0.95f, 20),
         "expired reservoir rejects temporal reuse");
 
-    std::cout << "restir reservoir M=" << merged.candidate_count
-              << " W=" << merged.estimator_weight
-              << " temporal_M=" << merged.temporal_candidate_count << '\n';
+    std::cout << "restir reservoir M=" << merged.candidate_count << " W=" << merged.estimator_weight
+              << " temporal_M=" << merged.temporal_candidate_count
+              << " spatial_M=" << spatial.spatial_candidate_count << '\n';
     return 0;
 }

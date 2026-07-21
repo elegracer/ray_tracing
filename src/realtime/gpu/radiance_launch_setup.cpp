@@ -14,7 +14,7 @@ int checked_scene_count(std::size_t count, const char* label) {
     return static_cast<int>(count);
 }
 
-}  // namespace
+} // namespace
 
 DeviceActiveCamera make_device_active_camera(const PackedCamera& camera) {
     DeviceActiveCamera active {};
@@ -63,9 +63,10 @@ DeviceActiveCamera make_device_active_camera(const PackedCamera& camera) {
     return active;
 }
 
-LaunchParams make_radiance_launch_params(const PackedScene& scene, const DeviceSceneView& scene_view,
-    const PackedCameraRig& rig, const RenderProfile& profile, int camera_index, std::uint32_t sample_stream,
-    DeviceFrameBuffers frame, const LaunchHistoryState& history) {
+LaunchParams make_radiance_launch_params(const PackedScene& scene,
+    const DeviceSceneView& scene_view, const PackedCameraRig& rig, const RenderProfile& profile,
+    int camera_index, std::uint32_t sample_stream, DeviceFrameBuffers frame,
+    const LaunchHistoryState& history) {
     const PackedCamera& camera = rig.cameras[static_cast<std::size_t>(camera_index)];
 
     LaunchParams params {};
@@ -92,13 +93,16 @@ LaunchParams make_radiance_launch_params(const PackedScene& scene, const DeviceS
     params.restir_temporal_reuse = profile.restir_temporal_reuse ? 1 : 0;
     params.restir_max_history_age = profile.restir_max_history_age;
     params.restir_max_temporal_candidates = profile.restir_max_temporal_candidates;
+    params.restir_spatial_neighbors = profile.restir_spatial_neighbors;
+    params.restir_max_spatial_candidates = profile.restir_max_spatial_candidates;
     params.restir_min_analytic_lights = profile.restir_min_analytic_lights;
     const int restir_min_lights =
         profile.restir_min_analytic_lights > 0 ? profile.restir_min_analytic_lights : 1;
-    params.restir_di_enabled = profile.enable_restir_di
-            && static_cast<int>(scene.analytic_lights.size()) >= restir_min_lights
-        ? 1
-        : 0;
+    params.restir_di_enabled =
+        profile.enable_restir_di
+                && static_cast<int>(scene.analytic_lights.size()) >= restir_min_lights
+            ? 1
+            : 0;
 
     params.history = history.buffers;
     params.previous_camera = history.previous_camera;
@@ -130,4 +134,4 @@ LaunchHistoryState capture_launch_history(const LaunchParams& params) {
     return history;
 }
 
-}  // namespace rt
+} // namespace rt

@@ -1,5 +1,5 @@
 {
-  "schema_version": "restir_di_reference_manifest_v0",
+  "schema_version": "restir_di_reference_manifest_v1",
   "scene": {
     "resolution": [128, 128],
     "analytic_light_count": 64,
@@ -7,16 +7,23 @@
     "camera_model": "pinhole32",
     "reference_spp": 256,
     "baseline_spp": 16,
-    "restir_frames": 4,
-    "restir_candidates_per_frame": 4
+    "restir_frames": 2,
+    "restir_candidates_per_frame": 8,
+    "restir_spatial_neighbors": 1
   },
   "gates": {
-    "equal_quality_mse_ratio_limit": 1.15,
+    "equal_or_better_quality_mse_ratio_limit": 1.0,
+    "expected_quality_decision": "selected",
     "reference_max_display_error": 2,
     "restir_render_ms_must_be_less_than_baseline": true,
+    "performance_trial_count": 5,
+    "minimum_performance_wins": 3,
     "first_temporal_reuse_pixels": 0,
     "final_temporal_reuse_pixels_must_be_positive": true,
-    "reset_temporal_reuse_pixels": 0
+    "reset_temporal_reuse_pixels": 0,
+    "first_spatial_reuse_pixels": 0,
+    "final_spatial_reuse_pixels_must_be_positive": true,
+    "reset_spatial_reuse_pixels": 0
   },
   "images": [
     {
@@ -29,7 +36,7 @@
     },
     {
       "path": "restir.png",
-      "sha256": "9a0fd4390833b71492148d99dd15d924f79485363f7943e8da377c91d74b99c1"
+      "sha256": "ea0cc25426e562123e9f1397f66dc6c7e1ff0e8189deb6967bb4cd49284fcc02"
     }
   ]
 }
