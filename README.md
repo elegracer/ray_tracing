@@ -13,7 +13,7 @@ VCPKG_ROOT=$HOME/vcpkg_root cmake -S . -B build-clang-vcpkg-settings \
   -DCMAKE_CUDA_HOST_COMPILER=clang++ \
   -DCMAKE_CUDA_ARCHITECTURES=86
 cmake --build build-clang-vcpkg-settings --target render_realtime -j
-./bin/render_realtime --camera-count 4 --frames 2 --profile realtime --output-dir build/realtime-smoke
+./build-clang-vcpkg-settings/bin/render_realtime --camera-count 4 --frames 2 --profile realtime --output-dir build/realtime-smoke
 bash utils/run_realtime_benchmark_matrix.sh build/realtime-matrix 3
 ```
 
@@ -32,13 +32,13 @@ The CLI prints per-frame timing plus an aggregate FPS summary.
 For pure benchmark runs, use:
 
 ```bash
-./bin/render_realtime --camera-count 4 --frames 3 --profile realtime --skip-image-write --output-dir build/realtime-benchmark
+./build-clang-vcpkg-settings/bin/render_realtime --camera-count 4 --frames 3 --profile realtime --skip-image-write --output-dir build/realtime-benchmark
 ```
 
 For correctness-focused `final_room` validation, use:
 
 ```bash
-./bin/render_realtime --scene final_room --camera-count 4 --frames 1 --profile quality --output-dir build/final-room-check
+./build-clang-vcpkg-settings/bin/render_realtime --scene final_room --camera-count 4 --frames 1 --profile quality --output-dir build/final-room-check
 ```
 
 `final_room` is intended for correctness-first checks, not the default benchmark path.
@@ -110,7 +110,7 @@ Build and run the default interactive viewer with:
 
 ```bash
 cmake --build build-clang-vcpkg-settings --target render_realtime_viewer -j
-./bin/render_realtime_viewer
+./build-clang-vcpkg-settings/bin/render_realtime_viewer
 ```
 
 Behavior:

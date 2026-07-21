@@ -19,9 +19,10 @@ else()
     message(STATUS "ccache not found")
 endif()
 
-# Set the output directory for libraries and executables
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/bin)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/bin)
+# Keep build configurations isolated. In particular, SDK-disabled and OpenUSD
+# builds must never satisfy each other's targets through a shared output file.
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 # set global cxx standard
 set(CMAKE_CXX_STANDARD 23)
