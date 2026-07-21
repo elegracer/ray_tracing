@@ -10,13 +10,17 @@
 #include "realtime/gpu/optix_renderer.h"
 #include "realtime/render_profile.h"
 #include "scene/cpu_scene_adapter.h"
+#include "scene/openpbr_core_adapter.h"
+#include "scene/openusd_stage_importer.h"
 #include "scene/realtime_scene_adapter.h"
 #include "test_support.h"
 
 #include <tbb/global_control.h>
 
 #include <cmath>
+#include <filesystem>
 #include <numbers>
+#include <unordered_map>
 
 namespace {
 
@@ -451,9 +455,137 @@ cv::Mat render_cpu_subsurface_sphere() {
     return camera.img;
 }
 
+std::string resolved_asset_path(const rt::scene::ScenePrim& prim) {
+    for (const rt::scene::SceneAssetReference& asset : prim.asset_references) {
+        if (!asset.resolved_path.empty()) {
+            return asset.resolved_path;
+        }
+        if (!asset.evaluated_path.empty()) {
+            return asset.evaluated_path;
+        }
+        if (!asset.authored_path.empty()) {
+            return asset.authored_path;
+        }
+    }
+    throw std::runtime_error("imported image texture has no asset path: " + prim.path);
+}
+
+std::vector<pro::proxy<Texture>> make_imported_cpu_textures(
+    const rt::scene::SceneIRv2& scene, std::unordered_map<std::string, int>& texture_indices) {
+    for (const rt::scene::ScenePrim& prim : scene.prims()) {
+        if (prim.kind == rt::scene::ScenePrimKind::texture && prim.texture) {
+            texture_indices.emplace(prim.path, static_cast<int>(texture_indices.size()));
+        }
+    }
+
+    std::vector<pro::proxy<Texture>> textures(texture_indices.size());
+    for (const rt::scene::ScenePrim& prim : scene.prims()) {
+        const auto index = texture_indices.find(prim.path);
+        if (index == texture_indices.end()) {
+            continue;
+        }
+        if (prim.texture->node == rt::scene::SceneTextureNode::image) {
+            textures[static_cast<std::size_t>(index->second)] =
+                pro::make_proxy_shared<Texture, ImageTexture>(resolved_asset_path(prim));
+        } else {
+            textures[static_cast<std::size_t>(index->second)] =
+                pro::make_proxy_shared<Texture, SolidColor>(prim.texture->value);
+        }
+    }
+    return textures;
+}
+
+Eigen::Vector3d imported_cpu_direct_response(const rt::OpenPbrCompiledMaterial& compiled,
+    const std::vector<pro::proxy<Texture>>& textures) {
+    const pro::proxy<Material> material =
+        pro::make_proxy_shared<Material, OpenPbrSurfaceMaterial>(compiled, textures);
+    const Sphere sphere {Vec3d {0.0, 3.0, 0.0}, 1.0, material};
+    const Ray ray {Vec3d::Zero(), Vec3d {0.0, 1.0, 0.0}};
+    HitRecord hit;
+    expect_true(sphere.hit(ray, Interval {0.001, infinity}, hit),
+        "imported CPU material receiver is visible");
+    constexpr double inverse_sqrt_two = 0.7071067811865475244;
+    double pdf = 0.0;
+    const Vec3d response =
+        hit.mat->evaluate_direct(ray, hit, Vec3d {inverse_sqrt_two, -inverse_sqrt_two, 0.0}, pdf);
+    expect_true(pdf > 0.0 && response.allFinite(), "imported CPU material response is finite");
+    return response;
+}
+
+rt::RadianceFrame render_imported_scalar_image(rt::PackedScene scene) {
+    rt::RenderProfile profile = rt::RenderProfile::realtime_default();
+    profile.samples_per_pixel = 1;
+    profile.max_bounces = 1;
+    profile.enable_denoise = false;
+    profile.enable_restir_di = false;
+    rt::OptixRenderer renderer;
+    return renderer.render_radiance(scene, make_test_rig().pack(), profile, 0);
+}
+
+void test_imported_scalar_image(const std::filesystem::path& fixture) {
+    if (!rt::scene::openusd_stage_importer_available()) {
+        return;
+    }
+
+    const rt::scene::SceneIRv2 scene = rt::scene::import_openusd_stage(fixture);
+    const rt::scene::ScenePrim* material_prim = scene.find_prim("/World/Material");
+    expect_true(material_prim != nullptr && material_prim->material.has_value(),
+        "scalar image fixture imports its material");
+    const auto& surface = std::get<rt::scene::SceneOpenPbrSurface>(*material_prim->material);
+
+    std::unordered_map<std::string, int> texture_indices;
+    const std::vector<pro::proxy<Texture>> textures =
+        make_imported_cpu_textures(scene, texture_indices);
+    rt::OpenPbrCompiledMaterial with_image =
+        rt::scene::compile_openpbr_core_material(surface, scene, texture_indices);
+    expect_true(with_image.scalar_textures.specular_roughness.texture_index >= 0,
+        "ND_image_float compiles into the scalar binding table");
+    const int roughness_index = with_image.scalar_textures.specular_roughness.texture_index;
+    const double sampled_roughness = textures[static_cast<std::size_t>(roughness_index)]
+                                         ->value(0.5, 0.5, Vec3d::Zero())
+                                         .x();
+    expect_near(sampled_roughness, 0.6, 1.0 / 255.0,
+        "CPU proxy reads the raw scalar image channel");
+
+    rt::OpenPbrCompiledMaterial without_image = with_image;
+    without_image.scalar_textures.specular_roughness.texture_index = -1;
+    const Eigen::Vector3d cpu_with = imported_cpu_direct_response(with_image, textures);
+    const Eigen::Vector3d cpu_without = imported_cpu_direct_response(without_image, textures);
+    expect_true((cpu_with - cpu_without).norm() > 1e-4,
+        "ND_image_float changes the CPU OpenPBR response");
+
+    rt::SceneDescription realtime = rt::scene::adapt_scene_ir_v2_to_realtime(scene);
+    realtime.background = Eigen::Vector3d::Zero();
+    constexpr double inverse_sqrt_two = 0.7071067811865475244;
+    rt::AnalyticLightDesc light;
+    light.type = rt::AnalyticLightType::distant;
+    light.radiance = Eigen::Vector3d::Constant(12.0);
+    light.local_to_world_linear.col(2) =
+        Eigen::Vector3d {inverse_sqrt_two, -inverse_sqrt_two, 0.0};
+    light.cos_theta_max = 1.0;
+    light.selection_pdf = 1.0;
+    light.cdf = 1.0;
+    light.delta = true;
+    realtime.add_analytic_light(light);
+
+    rt::PackedScene gpu_with_scene = realtime.pack();
+    rt::PackedScene gpu_without_scene = gpu_with_scene;
+    for (rt::MaterialDesc& material : gpu_without_scene.materials) {
+        if (auto* openpbr = std::get_if<rt::OpenPbrMaterialDesc>(&material)) {
+            openpbr->compiled.scalar_textures.specular_roughness.texture_index = -1;
+        }
+    }
+    const Eigen::Vector3d gpu_with = center_pixel_rgb(render_imported_scalar_image(gpu_with_scene));
+    const Eigen::Vector3d gpu_without =
+        center_pixel_rgb(render_imported_scalar_image(gpu_without_scene));
+    expect_true((gpu_with - gpu_without).norm() > 1e-4,
+        "ND_image_float changes the OptiX OpenPBR response");
+}
+
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
+    expect_true(argc == 2, "scalar image fixture argument");
     tbb::global_control render_threads(tbb::global_control::max_allowed_parallelism, 1);
     const OpenPbrReferenceScene reference = make_reference_scene();
 
@@ -616,5 +748,6 @@ int main() {
         std::max({subsurface_cpu_center[0], subsurface_cpu_center[1], subsurface_cpu_center[2]})
             > 0,
         "CPU random-walk subsurface transports white-environment energy through a closed sphere");
+    test_imported_scalar_image(argv[1]);
     return 0;
 }

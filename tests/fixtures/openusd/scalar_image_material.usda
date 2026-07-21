@@ -1,0 +1,50 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+)
+
+def Xform "World"
+{
+    rel material:binding = </World/Material>
+
+    def Sphere "Receiver"
+    {
+        double radius = 1
+        double3 xformOp:translate = (0, 3, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Material "Material"
+    {
+        token outputs:surface.connect = </World/Material/OpenPBR.outputs:out>
+
+        def Shader "OpenPBR"
+        {
+            uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+            color3f inputs:base_color = (0.35, 0.35, 0.35)
+            float inputs:base_metalness.connect = </World/Material/Metalness.outputs:out>
+            float inputs:specular_roughness.connect = </World/Material/Roughness.outputs:out>
+            token outputs:out
+        }
+
+        def Shader "Metalness"
+        {
+            uniform token info:id = "ND_constant_float"
+            float inputs:value = 0.7
+            float outputs:out
+        }
+
+        def Shader "Roughness"
+        {
+            uniform token info:id = "ND_image_float"
+            float inputs:default = 0.05
+            asset inputs:file = @textures/scalar_roughness.png@ (
+                colorSpace = "raw"
+            )
+            string inputs:filtertype = "linear"
+            string inputs:uaddressmode = "periodic"
+            string inputs:vaddressmode = "periodic"
+            float outputs:out
+        }
+    }
+}

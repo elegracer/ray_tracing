@@ -879,7 +879,8 @@ target_sources(test_openpbr_render_path
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_openpbr_render_path.cpp
 )
 target_link_libraries(test_openpbr_render_path PRIVATE realtime_gpu)
-add_test(NAME test_openpbr_render_path COMMAND test_openpbr_render_path)
+add_test(NAME test_openpbr_render_path COMMAND test_openpbr_render_path
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/openusd/scalar_image_material.usda)
 
 add_executable(test_openpbr_legacy_compatibility)
 target_sources(test_openpbr_legacy_compatibility
