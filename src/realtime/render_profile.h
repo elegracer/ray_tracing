@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/restir_di.h"
+
 #include <optional>
 #include <string>
 
@@ -19,6 +21,7 @@ struct RenderProfile {
     int restir_max_temporal_candidates = 64;
     int restir_spatial_neighbors = 1;
     int restir_max_spatial_candidates = 4;
+    RestirBiasCorrectionMode restir_bias_correction = RestirBiasCorrectionMode::basic;
     int restir_min_analytic_lights = 16;
 
     static RenderProfile quality() {

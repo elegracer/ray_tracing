@@ -40,6 +40,8 @@ int main() {
     expect_true(realtime.restir_max_temporal_candidates == 64, "realtime ReSTIR temporal M clamp");
     expect_true(realtime.restir_spatial_neighbors == 1, "realtime enables one spatial donor");
     expect_true(realtime.restir_max_spatial_candidates == 4, "spatial donor M clamp");
+    expect_true(realtime.restir_bias_correction == rt::RestirBiasCorrectionMode::basic,
+        "realtime uses BASIC ReSTIR bias correction");
     expect_true(realtime.restir_min_analytic_lights == 16, "realtime ReSTIR light threshold");
 
     const rt::RenderProfile realtime_default = rt::RenderProfile::realtime_default();

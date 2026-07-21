@@ -2207,6 +2207,45 @@ __device__ bool restir_spatial_candidate(const LaunchParams& params, const HitIn
         params.restir_max_history_age);
 }
 
+__device__ float restir_target_at_previous_surface(const LaunchParams& params,
+    const RestirReservoir& source, const RestirCandidate& selected, bool bsdf_technique_available) {
+    if (params.previous_camera_valid == 0) {
+        return 0.0f;
+    }
+    const float3 source_position = packed_light_vector_to_float3(source.surface.position);
+    const float3 origin = camera_origin(params.previous_camera);
+    const float3 offset = sub3(source_position, origin);
+    const float distance = length3(offset);
+    if (!isfinite(distance) || distance <= kRayEpsilon) {
+        return 0.0f;
+    }
+
+    PathState source_state {};
+    source_state.ray.origin = origin;
+    source_state.ray.direction = mul3(offset, 1.0f / distance);
+    const HitInfo source_hit =
+        intersect_scene(params.scene, source_state.ray, kRayEpsilon, distance + 0.05f);
+    if (!source_hit.hit || source_hit.material_type != source.surface.material_type
+        || source_hit.primitive_type != source.surface.primitive_type
+        || source_hit.primitive_index != source.surface.primitive_index) {
+        return 0.0f;
+    }
+    const float position_tolerance = fmaxf(0.01f, 0.02f * distance);
+    const float3 stored_normal = packed_light_vector_to_float3(source.surface.normal);
+    if (length_sq3(sub3(source_hit.position, source_position))
+            > position_tolerance * position_tolerance
+        || dot3(source_hit.shading_normal, stored_normal) < 0.95f) {
+        return 0.0f;
+    }
+
+    const DirectLightSample light = sample_analytic_direct_light_candidate(params.scene, source_hit,
+        selected.light_index, selected.sample_u0, selected.sample_u1);
+    float target_density = 0.0f;
+    restir_unshadowed_numerator(params, source_hit, source_state, light, bsdf_technique_available,
+        target_density);
+    return target_density;
+}
+
 __device__ void accumulate_direct_light(const LaunchParams& params, const HitInfo& hit,
     std::uint32_t& rng, bool bsdf_technique_available, PathState& state) {
     if (hit.material_type == 3 || params.scene.light_count <= 0) {
@@ -2303,6 +2342,12 @@ __device__ void accumulate_restir_analytic_direct_light(const LaunchParams& para
             random_float01(rng));
     }
 
+    const int canonical_candidate_count = reservoir.candidate_count;
+    RestirReservoir reuse_sources[9] {};
+    int reuse_multiplicities[9] {};
+    int reuse_source_count = 0;
+    int selected_source = -1;
+
     if (params.restir_temporal_reuse != 0) {
         RestirReservoir previous {};
         if (restir_temporal_candidate(params, hit, previous)) {
@@ -2312,8 +2357,16 @@ __device__ void accumulate_restir_analytic_direct_light(const LaunchParams& para
             float target_density = 0.0f;
             restir_unshadowed_numerator(params, hit, state, light, bsdf_technique_available,
                 target_density);
-            restir_merge_temporal(reservoir, previous, target_density,
-                params.restir_max_temporal_candidates, random_float01(rng));
+            const RestirMergeResult merge = restir_merge_temporal(reservoir, previous,
+                target_density, params.restir_max_temporal_candidates, random_float01(rng));
+            if (merge.multiplicity > 0) {
+                reuse_sources[reuse_source_count] = previous;
+                reuse_multiplicities[reuse_source_count] = merge.multiplicity;
+                if (merge.selected != 0) {
+                    selected_source = reuse_source_count;
+                }
+                ++reuse_source_count;
+            }
         }
     }
 
@@ -2336,14 +2389,40 @@ __device__ void accumulate_restir_analytic_direct_light(const LaunchParams& para
                 float target_density = 0.0f;
                 restir_unshadowed_numerator(params, hit, state, light, bsdf_technique_available,
                     target_density);
-                restir_merge_spatial(reservoir, previous, target_density,
-                    params.restir_max_spatial_candidates, random_float01(rng));
+                const RestirMergeResult merge = restir_merge_spatial(reservoir, previous,
+                    target_density, params.restir_max_spatial_candidates, random_float01(rng));
+                if (merge.multiplicity > 0 && reuse_source_count < 9) {
+                    reuse_sources[reuse_source_count] = previous;
+                    reuse_multiplicities[reuse_source_count] = merge.multiplicity;
+                    if (merge.selected != 0) {
+                        selected_source = reuse_source_count;
+                    }
+                    ++reuse_source_count;
+                }
             }
         }
     }
 
     reservoir.surface = restir_surface(hit);
-    restir_finalize(reservoir);
+    if (params.restir_bias_correction_mode == static_cast<int>(RestirBiasCorrectionMode::basic)
+        && reuse_source_count > 0 && reservoir.valid != 0) {
+        float selected_source_target = reservoir.selected_target;
+        float source_target_sum =
+            reservoir.selected_target * static_cast<float>(canonical_candidate_count);
+        for (int source_index = 0; source_index < reuse_source_count; ++source_index) {
+            const float source_target = restir_target_at_previous_surface(params,
+                reuse_sources[source_index], reservoir.selected, bsdf_technique_available);
+            source_target_sum +=
+                source_target * static_cast<float>(reuse_multiplicities[source_index]);
+            if (selected_source == source_index) {
+                selected_source_target = source_target;
+            }
+        }
+        restir_finalize_basic_bias_correction(reservoir, selected_source_target, source_target_sum,
+            reuse_source_count);
+    } else {
+        restir_finalize(reservoir);
+    }
     params.frame.restir_reservoirs[y * params.width + x] = reservoir;
     if (reservoir.valid == 0) {
         return;

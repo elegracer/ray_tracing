@@ -204,6 +204,9 @@ RestirDiagnostics OptixRenderer::restir_diagnostics() const {
         if (reservoir.spatial_candidate_count > 0) {
             ++diagnostics.spatial_reuse_count;
         }
+        if (reservoir.bias_correction_source_count > 0) {
+            ++diagnostics.bias_corrected_count;
+        }
         diagnostics.max_candidate_count =
             std::max(diagnostics.max_candidate_count, reservoir.candidate_count);
         diagnostics.max_age = std::max(diagnostics.max_age, reservoir.age);

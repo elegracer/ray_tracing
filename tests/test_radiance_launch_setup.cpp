@@ -43,6 +43,7 @@ int main() {
     profile.restir_max_temporal_candidates = 48;
     profile.restir_spatial_neighbors = 3;
     profile.restir_max_spatial_candidates = 2;
+    profile.restir_bias_correction = rt::RestirBiasCorrectionMode::basic;
     profile.restir_min_analytic_lights = 10;
 
     rt::DeviceFrameBuffers frame {};
@@ -87,6 +88,9 @@ int main() {
     expect_true(params.restir_max_temporal_candidates == 48, "ReSTIR temporal M clamp");
     expect_true(params.restir_spatial_neighbors == 3, "ReSTIR spatial neighbor count");
     expect_true(params.restir_max_spatial_candidates == 2, "ReSTIR spatial M clamp");
+    expect_true(params.restir_bias_correction_mode
+                    == static_cast<int>(rt::RestirBiasCorrectionMode::basic),
+        "ReSTIR BASIC bias correction mode");
     expect_true(params.restir_min_analytic_lights == 10, "ReSTIR many-light threshold");
     rt::PackedScene sparse_scene = scene;
     sparse_scene.analytic_lights.resize(9);

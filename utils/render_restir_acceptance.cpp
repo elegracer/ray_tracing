@@ -110,6 +110,7 @@ rt::RenderProfile make_profile(int spp, bool restir, int spatial_neighbors) {
     profile.restir_max_temporal_candidates = 64;
     profile.restir_spatial_neighbors = restir ? spatial_neighbors : 0;
     profile.restir_max_spatial_candidates = kRestirCandidates;
+    profile.restir_bias_correction = rt::RestirBiasCorrectionMode::basic;
     profile.restir_min_analytic_lights = 16;
     return profile;
 }
@@ -300,6 +301,9 @@ int main(int argc, char** argv) {
     const bool spatial_passed = first_diagnostics.spatial_reuse_count == 0
                                 && final_diagnostics.spatial_reuse_count > 0
                                 && reset_diagnostics.spatial_reuse_count == 0;
+    const bool bias_correction_passed = first_diagnostics.bias_corrected_count == 0
+                                        && final_diagnostics.bias_corrected_count > 0
+                                        && reset_diagnostics.bias_corrected_count == 0;
 
     write_png(output_dir / "reference.png", reference.frame);
     write_png(output_dir / "baseline.png", baseline.frame);
@@ -320,13 +324,14 @@ int main(int argc, char** argv) {
     const bool reference_gate_passed = reference_max_display_error <= 2.0;
     std::ofstream report(output_dir / "report.json");
     report << std::fixed << std::setprecision(9) << "{\n"
-           << "  \"schema_version\": \"restir_di_acceptance_v1\",\n"
+           << "  \"schema_version\": \"restir_di_acceptance_v2\",\n"
            << "  \"light_count\": " << kLightCount << ",\n"
            << "  \"reference_spp\": " << kReferenceSpp << ",\n"
            << "  \"baseline_spp\": " << kBaselineSpp << ",\n"
            << "  \"restir_frames\": " << kRestirFrames << ",\n"
            << "  \"restir_candidates_per_frame\": " << kRestirCandidates << ",\n"
            << "  \"restir_spatial_neighbors\": " << spatial_neighbors << ",\n"
+           << "  \"restir_bias_correction\": \"basic\",\n"
            << "  \"baseline_mse\": " << baseline_mse << ",\n"
            << "  \"restir_mse\": " << restir_mse << ",\n"
            << "  \"quality_mse_ratio\": " << quality_ratio << ",\n"
@@ -344,24 +349,27 @@ int main(int argc, char** argv) {
     write_json_array(report, baseline_render_trials);
     report << ",\n  \"restir_render_ms_trials\": ";
     write_json_array(report, restir_render_trials);
-    report << ",\n"
-           << "  \"first_temporal_reuse_pixels\": " << first_diagnostics.temporal_reuse_count
-           << ",\n"
-           << "  \"final_temporal_reuse_pixels\": " << final_diagnostics.temporal_reuse_count
-           << ",\n"
-           << "  \"reset_temporal_reuse_pixels\": " << reset_diagnostics.temporal_reuse_count
-           << ",\n"
-           << "  \"first_spatial_reuse_pixels\": " << first_diagnostics.spatial_reuse_count << ",\n"
-           << "  \"final_spatial_reuse_pixels\": " << final_diagnostics.spatial_reuse_count << ",\n"
-           << "  \"reset_spatial_reuse_pixels\": " << reset_diagnostics.spatial_reuse_count << ",\n"
-           << "  \"reference_max_display_error\": " << reference_max_display_error << ",\n"
-           << "  \"reference_gate_passed\": " << (reference_gate_passed ? "true" : "false") << ",\n"
-           << "  \"quality_passed\": " << (quality_passed ? "true" : "false") << ",\n"
-           << "  \"quality_expectation_passed\": "
-           << (quality_expectation_passed ? "true" : "false") << ",\n"
-           << "  \"performance_passed\": " << (performance_passed ? "true" : "false") << ",\n"
-           << "  \"temporal_validity_passed\": " << (temporal_passed ? "true" : "false") << ",\n"
-           << "  \"spatial_validity_passed\": " << (spatial_passed ? "true" : "false") << "\n}\n";
+    report
+        << ",\n"
+        << "  \"first_temporal_reuse_pixels\": " << first_diagnostics.temporal_reuse_count << ",\n"
+        << "  \"final_temporal_reuse_pixels\": " << final_diagnostics.temporal_reuse_count << ",\n"
+        << "  \"reset_temporal_reuse_pixels\": " << reset_diagnostics.temporal_reuse_count << ",\n"
+        << "  \"first_spatial_reuse_pixels\": " << first_diagnostics.spatial_reuse_count << ",\n"
+        << "  \"final_spatial_reuse_pixels\": " << final_diagnostics.spatial_reuse_count << ",\n"
+        << "  \"reset_spatial_reuse_pixels\": " << reset_diagnostics.spatial_reuse_count << ",\n"
+        << "  \"first_bias_corrected_pixels\": " << first_diagnostics.bias_corrected_count << ",\n"
+        << "  \"final_bias_corrected_pixels\": " << final_diagnostics.bias_corrected_count << ",\n"
+        << "  \"reset_bias_corrected_pixels\": " << reset_diagnostics.bias_corrected_count << ",\n"
+        << "  \"reference_max_display_error\": " << reference_max_display_error << ",\n"
+        << "  \"reference_gate_passed\": " << (reference_gate_passed ? "true" : "false") << ",\n"
+        << "  \"quality_passed\": " << (quality_passed ? "true" : "false") << ",\n"
+        << "  \"quality_expectation_passed\": " << (quality_expectation_passed ? "true" : "false")
+        << ",\n"
+        << "  \"performance_passed\": " << (performance_passed ? "true" : "false") << ",\n"
+        << "  \"temporal_validity_passed\": " << (temporal_passed ? "true" : "false") << ",\n"
+        << "  \"spatial_validity_passed\": " << (spatial_passed ? "true" : "false") << ",\n"
+        << "  \"bias_correction_passed\": " << (bias_correction_passed ? "true" : "false")
+        << "\n}\n";
     report.close();
 
     std::cout << "restir_acceptance baseline_mse=" << baseline_mse << " restir_mse=" << restir_mse
@@ -371,9 +379,10 @@ int main(int argc, char** argv) {
               << " restir_mean_ms=" << restir_render_mean_ms
               << " performance_wins=" << performance_win_count << '/' << kPerformanceTrials
               << " temporal_pixels=" << final_diagnostics.temporal_reuse_count
-              << " spatial_pixels=" << final_diagnostics.spatial_reuse_count << '\n';
+              << " spatial_pixels=" << final_diagnostics.spatial_reuse_count
+              << " bias_corrected_pixels=" << final_diagnostics.bias_corrected_count << '\n';
     if (!quality_expectation_passed || !performance_passed || !temporal_passed || !spatial_passed
-        || !reference_gate_passed) {
+        || !bias_correction_passed || !reference_gate_passed) {
         throw std::runtime_error(
             "ReSTIR DI evaluation failed; inspect " + (output_dir / "report.json").string());
     }

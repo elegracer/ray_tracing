@@ -95,6 +95,7 @@ LaunchParams make_radiance_launch_params(const PackedScene& scene,
     params.restir_max_temporal_candidates = profile.restir_max_temporal_candidates;
     params.restir_spatial_neighbors = profile.restir_spatial_neighbors;
     params.restir_max_spatial_candidates = profile.restir_max_spatial_candidates;
+    params.restir_bias_correction_mode = static_cast<int>(profile.restir_bias_correction);
     params.restir_min_analytic_lights = profile.restir_min_analytic_lights;
     const int restir_min_lights =
         profile.restir_min_analytic_lights > 0 ? profile.restir_min_analytic_lights : 1;

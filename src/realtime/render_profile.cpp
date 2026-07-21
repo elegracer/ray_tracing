@@ -15,6 +15,7 @@ bool render_profiles_equal(const RenderProfile& lhs, const RenderProfile& rhs) {
            && lhs.restir_max_temporal_candidates == rhs.restir_max_temporal_candidates
            && lhs.restir_spatial_neighbors == rhs.restir_spatial_neighbors
            && lhs.restir_max_spatial_candidates == rhs.restir_max_spatial_candidates
+           && lhs.restir_bias_correction == rhs.restir_bias_correction
            && lhs.restir_min_analytic_lights == rhs.restir_min_analytic_lights;
 }
 

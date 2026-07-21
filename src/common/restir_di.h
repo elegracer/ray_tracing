@@ -14,6 +14,11 @@ namespace rt {
 #define RT_RESTIR_INLINE inline
 #endif
 
+enum class RestirBiasCorrectionMode : int {
+    off = 0,
+    basic = 1,
+};
+
 struct RestirSurface {
     PackedLightVector3 position;
     PackedLightVector3 normal;
@@ -37,8 +42,14 @@ struct RestirReservoir {
     int candidate_count = 0;
     int temporal_candidate_count = 0;
     int spatial_candidate_count = 0;
+    int bias_correction_source_count = 0;
     int age = 0;
     int valid = 0;
+};
+
+struct RestirMergeResult {
+    int multiplicity = 0;
+    int selected = 0;
 };
 
 RT_RESTIR_HD RT_RESTIR_INLINE float restir_clamp_unit(float value) {
@@ -53,27 +64,29 @@ RT_RESTIR_HD RT_RESTIR_INLINE bool restir_finite_positive(float value) {
 #endif
 }
 
-RT_RESTIR_HD RT_RESTIR_INLINE void restir_update(RestirReservoir& reservoir,
+RT_RESTIR_HD RT_RESTIR_INLINE bool restir_update(RestirReservoir& reservoir,
     const RestirCandidate& candidate, float target_density, float candidate_weight,
     int candidate_multiplicity, float selection_sample) {
     if (candidate.light_index < 0 || candidate_multiplicity <= 0) {
-        return;
+        return false;
     }
     reservoir.candidate_count += candidate_multiplicity;
     if (!restir_finite_positive(target_density) || !restir_finite_positive(candidate_weight)) {
-        return;
+        return false;
     }
 
     const float next_weight_sum = reservoir.weight_sum + candidate_weight;
     if (!restir_finite_positive(next_weight_sum)) {
-        return;
+        return false;
     }
-    if (restir_clamp_unit(selection_sample) * next_weight_sum < candidate_weight) {
+    const bool selected = restir_clamp_unit(selection_sample) * next_weight_sum < candidate_weight;
+    if (selected) {
         reservoir.selected = candidate;
         reservoir.selected_target = target_density;
         reservoir.valid = 1;
     }
     reservoir.weight_sum = next_weight_sum;
+    return selected;
 }
 
 RT_RESTIR_HD RT_RESTIR_INLINE void restir_finalize(RestirReservoir& reservoir) {
@@ -87,6 +100,26 @@ RT_RESTIR_HD RT_RESTIR_INLINE void restir_finalize(RestirReservoir& reservoir) {
     reservoir.estimator_weight =
         reservoir.weight_sum
         / (static_cast<float>(reservoir.candidate_count) * reservoir.selected_target);
+    if (!restir_finite_positive(reservoir.estimator_weight)) {
+        reservoir.valid = 0;
+        reservoir.estimator_weight = 0.0f;
+    }
+}
+
+RT_RESTIR_HD RT_RESTIR_INLINE void restir_finalize_basic_bias_correction(RestirReservoir& reservoir,
+    float selected_source_target, float source_target_sum, int source_count) {
+    reservoir.estimator_weight = 0.0f;
+    reservoir.bias_correction_source_count = source_count > 0 ? source_count : 0;
+    if (reservoir.valid == 0 || source_count <= 0
+        || !restir_finite_positive(reservoir.selected_target)
+        || !restir_finite_positive(reservoir.weight_sum)
+        || !restir_finite_positive(selected_source_target)
+        || !restir_finite_positive(source_target_sum)) {
+        reservoir.valid = 0;
+        return;
+    }
+    reservoir.estimator_weight = reservoir.weight_sum * selected_source_target
+                                 / (reservoir.selected_target * source_target_sum);
     if (!restir_finite_positive(reservoir.estimator_weight)) {
         reservoir.valid = 0;
         reservoir.estimator_weight = 0.0f;
@@ -122,12 +155,12 @@ RT_RESTIR_HD RT_RESTIR_INLINE bool restir_temporal_surface_valid(const RestirSur
            && restir_dot(current.normal, previous.surface.normal) >= min_normal_dot;
 }
 
-RT_RESTIR_HD RT_RESTIR_INLINE void restir_merge_temporal(RestirReservoir& current,
+RT_RESTIR_HD RT_RESTIR_INLINE RestirMergeResult restir_merge_temporal(RestirReservoir& current,
     const RestirReservoir& previous, float target_density_at_current, int max_candidate_count,
     float selection_sample) {
     if (previous.valid == 0 || previous.candidate_count <= 0
         || !restir_finite_positive(previous.estimator_weight)) {
-        return;
+        return {};
     }
     int multiplicity = previous.candidate_count;
     if (max_candidate_count > 0 && multiplicity > max_candidate_count) {
@@ -137,18 +170,19 @@ RT_RESTIR_HD RT_RESTIR_INLINE void restir_merge_temporal(RestirReservoir& curren
                                        ? target_density_at_current * previous.estimator_weight
                                              * static_cast<float>(multiplicity)
                                        : 0.0f;
-    restir_update(current, previous.selected, target_density_at_current, candidate_weight,
-        multiplicity, selection_sample);
+    const bool selected = restir_update(current, previous.selected, target_density_at_current,
+        candidate_weight, multiplicity, selection_sample);
     current.temporal_candidate_count += multiplicity;
     current.age = previous.age + 1;
+    return RestirMergeResult {.multiplicity = multiplicity, .selected = selected ? 1 : 0};
 }
 
-RT_RESTIR_HD RT_RESTIR_INLINE void restir_merge_spatial(RestirReservoir& current,
+RT_RESTIR_HD RT_RESTIR_INLINE RestirMergeResult restir_merge_spatial(RestirReservoir& current,
     const RestirReservoir& previous, float target_density_at_current, int max_candidate_count,
     float selection_sample) {
     if (previous.valid == 0 || previous.candidate_count <= 0
         || !restir_finite_positive(previous.estimator_weight)) {
-        return;
+        return {};
     }
     int multiplicity = previous.candidate_count;
     if (max_candidate_count > 0 && multiplicity > max_candidate_count) {
@@ -158,9 +192,10 @@ RT_RESTIR_HD RT_RESTIR_INLINE void restir_merge_spatial(RestirReservoir& current
                                        ? target_density_at_current * previous.estimator_weight
                                              * static_cast<float>(multiplicity)
                                        : 0.0f;
-    restir_update(current, previous.selected, target_density_at_current, candidate_weight,
-        multiplicity, selection_sample);
+    const bool selected = restir_update(current, previous.selected, target_density_at_current,
+        candidate_weight, multiplicity, selection_sample);
     current.spatial_candidate_count += multiplicity;
+    return RestirMergeResult {.multiplicity = multiplicity, .selected = selected ? 1 : 0};
 }
 
 #undef RT_RESTIR_HD

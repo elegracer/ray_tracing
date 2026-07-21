@@ -1,5 +1,5 @@
 {
-  "schema_version": "restir_di_reference_manifest_v1",
+  "schema_version": "restir_di_reference_manifest_v2",
   "scene": {
     "resolution": [128, 128],
     "analytic_light_count": 64,
@@ -9,7 +9,8 @@
     "baseline_spp": 16,
     "restir_frames": 2,
     "restir_candidates_per_frame": 8,
-    "restir_spatial_neighbors": 1
+    "restir_spatial_neighbors": 1,
+    "restir_bias_correction": "basic"
   },
   "gates": {
     "equal_or_better_quality_mse_ratio_limit": 1.0,
@@ -23,7 +24,10 @@
     "reset_temporal_reuse_pixels": 0,
     "first_spatial_reuse_pixels": 0,
     "final_spatial_reuse_pixels_must_be_positive": true,
-    "reset_spatial_reuse_pixels": 0
+    "reset_spatial_reuse_pixels": 0,
+    "first_bias_corrected_pixels": 0,
+    "final_bias_corrected_pixels_must_be_positive": true,
+    "reset_bias_corrected_pixels": 0
   },
   "images": [
     {
@@ -36,7 +40,7 @@
     },
     {
       "path": "restir.png",
-      "sha256": "ea0cc25426e562123e9f1397f66dc6c7e1ff0e8189deb6967bb4cd49284fcc02"
+      "sha256": "b32a732bb452e33e42e86bf06dc937dfa8c476cafcdd9580ddd308dbbab94e68"
     }
   ]
 }

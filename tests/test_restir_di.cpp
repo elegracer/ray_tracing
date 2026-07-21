@@ -53,27 +53,45 @@ int main() {
 
     rt::RestirReservoir merged {};
     rt::restir_update(merged, candidate(4), 1.0f, 2.0f, 1, 0.0f);
-    rt::restir_merge_temporal(merged, previous, 2.0f, 4, 0.0f);
+    const rt::RestirMergeResult temporal_merge =
+        rt::restir_merge_temporal(merged, previous, 2.0f, 4, 0.0f);
     merged.surface = surface();
     rt::restir_finalize(merged);
     expect_true(merged.selected.light_index == 21, "temporal candidate can replace current sample");
     expect_true(merged.candidate_count == 5, "temporal M is clamped before merge");
     expect_true(merged.temporal_candidate_count == 4, "temporal multiplicity is recorded");
+    expect_true(temporal_merge.multiplicity == 4 && temporal_merge.selected != 0,
+        "temporal merge reports its effective source and selection");
     expect_true(merged.age == 4, "temporal age advances once");
     expect_near(merged.weight_sum, 6.0, 1e-7, "temporal merge reweights at current target");
     expect_near(merged.estimator_weight, 0.6, 1e-7, "merged estimator normalization");
 
     rt::RestirReservoir spatial {};
     rt::restir_update(spatial, candidate(4), 1.0f, 2.0f, 1, 0.0f);
-    rt::restir_merge_spatial(spatial, previous, 2.0f, 3, 0.0f);
+    const rt::RestirMergeResult spatial_merge =
+        rt::restir_merge_spatial(spatial, previous, 2.0f, 3, 0.0f);
     spatial.surface = surface();
     rt::restir_finalize(spatial);
     expect_true(spatial.candidate_count == 4, "spatial M is clamped before merge");
     expect_true(spatial.spatial_candidate_count == 3, "spatial multiplicity is recorded");
     expect_true(spatial.temporal_candidate_count == 0,
         "spatial reuse stays separately attributable");
+    expect_true(spatial_merge.multiplicity == 3 && spatial_merge.selected != 0,
+        "spatial merge reports its effective source and selection");
     expect_near(spatial.weight_sum, 5.0, 1e-7, "spatial merge reweights at current target");
     expect_near(spatial.estimator_weight, 0.625, 1e-7, "spatial estimator normalization");
+
+    rt::RestirReservoir corrected {};
+    corrected.selected = candidate(8);
+    corrected.weight_sum = 10.0f;
+    corrected.selected_target = 2.0f;
+    corrected.candidate_count = 5;
+    corrected.valid = 1;
+    rt::restir_finalize_basic_bias_correction(corrected, 3.0f, 12.0f, 2);
+    expect_true(corrected.valid != 0 && corrected.bias_correction_source_count == 2,
+        "BASIC correction records the contributing reuse sources");
+    expect_near(corrected.estimator_weight, 1.25, 1e-7,
+        "BASIC correction uses the selected-source MIS numerator and denominator");
 
     expect_true(rt::restir_temporal_surface_valid(surface(), previous, 0.01f, 0.95f, 20),
         "matching surface accepts temporal reuse");
