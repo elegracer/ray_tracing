@@ -3,6 +3,7 @@
 ## Current State
 
 - **Latest shipped version:** `v1.0` on `2026-04-22`
+- **Latest validated milestone:** `v2.1` OpenPBR scalar data connections on `2026-07-21`
 - **Milestone result:** shipped dual-model camera support across shared scene, offline CPU, realtime GPU, viewer, defaults, and regression coverage
 - **Audit:** `.planning/v1.0-MILESTONE-AUDIT.md` passed with `15/15` requirements satisfied
 
@@ -34,14 +35,12 @@ Composed scene, camera, light, and material meaning must stay consistent across 
 - ✓ The pinned ASWF Vehicles and official OpenPBR v1.1.1 corpora now pass the product import/compile path and a deterministic 10-view, 20-image EXR/PNG acceptance bundle with exact camera, provenance, hash, simultaneous-submission, and reference-error evidence — `v2.0`
 - ✓ LIGHT-01 now executes emissive geometry, environment, and six SceneIR v2 analytic light types through explicit CPU/GPU distributions, solid-angle PDFs, visibility, miss radiance, and matched light/BSDF MIS with production image gates — `v2.0`
 - ✓ LIGHT-02 now quantifies finite/infinite PDF normalization, explicit null-event mass, unit-environment furnace energy, finite radiance, shared CUDA sampling identities, and six-type CPU/GPU production-estimator agreement — `v2.0`
-- ✓ RESTIR-01 now runs host/device reservoir resampling on the production realtime path, reuses temporally validated surface samples, rejects invalid history, and passes fixed-reference equal-quality many-light performance gates on RTX 3090 — `v2.0`
+- ✓ ReSTIR DI now combines validated temporal reuse with one previous-frame spatial donor, rejects invalid history, reaches MSE ratio `0.7831`, and beats the conventional equal-candidate baseline in 20/20 paired RTX 3090 trials — `v2.0`
+- ✓ Official MaterialX float constant/image nodes now drive OpenPBR `base_metalness` and `specular_roughness` through OpenUSD, SceneIR v2, CPU, and OptiX with raw-data and cross-backend gates — `v2.1`
 
 ### Active
 
-- Align scene identity, hierarchy, geometry, transforms, cameras, lights, instancing, units, assets, and material binding with composed OpenUSD semantics — `v2.0`
-- Align material inputs with OpenPBR/MaterialX and implement matched, energy-aware BSDF evaluation, sampling, and PDFs across CPU/GPU — `v2.0`
-- Persist launch parameters and render workers, then measure acceleration-structure rebuild/update/refit/instancing while preserving the completed light-distribution, MIS, and ReSTIR DI gates — `v2.0`
-- Extend physical invariants, temporal tests, image metrics, and quality-normalized performance gates beyond the completed pinned USD/OpenPBR release corpus — `v2.0`
+- No active delivery item after the completed v2.1 slice; new work requires a newly selected measured product bottleneck.
 
 ### Out of Scope
 

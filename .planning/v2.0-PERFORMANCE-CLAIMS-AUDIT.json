@@ -1,0 +1,117 @@
+{
+  "schema_version": "performance_claim_audit_v0",
+  "generated_at": "2026-07-21T08:20:37+08:00",
+  "source_head": "34c97d4",
+  "source_dirty": true,
+  "required_hardware": {
+    "gpu": "NVIDIA GeForce RTX 3090",
+    "compute_capability": "8.6",
+    "val04_status": "satisfied",
+    "newer_architecture_policy": "optional_and_capability_gated"
+  },
+  "policy": {
+    "comparative_claim_requires": [
+      "identical scene, camera, resolution, and sample conditions",
+      "equal-or-better objective quality",
+      "repeated measurements on RTX 3090",
+      "attributable source and artifact provenance"
+    ],
+    "raw_measurement_is_not_an_uplift_claim": true
+  },
+  "claims": [
+    {
+      "id": "phase1_gpu_reconstruction_fps_uplift",
+      "recorded_result": "realtime +42.9% FPS; balanced +45.9%; quality +8.8%",
+      "status": "retired_comparative_claim",
+      "reason": "The before/after checkpoint lacks a paired objective quality gate under identical conditions. The raw timings remain historical records only."
+    },
+    {
+      "id": "phase1_benchmark_protocol",
+      "recorded_result": "schema-v3 warmup, percentile, provenance, memory, CSV, summary, and manifest records",
+      "status": "retained_non_comparative_record",
+      "reason": "The checkpoint explicitly makes no uplift claim and exists to validate measurement completeness."
+    },
+    {
+      "id": "phase1_temporal_no_regression",
+      "recorded_result": "29.1951/29.7210 ms versus prior 31.0712 ms protocol record",
+      "status": "guard_only_not_uplift",
+      "reason": "Repeated identical performance runs support a regression guard, while the temporal quality fixture uses a different scene and resolution and cannot support an uplift claim."
+    },
+    {
+      "id": "phase1_viewer_interop",
+      "recorded_result": "2.71/2.60 s GPU interop versus 9.28/9.32 s host readback",
+      "status": "retained_product_path_claim",
+      "reason": "Both presentation paths consume the same rendered device frame at identical scene, cameras, resolution, sampling, and display policy; device-view and pixel-contract tests preserve output semantics. The metric includes process initialization."
+    },
+    {
+      "id": "phase5_temporal_restir_di",
+      "recorded_result": "0.527584 ms versus 0.592768 ms at 16 candidates, but MSE 0.025011288 versus 0.021958989",
+      "quality_mse_ratio": 1.138999979,
+      "status": "rejected_comparative_claim",
+      "reason": "The candidate is about 11.0% faster in the current isolated run but has 13.9% worse MSE. The previous 1.15 tolerance contradicted VAL-03 equal-or-better quality."
+    },
+    {
+      "id": "phase5_gpu_scheduling",
+      "recorded_result": "18.4988 ms four-camera realtime; previously described as 34.0% lower than a 28.022 ms record",
+      "status": "current_record_only",
+      "reason": "The current fixed-workload matrix is retained, but the 34.0% uplift wording is retired until the same smoke workload has an attributable before/after image-quality parity artifact."
+    },
+    {
+      "id": "phase5_acceleration_lifecycle",
+      "recorded_result": "rebuild/update/refit/reuse 0.290565/0.163535/0.178870/0.160523 ms",
+      "status": "retained_equivalent_operation_record",
+      "reason": "This is a scoped preparation microbenchmark over the same 1,024 instances and prototype identity, not an end-to-end rendering uplift claim."
+    },
+    {
+      "id": "phase6_spatial_restir_di",
+      "recorded_result": "two frames x eight candidates plus one previous-frame spatial donor; MSE ratio 0.783138517; four-batch mean 0.309995203 ms versus 0.563055995 ms baseline",
+      "quality_mse_ratio": 0.783138517,
+      "mean_speedup_percent": 44.944160907,
+      "status": "retained_product_path_claim",
+      "reason": "Four independent five-trial RTX 3090 batches used the same 64-light scene, camera, 128x128 resolution, and 16 generated candidates per pixel. All 20 paired trials were faster and every batch passed strict quality, performance, temporal, spatial, reset, and reference gates."
+    }
+  ],
+  "phase6_decision": {
+    "nrd_relax_reblur": {
+      "decision": "rejected_for_current_product_path",
+      "nrd_revision": "9a3fe938a7558fd16b6c91a1c0456305cdcd9f16",
+      "source": "https://github.com/NVIDIA-RTX/NRD/blob/9a3fe938a7558fd16b6c91a1c0456305cdcd9f16/README.md",
+      "confirmed_finding": "The provided integration targets D3D11, D3D12, or Vulkan through NRI or an application RHI and expects normal+roughness, view-Z, motion, separated diffuse/specular radiance, and hit-distance resources.",
+      "product_gap": "The renderer is CUDA/OptiX with OpenGL presentation and does not expose the required roughness, separated diffuse/specular, or hit-distance texture contract. Adding an RHI and guide contract would dominate a denoiser comparison and would not be a bounded experiment."
+    },
+    "selected_experiment": {
+      "id": "restir_di_spatial_reuse_v1",
+      "decision": "promoted",
+      "rtxdi_revision": "1b55517b74b7c9c54eda44be138f75a97f1fee60",
+      "source": "https://github.com/NVIDIA-RTX/RTXDI/blob/1b55517b74b7c9c54eda44be138f75a97f1fee60/Doc/NoiseAndBias.md",
+      "confirmed_finding": "RTXDI identifies temporal plus spatial resampling as central to noise reduction and recommends one to three spatial samples, while requiring explicit bias correction and correct previous-frame surface data.",
+      "fit": "The current CUDA path already has DI reservoirs, previous-frame positions, normals, material and primitive identity, so a previous-frame spatial-neighbor pass is bounded and RTX 3090 native.",
+      "acceptance": [
+        "same 64-light scene, camera, 128x128 resolution, and 16-candidate budget as the conventional baseline",
+        "MSE ratio <= 1.0 against the 256-spp reference",
+        "candidate render time below the conventional baseline in at least five repeated isolated runs",
+        "first-frame, disocclusion, scene-reset, and identity mismatch reuse remain invalid",
+        "default and public acceptance suites remain green"
+      ],
+      "validation": {
+        "restir_frames": 2,
+        "restir_candidates_per_frame": 8,
+        "spatial_neighbor_count": 1,
+        "batch_count": 4,
+        "trials_per_batch": 5,
+        "paired_win_count": 20,
+        "quality_mse_ratio": 0.783138517,
+        "baseline_batch_mean_ms": [0.561766386, 0.564256001, 0.560748804, 0.565452790],
+        "candidate_batch_mean_ms": [0.311884803, 0.309516802, 0.307385603, 0.311193603],
+        "mean_baseline_render_ms": 0.563055995,
+        "mean_candidate_render_ms": 0.309995203,
+        "mean_speedup_percent": 44.944160907,
+        "all_quality_passed": true,
+        "all_performance_passed": true,
+        "all_temporal_validity_passed": true,
+        "all_spatial_validity_passed": true
+      },
+      "failure_policy": "Reject spatial reuse and close Phase 6 without advanced reuse if the strict quality/performance gate cannot be met without biased visibility shortcuts."
+    }
+  }
+}

@@ -5,32 +5,46 @@
 See: .planning/PROJECT.md (updated 2026-07-19)
 
 **Core value:** Composed scene, camera, light, and material meaning must stay consistent across offline and realtime rendering, while measured changes improve physical correctness and realtime performance together.
-**Current focus:** v2.0 Phase 6 — Quality/Performance Closure And Advanced Reuse
+**Current focus:** Preserve the completed v2.1 scalar-material path until a new measured product bottleneck is selected
 
 ## Current Position
 
-Phase: 6 of 6 — Quality/Performance Closure And Advanced Reuse
-Plan: Audit equal-quality RTX 3090 claims, then evaluate NRD and capability-gated advanced reuse against the validated product path
-Status: Phase 5 complete; GPU-02, LIGHT-01, LIGHT-02, RESTIR-01, and VAL-02 are green
-Last activity: 2026-07-21 - Closed GPU-02 persistent scheduling, BVH lifecycle, and instancing gates
+Phase: v2.1 — OpenPBR Scalar Data Connections
+Plan: v2.1 slice complete; preserve the quality-normalized RTX 3090 baseline and validated OpenUSD/OpenPBR path
+Status: No open delivery item; base metalness and specular roughness textures are green across OpenUSD, SceneIR v2, CPU, and OptiX
+Last activity: 2026-07-21 - Completed OpenPBR scalar texture execution and passed default 73/73 plus official OpenUSD v26.05/public 77/77 tests
 
-Progress: Phases 1-5 complete; Phase 6 VAL-03/VAL-04 closure and evidence-gated advanced reuse remain
+Progress: v2.0 complete; v2.1 scalar-material slice complete
+
+## v2.1 OpenPBR Scalar Texture Evidence
+
+The 2026-07-21 public-source audit compared the newly released OpenUSD v26.08, OpenPBR v1.1.1, MaterialX v1.39.5, RTXDI v3.0.0, and NRD v4.17.3 against the completed product path. The smallest evidence-backed gap was not another SDK version chase or a new renderer framework port: OpenPBR declares `base_metalness` and `specular_roughness` as float inputs, and MaterialX provides official `ND_constant_float` and `ND_image_float` nodes, while the renderer previously executed only color3 connections.
+
+SceneIR v2 now validates matching float constant/image nodedefs, replicated scalar fallbacks, and raw data color space. The OpenUSD importer accepts exactly typed single-source float connections for the two production inputs and remains fail-closed for other connected scalar parameters. The shared compiled material carries compact scalar bindings; CPU proxy textures and OptiX packed textures both sample the first data channel at the hit point and apply it through one host/device OpenPBR helper.
+
+The connected USD fixture now imports both official float nodedefs. Focused gates cover import type/value/color-space preservation, SceneIR binding compilation, unsupported-input rejection, and a CPU/GPU reference whose constant metalness fallback intentionally differs from the connected texture. The default CUDA/OptiX configuration passes 73/73 tests, and the official OpenUSD v26.05/public configuration passes 77/77 tests, including public assets and production render acceptance. OpenUSD v26.08 remains a future authority upgrade candidate rather than being claimed by this slice.
+
+## OpenUSD v26.05 Authority Evidence
+
+The official `v26.05` release tag resolves to commit `2095fafafd033fa23386d7ec6d58c7cc33974518`. A clean C++ SDK build from that revision reports `PXR_VERSION 2605`; the renderer's fresh Clang/CUDA/OpenUSD configuration reports `pxr 2605`, builds all 221 targets, and passes 77/77 tests. Runtime linkage for the OpenUSD importer resolves `usd`, `usdGeom`, `usdShade`, `usdLux`, and their transitive USD libraries from that v26.05 SDK. The earlier local 25.08 binary remains a legacy MaterialX/tooling source and is not accepted as OpenUSD v26.05 evidence.
+
+OpenUSD v26.05's package config creates `TBB::tbb` unless asked to find the consumer's existing TBB package. The project now selects that supported package-config path after loading its own TBB target; the complete runtime suite validates coexistence of OpenUSD's legacy `libtbb.so.2` dependency and the renderer's `libtbb.so.12` dependency.
 
 ## VAL-02 Public Corpus Evidence
 
 The pinned ASWF USD WG `Vehicles` stage at `1b91f3c464891af259d51d9ee9ee9e6c357f7079` imports through OpenUSD into SceneIR v2 and the production realtime adapter. The probe preserves 74 prims, compiles 1,988 realtime triangles, 15 materials, and 14 image textures, and covers indexed primvars, material subsets, instances, affine transforms, and resolved assets. All 83 official OpenPBR v1.1.1 MaterialX examples at `f8d6d947dfae4c9b599965a86c22826ea7a8dbfb` parse with the official MaterialX API and compile through the production OpenPBR core without fallback.
 
-The fixed-seed acceptance runner emits 10 views at 640x480 and 16 samples per pixel: three bounds-fitted poses under both `pinhole32` and `equi62_lut1d`, plus one simultaneous mixed-model four-camera orbit submission. Every view has a scene-linear float EXR and display PNG, for 20 image files total. The manifest records source revisions, render settings, seed, exact camera transforms and intrinsics, output SHA-256 values, and the simultaneous submission identity. Approved references are checked with linear RMSE <= 0.005, linear max absolute error <= 0.05, perceptual mean absolute error <= 1, and perceptual max absolute error <= 8. After GPU-02 BVH traversal, all PNG comparisons remain exact and the largest scene-linear EXR difference is `5.66244e-7`. The OpenUSD/public-probe configuration passes 76/76 tests and the default dependency-off configuration passes 73/73 tests.
+The fixed-seed acceptance runner emits 10 views at 640x480 and 16 samples per pixel: three bounds-fitted poses under both `pinhole32` and `equi62_lut1d`, plus one simultaneous mixed-model four-camera orbit submission. Every view has a scene-linear float EXR and display PNG, for 20 image files total. The manifest records source revisions, render settings, seed, exact camera transforms and intrinsics, output SHA-256 values, and the simultaneous submission identity. Approved references are checked with linear RMSE <= 0.005, linear max absolute error <= 0.05, perceptual mean absolute error <= 1, and perceptual max absolute error <= 8. After GPU-02 BVH traversal, all PNG comparisons remain exact and the largest scene-linear EXR difference is `5.66244e-7`. The official OpenUSD v26.05/public-probe configuration passes 77/77 tests and the default dependency-off configuration passes 73/73 tests.
 
 ## v2.0 Phase 1 Evidence
 
-| Profile | Baseline frame / FPS | GPU reconstruction frame / FPS | Change |
+| Profile | Baseline frame / FPS | GPU reconstruction frame / FPS | Historical throughput delta |
 |---|---:|---:|---:|
 | realtime | 42.8487 ms / 23.3380 | 29.9772 ms / 33.3587 | +42.9% FPS |
 | balanced | 43.3536 ms / 23.0661 | 29.7147 ms / 33.6533 | +45.9% FPS |
 | quality | 28.9618 ms / 34.5282 | 26.6274 ms / 37.5553 | +8.8% FPS |
 
-Steady-state measurements discard frame zero across 99 measured frames at four cameras and 640x480 on RTX 3090. Realtime denoise critical path is 7.3764 ms while summed four-camera denoise work is 27.0912 ms; non-negative host residual averages 0.0087 ms.
+Steady-state measurements discard frame zero across 99 measured frames at four cameras and 640x480 on RTX 3090. Realtime denoise critical path is 7.3764 ms while summed four-camera denoise work is 27.0912 ms; non-negative host residual averages 0.0087 ms. The percentages are historical raw throughput deltas, not VAL-03 claims, because the checkpoint lacks a paired objective quality gate under identical conditions.
 
 The current built-in protocol uses eight unmeasured warmup frames followed by 100 measured frames with seed `20260718`; CSV frame zero is now a real measured sample and starts at sample stream `20260726`.
 
@@ -98,7 +112,7 @@ Two fixed-seed default `smoke` captures used four 640x480 cameras, eight warmup 
 
 ## v2.0 Phase 4 Evidence
 
-USD-03 adds an opt-in `RT_ENABLE_OPENUSD` frontend validated against the official OpenUSD `v26.05` monolithic SDK. The SDK-facing translation unit is isolated at OpenUSD's C++17 boundary, while the renderer and all public SceneIR v2 contracts remain C++23. The default SDK-disabled build requires no OpenUSD headers or libraries and fails import with an exact capability message, so YAML/builtin rendering remains the unchanged default.
+USD-03 adds an opt-in `RT_ENABLE_OPENUSD` frontend validated against a shared-library SDK built from the official OpenUSD `v26.05` release tag. The SDK-facing translation unit is isolated at OpenUSD's C++17 boundary, while the renderer and all public SceneIR v2 contracts remain C++23. The default SDK-disabled build requires no OpenUSD headers or libraries and fails import with an exact capability message, so YAML/builtin rendering remains the unchanged default.
 
 The importer opens a composed `UsdStage`, preserves stage metadata, affine transforms, reset stacks, visibility, purpose, and transform samples, and traverses instance proxies without leaking unstable generated prototype paths. Sphere and mesh payloads compile into deterministic renderer-owned geometry prototypes; instance surfaces reuse shared prototypes and resolve inherited bindings through `UsdShadeMaterialBindingAPI::ComputeBoundMaterial`. `UsdGeomCamera`, sphere/disk/rect/cylinder/distant/dome `UsdLux` lights, light texture assets, and constant `ND_open_pbr_surface_surfaceshader` inputs compile into their existing SceneIR v2 payloads. Unsupported prim schemas, surface shader ids, authored inputs, and connected OpenPBR inputs fail explicitly.
 
@@ -144,11 +158,11 @@ The production CPU and OptiX integrators render the same one-pixel receiver, map
 
 RESTIR-01 adds a host/device reservoir contract carrying the selected analytic-light identity, reusable shape parameters, target density, accumulated weight, candidate multiplicity, age, and exact receiving-surface identity. The realtime and balanced profiles activate it only at 16 or more analytic lights; the quality profile remains the conventional unbiased reference. Each first-bounce reservoir evaluates four candidates without visibility, traces one selected shadow ray, and combines validated previous-frame candidates with the current target density. Temporal reuse reprojects through the actual previous camera model and intrinsics, then requires matching material and primitive identity, bounded world-position error, aligned normals, and a bounded age. Scene preparation, sequence reset, resize, disocclusion, and identity changes cannot silently retain reservoir history. ReSTIR output uses its own estimator normalization rather than being averaged a second time by the legacy beauty accumulator.
 
-The fixed RTX 3090 gate renders 64 nonuniform analytic lights at 128x128 with 128 additional scene primitives to exercise the production traversal cost. A 256-spp conventional render is the reference; the comparison gives both the baseline and ReSTIR exactly 16 light candidates per pixel (`16 spp` versus `4 frames x 4 candidates`). Linear MSE is `0.021958989` for the baseline and `0.025011288` for ReSTIR, inside the declared equal-quality ratio `1.15`. Across five isolated repeats, baseline GPU render time is `0.768-0.788 ms` and ReSTIR is `0.707-0.742 ms`; the final recorded run is `0.764928 ms` versus `0.712032 ms`. Static reuse reaches all 16,384 receiver pixels, while the first frame and post-`prepare_scene` frame both report zero reused pixels. Three approved PNGs pass with zero display error and pinned, independently re-read SHA-256 values in `tests/references/restir_di/manifest.json`. The complete default suite passes 71/71; the OpenUSD/public-assets suite passes 74/74 and regenerates the existing 10-camera, 20-image bundle with zero linear/perceptual reference error. RESTIR-01 is complete.
+The fixed RTX 3090 gate renders 64 nonuniform analytic lights at 128x128 with 128 additional scene primitives to exercise the production traversal cost. A 256-spp conventional render is the reference; the comparison gives both the baseline and ReSTIR exactly 16 generated light candidates per pixel (`16 spp` versus `2 frames x 8 candidates`). The temporal-only four-frame candidate was rejected at MSE ratio `1.139`. Adding one previous-frame spatial donor, with current-surface target-density re-evaluation, donor multiplicity clamp, and exact position/normal/material/primitive validity gates, yields ratio `0.783138517`. Four independent batches each execute five paired trials; baseline batch means are `0.561766/0.564256/0.560749/0.565453 ms` and spatial ReSTIR means are `0.311885/0.309517/0.307386/0.311194 ms`. The aggregate means are `0.563056 ms` versus `0.309995 ms`, a `44.94%` improvement, with 20/20 paired wins. Every batch passes quality, performance, temporal, spatial, reset, and fixed-reference gates. RESTIR-01 and VAL-03 are complete.
 
 GPU-02 replaces per-launch `cudaMalloc/cudaFree` with one persistent `LaunchParams` device block per camera renderer and replaces per-frame `std::async` creation with one fixed worker per camera. The renderer pool uploads one shared read-only scene for all active cameras while preserving independent streams, frame buffers, temporal histories, and denoisers. SceneIR compatibility and v2 adapters retain prototype/instance identities, and the production CUDA intersection path traverses an uploaded BVH rather than linearly scanning every surface. Scene preparation classifies unchanged, data-only, same-topology geometry, and topology changes as reuse, update, refit, and rebuild; capacity-backed device buffers update only the required data.
 
-The fixed-seed RTX 3090 matrix uses `smoke`, 640x480, eight warmup frames, 100 measured frames, no image writes, and both realtime and balanced profiles. Realtime measures `6.41194/10.2016/18.4988 ms` at `1/2/4` cameras (`155.96/98.02/54.06 FPS`); balanced measures `6.46937/10.2787/18.3659 ms` (`154.57/97.29/54.45 FPS`). The four-camera realtime result reduces average frame time by 34.0% against the best recent same-workload `28.022 ms` record while preserving the ReSTIR and public image gates. Each report proves worker starts equal the camera count, one launch-parameter allocation per renderer, and one upload per frame/camera; four-camera runs record four allocations and 432 uploads across preparation, warmup, and measurement.
+The fixed-seed RTX 3090 matrix uses `smoke`, 640x480, eight warmup frames, 100 measured frames, no image writes, and both realtime and balanced profiles. Realtime measures `6.41194/10.2016/18.4988 ms` at `1/2/4` cameras (`155.96/98.02/54.06 FPS`); balanced measures `6.46937/10.2787/18.3659 ms` (`154.57/97.29/54.45 FPS`). These values remain current throughput records. The previous 34.0% uplift wording is retired until an attributable before/after image-quality parity artifact exists for the same `smoke` workload. Each report proves worker starts equal the camera count, one launch-parameter allocation per renderer, and one upload per frame/camera; four-camera runs record four allocations and 432 uploads across preparation, warmup, and measurement.
 
 The product-callsite lifecycle benchmark runs 20 post-warmup iterations over 1,024 instances sharing one prototype and a 511-node BVH. Average measured prepare times are rebuild `0.290565 ms`, update `0.163535 ms`, refit `0.178870 ms`, and reuse `0.160523 ms`; all 1,024 instance identities remain attributable to one prototype. The default Clang/CUDA/OptiX suite passes 73/73. The OpenUSD/public-assets suite passes 76/76 and regenerates all 20 EXR/PNG files; PNG error remains zero and the maximum linear error is `5.66244e-7`. GPU-02 and Phase 5 are complete.
 
@@ -201,8 +215,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- Audit VAL-03/VAL-04 against every recorded performance claim and the RTX 3090 capability boundary.
-- Compare NRD and capability-gated ReSTIR GI/PT or neural-cache experiments against the validated product path; retain only measured equal-quality improvements.
+- No open v2.0 delivery todo. Select a new milestone only from a concrete product bottleneck with an attributable acceptance contract.
 
 ### Blockers/Concerns
 
@@ -214,7 +227,7 @@ Recent decisions affecting current work:
 - CUDA memory telemetry is device-global rather than per-process; concurrent GPU workloads can perturb baseline and peak values.
 - OpenUSD is an optional system SDK dependency with verified OFF/ON paths; supported direct MaterialX color3 graphs compile, coat/fuzz/thin-film/dispersion/subsurface constants execute, and connected coat/fuzz/subsurface colors, NodeGraph interfaces, and fields outside the declared SceneIR subset remain fail-closed.
 - Dispersion currently uses fixed C/d/F RGB anchors. Stochastic wavelengths from measured sensor sensitivity curves remain a later spectral-quality extension; the current model is path-consistent but three-band.
-- Emissive geometry, the constant environment, and six SceneIR v2 analytic light types execute with explicit distributions, solid-angle PDFs, visibility, miss radiance, and MIS on CPU/GPU. RESTIR-01 preserves the LIGHT-02 physical bounds and adds equal-candidate many-light performance plus invalid-history gates; GI/PT reuse remains evidence-gated.
+- Emissive geometry, the constant environment, and six SceneIR v2 analytic light types execute with explicit distributions, solid-angle PDFs, visibility, miss radiance, and MIS on CPU/GPU. Promoted ReSTIR DI combines temporal reuse with one conservative previous-frame spatial donor; GI/PT and neural caching remain unpromoted.
 - The current `gpt-5.6-*` Codex IDE route still returns HTTP 404 from the built-in web tool. This is not a renderer delivery blocker: bounded public research uses direct read-only HTTP against official primary sources and records the pinned source revision. Do not spend renderer goal turns repairing host search unless the user explicitly reopens that task.
 
 ## Deferred Items
@@ -224,12 +237,12 @@ Recent decisions affecting current work:
 | Calibration | Dynamic render-preset-controlled resolution selection | Deferred to v2 | 2026-04-19 |
 | Calibration | Explicit per-camera intrinsics instead of derived defaults | Deferred to v2 | 2026-04-19 |
 | Calibration | Model-specific distortion coefficients and SE3 extrinsics | Deferred to v2 | 2026-04-19 |
-| Advanced reuse | ReSTIR GI/PT and neural radiance caching | Evidence-gated Phase 6 | 2026-07-18 |
-| Alternate denoiser | NRD integration | Compare after native OptiX temporal path | 2026-07-18 |
+| Advanced reuse | ReSTIR GI/PT and neural radiance caching | Rejected for v2.0; no product-path evidence over promoted DI | 2026-07-21 |
+| Alternate denoiser | NRD integration | Rejected for current CUDA/OptiX product path after pinned-source audit | 2026-07-21 |
 | Hardware-specific | SER and post-Ampere-only paths | Capability-gated; not RTX 3090 acceptance work | 2026-07-18 |
 
 ## Session Continuity
 
 Last session: 2026-07-21
-Stopped at: GPU-02 and Phase 5 are closed; next audit VAL-03/VAL-04 before any Phase 6 advanced-reuse experiment
+Stopped at: v2.0 complete; official OpenUSD v26.05 authority, spatial ReSTIR DI, and VAL-03/VAL-04 gates are closed
 Resume file: .planning/milestones/v2.0-REQUIREMENTS.md
