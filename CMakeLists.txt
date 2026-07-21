@@ -88,6 +88,10 @@ if(RT_ENABLE_PUBLIC_ACCEPTANCE_PROBES)
 endif()
 
 if(RT_ENABLE_OPENUSD)
+    # OpenUSD v26.05 can otherwise recreate the TBB target loaded above.
+    if(TARGET TBB::tbb AND NOT DEFINED PXR_FIND_TBB_IN_CONFIG)
+        set(PXR_FIND_TBB_IN_CONFIG ON)
+    endif()
     find_package(pxr CONFIG REQUIRED)
     if(TARGET usd_m)
         set(RT_OPENUSD_TARGETS usd_m)
