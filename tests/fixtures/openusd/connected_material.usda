@@ -13,9 +13,11 @@ def Xform "World"
         {
             uniform token info:id = "ND_open_pbr_surface_surfaceshader"
             color3f inputs:base_color.connect = </World/Material/Checker.outputs:out>
+            float inputs:base_metalness.connect = </World/Material/Metalness.outputs:out>
             color3f inputs:emission_color.connect = </World/Material/Image.outputs:out>
             float inputs:emission_luminance = 2
             color3f inputs:specular_color.connect = </World/Material/Constant.outputs:out>
+            float inputs:specular_roughness.connect = </World/Material/Roughness.outputs:out>
             color3f inputs:transmission_color.connect = </World/Material/Noise.outputs:out>
             float inputs:transmission_weight = 0.2
             token outputs:out
@@ -26,6 +28,13 @@ def Xform "World"
             uniform token info:id = "ND_constant_color3"
             color3f inputs:value = (0.2, 0.4, 0.8)
             color3f outputs:out
+        }
+
+        def Shader "Metalness"
+        {
+            uniform token info:id = "ND_constant_float"
+            float inputs:value = 0.7
+            float outputs:out
         }
 
         def Shader "Checker"
@@ -57,6 +66,19 @@ def Xform "World"
             string inputs:uaddressmode = "clamp"
             string inputs:vaddressmode = "mirror"
             color3f outputs:out
+        }
+
+        def Shader "Roughness"
+        {
+            uniform token info:id = "ND_image_float"
+            float inputs:default = 0.35
+            asset inputs:file = @textures/emission.png@ (
+                colorSpace = "raw"
+            )
+            string inputs:filtertype = "linear"
+            string inputs:uaddressmode = "periodic"
+            string inputs:vaddressmode = "periodic"
+            float outputs:out
         }
     }
 }

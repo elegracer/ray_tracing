@@ -162,8 +162,28 @@ int main(int argc, char** argv) {
     const rt::scene::SceneIRv2 connected_scene = rt::scene::import_openusd_stage(connected_fixture);
     const auto& connected_surface = std::get<rt::scene::SceneOpenPbrSurface>(
         *require_prim(connected_scene, "/World/Material").material);
-    expect_true(connected_surface.connections.size() == 4,
-        "four supported OpenPBR color connections compile");
+    expect_true(connected_surface.connections.size() == 6,
+        "supported OpenPBR color and scalar connections compile");
+
+    const rt::scene::ScenePrim& metalness = require_prim(connected_scene,
+        require_connection(connected_surface, "base_metalness").texture_path);
+    expect_true(metalness.texture->node == rt::scene::SceneTextureNode::constant_color
+                    && metalness.texture->node_definition == "ND_constant_float"
+                    && metalness.texture->output_type == rt::scene::SceneMaterialValueType::float_
+                    && metalness.texture->color_space == rt::scene::SceneColorSpace::raw,
+        "MaterialX constant float node contract");
+    expect_vec3_near(metalness.texture->value, Eigen::Vector3d::Constant(0.7), 1e-6,
+        "MaterialX constant float value is replicated for runtime projection");
+
+    const rt::scene::ScenePrim& roughness = require_prim(connected_scene,
+        require_connection(connected_surface, "specular_roughness").texture_path);
+    expect_true(roughness.texture->node == rt::scene::SceneTextureNode::image
+                    && roughness.texture->node_definition == "ND_image_float"
+                    && roughness.texture->output_type == rt::scene::SceneMaterialValueType::float_
+                    && roughness.texture->color_space == rt::scene::SceneColorSpace::raw,
+        "MaterialX float image node contract");
+    expect_vec3_near(roughness.texture->value, Eigen::Vector3d::Constant(0.35), 1e-6,
+        "MaterialX float image fallback is replicated for runtime projection");
 
     const rt::scene::ScenePrim& constant = require_prim(connected_scene,
         require_connection(connected_surface, "specular_color").texture_path);

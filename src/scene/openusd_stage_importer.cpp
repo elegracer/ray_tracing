@@ -643,7 +643,8 @@ std::string register_texture_source(std::string source_key, ScenePrim prim,
     return path;
 }
 
-std::optional<pxr::UsdShadeShader> connected_texture_shader(const pxr::UsdShadeInput& input) {
+std::optional<pxr::UsdShadeShader> connected_texture_shader(const pxr::UsdShadeInput& input,
+    std::optional<SceneMaterialValueType> expected_type) {
     pxr::SdfPathVector invalid_sources;
     const pxr::UsdShadeSourceInfoVector sources = input.GetConnectedSources(&invalid_sources);
     const std::string input_path = input.GetAttr().GetPath().GetString();
@@ -658,14 +659,23 @@ std::optional<pxr::UsdShadeShader> connected_texture_shader(const pxr::UsdShadeI
             "multiple UsdShade connection sources are unsupported on " + input_path);
     }
     const pxr::UsdShadeConnectionSourceInfo& source = sources.front();
-    if (source.sourceType != pxr::UsdShadeAttributeType::Output
-        || (source.sourceName != pxr::TfToken {"out"} && source.sourceName != pxr::TfToken {"rgb"})
-        || (source.typeName != pxr::SdfValueTypeNames->Color3f
-            && source.typeName != pxr::SdfValueTypeNames->Color3d
-            && source.typeName != pxr::SdfValueTypeNames->Float3
-            && source.typeName != pxr::SdfValueTypeNames->Vector3f)) {
+    const bool color_output = source.typeName == pxr::SdfValueTypeNames->Color3f
+                              || source.typeName == pxr::SdfValueTypeNames->Color3d
+                              || source.typeName == pxr::SdfValueTypeNames->Float3
+                              || source.typeName == pxr::SdfValueTypeNames->Vector3f;
+    const bool scalar_output = source.typeName == pxr::SdfValueTypeNames->Float;
+    const bool valid_name = !expected_type || source.sourceName == pxr::TfToken {"out"}
+                            || (*expected_type == SceneMaterialValueType::color3
+                                && source.sourceName == pxr::TfToken {"rgb"});
+    const bool valid_type = !expected_type
+                            || (*expected_type == SceneMaterialValueType::color3 && color_output)
+                            || (*expected_type == SceneMaterialValueType::float_ && scalar_output);
+    if (source.sourceType != pxr::UsdShadeAttributeType::Output || !valid_name || !valid_type) {
+        const std::string expected = expected_type == SceneMaterialValueType::float_
+                                         ? "float outputs:out"
+                                         : "color3 outputs:out or outputs:rgb";
         throw std::invalid_argument(
-            "connected color input requires one outputs:out or outputs:rgb source: " + input_path);
+            "connected input requires one " + expected + " source: " + input_path);
     }
     const pxr::UsdShadeShader shader {source.source.GetPrim()};
     if (!shader) {
@@ -685,7 +695,8 @@ std::string import_checker_color(const pxr::UsdShadeShader& shader, std::string_
     const Eigen::Vector3d& default_value, MaterialGraphImport& graph) {
     const pxr::UsdShadeInput input = shader.GetInput(pxr::TfToken {std::string {input_name}});
     if (input) {
-        if (const std::optional<pxr::UsdShadeShader> source = connected_texture_shader(input)) {
+        if (const std::optional<pxr::UsdShadeShader> source =
+                connected_texture_shader(input, SceneMaterialValueType::color3)) {
             return import_texture_shader(*source, graph);
         }
     }
@@ -752,7 +763,19 @@ std::string import_texture_shader(const pxr::UsdShadeShader& shader, MaterialGra
         texture.value = material_color(
             read_materialx_input(shader, "value", pxr::VtValue {pxr::GfVec3f {0.0F, 0.0F, 0.0F}}),
             source_key + ".inputs:value");
-    } else if (shader_id == pxr::TfToken {"ND_image_color3"}) {
+    } else if (shader_id == pxr::TfToken {"ND_constant_float"}) {
+        require_supported_inputs(shader, std::array<std::string_view, 1> {"value"});
+        const double value =
+            material_scalar(read_materialx_input(shader, "value", pxr::VtValue {0.0F}),
+                source_key + ".inputs:value");
+        texture.node = SceneTextureNode::constant_color;
+        texture.node_definition = "ND_constant_float";
+        texture.output_type = SceneMaterialValueType::float_;
+        texture.color_space = SceneColorSpace::raw;
+        texture.value = Eigen::Vector3d::Constant(value);
+    } else if (shader_id == pxr::TfToken {"ND_image_color3"}
+               || shader_id == pxr::TfToken {"ND_image_float"}) {
+        const bool scalar_image = shader_id == pxr::TfToken {"ND_image_float"};
         require_supported_inputs(shader,
             std::array<std::string_view, 10> {"file", "layer", "default", "texcoord",
                 "uaddressmode", "vaddressmode", "filtertype", "framerange", "frameoffset",
@@ -767,7 +790,7 @@ std::string import_texture_shader(const pxr::UsdShadeShader& shader, MaterialGra
         if (!file) {
             throw std::invalid_argument("MaterialX image requires inputs:file on " + source_key);
         }
-        if (connected_texture_shader(file)) {
+        if (connected_texture_shader(file, std::nullopt)) {
             throw std::invalid_argument(
                 "MaterialX image file input may not be connected: " + source_key);
         }
@@ -779,12 +802,25 @@ std::string import_texture_shader(const pxr::UsdShadeShader& shader, MaterialGra
         }
 
         texture.node = SceneTextureNode::image;
-        texture.node_definition = "ND_image_color3";
+        texture.node_definition = scalar_image ? "ND_image_float" : "ND_image_color3";
+        texture.output_type =
+            scalar_image ? SceneMaterialValueType::float_ : SceneMaterialValueType::color3;
         texture.color_space =
             texture_color_space(file.GetAttr(), file.GetAttr().GetPath().GetString());
-        texture.value = material_color(
-            read_materialx_input(shader, "default", pxr::VtValue {pxr::GfVec3f {0.0F, 0.0F, 0.0F}}),
-            source_key + ".inputs:default");
+        if (scalar_image && texture.color_space != SceneColorSpace::raw) {
+            throw std::invalid_argument(
+                "MaterialX float image requires raw colorSpace metadata: " + source_key);
+        }
+        if (scalar_image) {
+            const double value =
+                material_scalar(read_materialx_input(shader, "default", pxr::VtValue {0.0F}),
+                    source_key + ".inputs:default");
+            texture.value = Eigen::Vector3d::Constant(value);
+        } else {
+            texture.value = material_color(read_materialx_input(shader, "default",
+                                               pxr::VtValue {pxr::GfVec3f {0.0F, 0.0F, 0.0F}}),
+                source_key + ".inputs:default");
+        }
         const std::string u_address = material_string(
             read_materialx_input(shader, "uaddressmode", pxr::VtValue {std::string {"periodic"}}),
             source_key + ".inputs:uaddressmode");
@@ -910,17 +946,29 @@ SceneOpenPbrSurface import_openpbr_surface(const pxr::UsdShadeShader& shader,
     for (const pxr::UsdShadeInput& input : shader.GetInputs(true)) {
         const std::string input_name = input.GetBaseName().GetString();
         const std::string input_path = shader_path + ".inputs:" + input_name;
-        const std::optional<pxr::UsdShadeShader> connected = connected_texture_shader(input);
+        const auto scalar_input = std::find_if(scalar_inputs.begin(), scalar_inputs.end(),
+            [&](const auto& entry) { return entry.first == input_name; });
+        const auto color_input = std::find_if(color_inputs.begin(), color_inputs.end(),
+            [&](const auto& entry) { return entry.first == input_name; });
+        const std::optional<SceneMaterialValueType> expected_type =
+            color_input != color_inputs.end()     ? std::optional {SceneMaterialValueType::color3}
+            : scalar_input != scalar_inputs.end() ? std::optional {SceneMaterialValueType::float_}
+                                                  : std::nullopt;
+        const std::optional<pxr::UsdShadeShader> connected =
+            connected_texture_shader(input, expected_type);
         if (connected) {
-            const auto color_input = std::find_if(color_inputs.begin(), color_inputs.end(),
-                [&](const auto& entry) { return entry.first == input_name; });
-            if (color_input == color_inputs.end()) {
-                throw std::invalid_argument(
-                    "connected OpenPBR input requires a supported color3 parameter: " + input_path);
+            if (color_input != color_inputs.end()) {
+                surface.connections.push_back({input_name, SceneMaterialValueType::color3,
+                    import_texture_shader(*connected, graph), SceneTextureChannel::rgb});
+                continue;
             }
-            surface.connections.push_back({input_name, SceneMaterialValueType::color3,
-                import_texture_shader(*connected, graph), SceneTextureChannel::rgb});
-            continue;
+            if (input_name == "base_metalness" || input_name == "specular_roughness") {
+                surface.connections.push_back({input_name, SceneMaterialValueType::float_,
+                    import_texture_shader(*connected, graph), SceneTextureChannel::rgb});
+                continue;
+            }
+            throw std::invalid_argument(
+                "connected OpenPBR input is unsupported by the production core: " + input_path);
         }
         pxr::VtValue value;
         if (!input.Get(&value, pxr::UsdTimeCode::Default())) {
@@ -977,7 +1025,8 @@ SceneOpenPbrSurface import_usd_preview_surface(const pxr::UsdShadeShader& shader
         const std::string input_name = input.GetBaseName().GetString();
         const std::string input_path = shader_path + ".inputs:" + input_name;
         if (input_name == "diffuseColor") {
-            const std::optional<pxr::UsdShadeShader> connected = connected_texture_shader(input);
+            const std::optional<pxr::UsdShadeShader> connected =
+                connected_texture_shader(input, SceneMaterialValueType::color3);
             if (connected) {
                 surface.connections.push_back({"base_color", SceneMaterialValueType::color3,
                     import_texture_shader(*connected, graph), SceneTextureChannel::rgb});

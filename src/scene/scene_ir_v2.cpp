@@ -430,17 +430,26 @@ void append_texture_diagnostics(std::vector<SceneDiagnostic>& diagnostics,
     const std::unordered_map<std::string, const ScenePrim*>& prims_by_path) {
     const std::string_view expected_node_definition = [&] {
         switch (texture.node) {
-            case SceneTextureNode::constant_color: return std::string_view {"ND_constant_color3"};
+            case SceneTextureNode::constant_color:
+                return texture.output_type == SceneMaterialValueType::float_
+                           ? std::string_view {"ND_constant_float"}
+                           : std::string_view {"ND_constant_color3"};
             case SceneTextureNode::checkerboard: return std::string_view {"ND_checkerboard_color3"};
-            case SceneTextureNode::image: return std::string_view {"ND_image_color3"};
+            case SceneTextureNode::image:
+                return texture.output_type == SceneMaterialValueType::float_
+                           ? std::string_view {"ND_image_float"}
+                           : std::string_view {"ND_image_color3"};
             case SceneTextureNode::noise3d: return std::string_view {"ND_noise3d_color3"};
         }
         return std::string_view {};
     }();
-    if (texture.output_type != SceneMaterialValueType::color3
-        || texture.node_definition != expected_node_definition) {
+    const bool supported_output = texture.output_type == SceneMaterialValueType::color3
+                                  || (texture.output_type == SceneMaterialValueType::float_
+                                      && (texture.node == SceneTextureNode::constant_color
+                                          || texture.node == SceneTextureNode::image));
+    if (!supported_output || texture.node_definition != expected_node_definition) {
         diagnostics.push_back({SceneDiagnosticSeverity::error, "texture.node_definition", prim.path,
-            "legacy SceneIR v2 textures require the matching official MaterialX color3 nodedef"});
+            "SceneIR v2 textures require a supported matching official MaterialX nodedef"});
     }
     if (!is_namespaced_identifier(texture.texcoord_primvar)) {
         diagnostics.push_back({SceneDiagnosticSeverity::error, "texture.texcoord_primvar",
@@ -448,7 +457,13 @@ void append_texture_diagnostics(std::vector<SceneDiagnostic>& diagnostics,
     }
     if (!texture.value.allFinite() || (texture.value.array() < 0.0).any()) {
         diagnostics.push_back({SceneDiagnosticSeverity::error, "texture.value", prim.path,
-            "color3 texture values must be finite and non-negative"});
+            "texture values must be finite and non-negative"});
+    }
+    if (texture.output_type == SceneMaterialValueType::float_
+        && (!texture.value.isConstant(texture.value.x(), 1e-12)
+            || texture.color_space != SceneColorSpace::raw)) {
+        diagnostics.push_back({SceneDiagnosticSeverity::error, "texture.scalar_contract", prim.path,
+            "float textures require replicated scalar values and raw color space"});
     }
     if (!std::isfinite(texture.scale) || texture.scale <= 0.0) {
         diagnostics.push_back({SceneDiagnosticSeverity::error, "texture.scale", prim.path,

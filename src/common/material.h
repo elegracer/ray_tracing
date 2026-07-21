@@ -188,8 +188,11 @@ struct OpenPbrSurfaceMaterial {
           specular_color_texture(resolve_texture(material.color_textures.specular_color, textures)),
           transmission_color_texture(
               resolve_texture(material.color_textures.transmission_color, textures)),
-          emission_color_texture(
-              resolve_texture(material.color_textures.emission_color, textures)) {}
+          emission_color_texture(resolve_texture(material.color_textures.emission_color, textures)),
+          base_metalness_texture(
+              resolve_texture(material.scalar_textures.base_metalness, textures)),
+          specular_roughness_texture(
+              resolve_texture(material.scalar_textures.specular_roughness, textures)) {}
 
     Vec3d emitted(const Ray&, const HitRecord&, const double u, const double v,
         const Vec3d& p) const {
@@ -257,7 +260,8 @@ struct OpenPbrSurfaceMaterial {
     }
 
 private:
-    static pro::proxy<Texture> resolve_texture(const rt::OpenPbrColorTextureBinding& binding,
+    template<typename Binding>
+    static pro::proxy<Texture> resolve_texture(const Binding& binding,
         const std::vector<pro::proxy<Texture>>& textures) {
         if (binding.texture_index < 0) {
             return nullptr;
@@ -286,6 +290,16 @@ private:
             binding.source_color_space);
     }
 
+    static void apply_binding(rt::OpenPbrCoreMaterial& parameters,
+        const rt::OpenPbrScalarTextureBinding& binding, rt::OpenPbrScalarInput input,
+        const pro::proxy<Texture>& texture, double u, double v, const Vec3d& p) {
+        if (binding.texture_index < 0) {
+            return;
+        }
+        rt::openpbr_apply_scalar_input(parameters, input,
+            static_cast<float>(texture->value(u, v, p).x()));
+    }
+
     rt::OpenPbrCoreMaterial evaluated_scattering_parameters(double u, double v,
         const Vec3d& p) const {
         rt::OpenPbrCoreMaterial parameters = material.parameters;
@@ -295,6 +309,10 @@ private:
             rt::OpenPbrColorInput::specular_color, specular_color_texture, u, v, p);
         apply_binding(parameters, material.color_textures.transmission_color,
             rt::OpenPbrColorInput::transmission_color, transmission_color_texture, u, v, p);
+        apply_binding(parameters, material.scalar_textures.base_metalness,
+            rt::OpenPbrScalarInput::base_metalness, base_metalness_texture, u, v, p);
+        apply_binding(parameters, material.scalar_textures.specular_roughness,
+            rt::OpenPbrScalarInput::specular_roughness, specular_roughness_texture, u, v, p);
         return parameters;
     }
 
@@ -316,6 +334,8 @@ private:
     pro::proxy<Texture> specular_color_texture;
     pro::proxy<Texture> transmission_color_texture;
     pro::proxy<Texture> emission_color_texture;
+    pro::proxy<Texture> base_metalness_texture;
+    pro::proxy<Texture> specular_roughness_texture;
 };
 
 struct DiffuseLight {

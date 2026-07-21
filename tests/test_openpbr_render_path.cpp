@@ -32,10 +32,16 @@ OpenPbrReferenceScene make_reference_scene() {
     OpenPbrReferenceScene scene;
     const Eigen::Vector3d base_source {0.5, 0.25, 0.75};
     const Eigen::Vector3d emission_source {0.5, 0.25, 0.125};
+    const Eigen::Vector3d metalness_source = Eigen::Vector3d::Zero();
+    const Eigen::Vector3d roughness_source = Eigen::Vector3d::Constant(0.6);
     const int base_texture =
         scene.compatibility.add_texture(rt::scene::ConstantColorTextureDesc {.color = base_source});
     const int emission_texture = scene.compatibility.add_texture(
         rt::scene::ConstantColorTextureDesc {.color = emission_source});
+    const int metalness_texture = scene.compatibility.add_texture(
+        rt::scene::ConstantColorTextureDesc {.color = metalness_source});
+    const int roughness_texture = scene.compatibility.add_texture(
+        rt::scene::ConstantColorTextureDesc {.color = roughness_source});
     const int legacy_material = scene.compatibility.add_material(
         rt::scene::DiffuseMaterial {.albedo_texture = base_texture});
     const int sphere = scene.compatibility.add_shape(rt::scene::SphereShape {
@@ -69,9 +75,35 @@ OpenPbrReferenceScene make_reference_scene() {
             },
         .compatibility_source_index = static_cast<std::size_t>(emission_texture),
     });
+    scene.scene_v2.add_prim(rt::scene::ScenePrim {
+        .path = "/World/Textures/Metalness",
+        .kind = rt::scene::ScenePrimKind::texture,
+        .texture =
+            rt::scene::SceneTexture {
+                .node_definition = "ND_constant_float",
+                .output_type = rt::scene::SceneMaterialValueType::float_,
+                .color_space = rt::scene::SceneColorSpace::raw,
+                .value = metalness_source,
+            },
+        .compatibility_source_index = static_cast<std::size_t>(metalness_texture),
+    });
+    scene.scene_v2.add_prim(rt::scene::ScenePrim {
+        .path = "/World/Textures/Roughness",
+        .kind = rt::scene::ScenePrimKind::texture,
+        .texture =
+            rt::scene::SceneTexture {
+                .node_definition = "ND_constant_float",
+                .output_type = rt::scene::SceneMaterialValueType::float_,
+                .color_space = rt::scene::SceneColorSpace::raw,
+                .value = roughness_source,
+            },
+        .compatibility_source_index = static_cast<std::size_t>(roughness_texture),
+    });
     scene.scene_v2.add_prim(rt::scene::ScenePrim {.path = "/World/Materials"});
     rt::scene::SceneOpenPbrSurface surface;
     surface.specular_weight = 0.0;
+    surface.base_metalness = 1.0;
+    surface.specular_roughness = 0.05;
     surface.emission_luminance = 2.0;
     surface.connections = {
         rt::scene::SceneMaterialConnection {
@@ -83,6 +115,16 @@ OpenPbrReferenceScene make_reference_scene() {
             .input_name = "emission_color",
             .input_type = rt::scene::SceneMaterialValueType::color3,
             .texture_path = "/World/Textures/Emission",
+        },
+        rt::scene::SceneMaterialConnection {
+            .input_name = "base_metalness",
+            .input_type = rt::scene::SceneMaterialValueType::float_,
+            .texture_path = "/World/Textures/Metalness",
+        },
+        rt::scene::SceneMaterialConnection {
+            .input_name = "specular_roughness",
+            .input_type = rt::scene::SceneMaterialValueType::float_,
+            .texture_path = "/World/Textures/Roughness",
         },
     };
     scene.scene_v2.add_prim(rt::scene::ScenePrim {
@@ -439,6 +481,12 @@ int main() {
     rt::SceneDescription gpu_scene =
         rt::scene::adapt_to_realtime_openpbr(reference.compatibility, reference.scene_v2);
     gpu_scene.background = Eigen::Vector3d::Ones();
+    rt::PackedScene packed_gpu_scene = gpu_scene.pack();
+    const auto& gpu_material =
+        std::get<rt::OpenPbrMaterialDesc>(packed_gpu_scene.materials.front());
+    expect_true(gpu_material.compiled.scalar_textures.base_metalness.texture_index == 2
+                    && gpu_material.compiled.scalar_textures.specular_roughness.texture_index == 3,
+        "SceneIR v2 scalar bindings reach the realtime material table");
     rt::RenderProfile profile = rt::RenderProfile::realtime_default();
     profile.samples_per_pixel = 4;
     profile.max_bounces = 2;
@@ -446,7 +494,7 @@ int main() {
 
     rt::OptixRenderer renderer;
     const rt::RadianceFrame gpu =
-        renderer.render_radiance(gpu_scene.pack(), make_test_rig().pack(), profile, 0);
+        renderer.render_radiance(packed_gpu_scene, make_test_rig().pack(), profile, 0);
     const Eigen::Vector3d gpu_reference = center_pixel_rgb(gpu);
     expect_vec3_near(gpu_reference, cpu_reference, 5e-4,
         "SceneIR v2 connected OpenPBR CPU and GPU linear reference agreement");

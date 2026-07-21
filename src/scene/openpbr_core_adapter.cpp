@@ -62,19 +62,42 @@ OpenPbrColorTextureBinding* find_supported_color_binding(OpenPbrColorTextureBind
     return nullptr;
 }
 
-void compile_color_connections(OpenPbrCompiledMaterial& compiled,
+OpenPbrScalarTextureBinding* find_supported_scalar_binding(OpenPbrScalarTextureBindings& bindings,
+    std::string_view input_name) {
+    if (input_name == "base_metalness") {
+        return &bindings.base_metalness;
+    }
+    if (input_name == "specular_roughness") {
+        return &bindings.specular_roughness;
+    }
+    return nullptr;
+}
+
+void require_supported_connection(const SceneMaterialConnection& connection,
+    const SceneTexture& texture, OpenPbrColorTextureBinding*& color_binding,
+    OpenPbrScalarTextureBinding*& scalar_binding, OpenPbrCompiledMaterial& compiled) {
+    color_binding = find_supported_color_binding(compiled.color_textures, connection.input_name);
+    scalar_binding = find_supported_scalar_binding(compiled.scalar_textures, connection.input_name);
+    const bool color_connection = color_binding != nullptr
+                                  && connection.input_type == SceneMaterialValueType::color3
+                                  && connection.channel == SceneTextureChannel::rgb
+                                  && texture.output_type == SceneMaterialValueType::color3;
+    const bool scalar_connection = scalar_binding != nullptr
+                                   && connection.input_type == SceneMaterialValueType::float_
+                                   && connection.channel == SceneTextureChannel::rgb
+                                   && texture.output_type == SceneMaterialValueType::float_
+                                   && texture.color_space == SceneColorSpace::raw;
+    if (!color_connection && !scalar_connection) {
+        throw std::invalid_argument(
+            "OpenPBR production core supports RGB base/specular/transmission/emission color "
+            "connections and raw float base_metalness/specular_roughness connections");
+    }
+}
+
+void compile_texture_connections(OpenPbrCompiledMaterial& compiled,
     const SceneOpenPbrSurface& material, const SceneIRv2& scene,
     std::size_t compatibility_texture_count) {
     for (const SceneMaterialConnection& connection : material.connections) {
-        OpenPbrColorTextureBinding* binding =
-            find_supported_color_binding(compiled.color_textures, connection.input_name);
-        if (binding == nullptr || connection.input_type != SceneMaterialValueType::color3
-            || connection.channel != SceneTextureChannel::rgb) {
-            throw std::invalid_argument(
-                "OpenPBR production core supports RGB connections only for base_color, "
-                "specular_color, transmission_color, and emission_color");
-        }
-
         const ScenePrim* texture_prim = scene.find_prim(connection.texture_path);
         if (texture_prim == nullptr || !texture_prim->texture) {
             throw std::invalid_argument(
@@ -89,9 +112,17 @@ void compile_color_connections(OpenPbrCompiledMaterial& compiled,
             throw std::invalid_argument(
                 "OpenPBR connected texture compatibility index is out of range");
         }
-        binding->texture_index = static_cast<int>(texture_index);
-        binding->source_color_space =
-            compile_source_color_space(texture_prim->texture->color_space);
+        OpenPbrColorTextureBinding* color_binding = nullptr;
+        OpenPbrScalarTextureBinding* scalar_binding = nullptr;
+        require_supported_connection(connection, *texture_prim->texture, color_binding,
+            scalar_binding, compiled);
+        if (color_binding != nullptr) {
+            color_binding->texture_index = static_cast<int>(texture_index);
+            color_binding->source_color_space =
+                compile_source_color_space(texture_prim->texture->color_space);
+        } else {
+            scalar_binding->texture_index = static_cast<int>(texture_index);
+        }
     }
 }
 
@@ -156,14 +187,6 @@ OpenPbrCompiledMaterial compile_openpbr_core_material(const SceneOpenPbrSurface&
     OpenPbrCompiledMaterial compiled = compile_openpbr_core_material(constants);
 
     for (const SceneMaterialConnection& connection : material.connections) {
-        OpenPbrColorTextureBinding* binding =
-            find_supported_color_binding(compiled.color_textures, connection.input_name);
-        if (binding == nullptr || connection.input_type != SceneMaterialValueType::color3
-            || connection.channel != SceneTextureChannel::rgb) {
-            throw std::invalid_argument(
-                "OpenPBR production core supports RGB connections only for base_color, "
-                "specular_color, transmission_color, and emission_color");
-        }
         const ScenePrim* texture_prim = scene.find_prim(connection.texture_path);
         if (texture_prim == nullptr || !texture_prim->texture) {
             throw std::invalid_argument(
@@ -174,9 +197,17 @@ OpenPbrCompiledMaterial compile_openpbr_core_material(const SceneOpenPbrSurface&
             throw std::invalid_argument("OpenPBR connected texture has no realtime texture index: "
                                         + connection.texture_path);
         }
-        binding->texture_index = texture_index->second;
-        binding->source_color_space =
-            compile_source_color_space(texture_prim->texture->color_space);
+        OpenPbrColorTextureBinding* color_binding = nullptr;
+        OpenPbrScalarTextureBinding* scalar_binding = nullptr;
+        require_supported_connection(connection, *texture_prim->texture, color_binding,
+            scalar_binding, compiled);
+        if (color_binding != nullptr) {
+            color_binding->texture_index = texture_index->second;
+            color_binding->source_color_space =
+                compile_source_color_space(texture_prim->texture->color_space);
+        } else {
+            scalar_binding->texture_index = texture_index->second;
+        }
     }
     return compiled;
 }
@@ -208,7 +239,7 @@ std::vector<std::optional<OpenPbrCompiledMaterial>> compile_openpbr_core_materia
             SceneOpenPbrSurface constants = *surface;
             constants.connections.clear();
             OpenPbrCompiledMaterial compiled = compile_openpbr_core_material(constants);
-            compile_color_connections(compiled, *surface, scene, compatibility_texture_count);
+            compile_texture_connections(compiled, *surface, scene, compatibility_texture_count);
             table[index] = compiled;
         }
     }

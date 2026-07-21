@@ -89,6 +89,11 @@ enum class OpenPbrColorInput : int {
     emission_color = 3,
 };
 
+enum class OpenPbrScalarInput : int {
+    base_metalness = 0,
+    specular_roughness = 1,
+};
+
 struct OpenPbrColorTextureBinding {
     int texture_index = -1;
     OpenPbrSourceColorSpace source_color_space = OpenPbrSourceColorSpace::linear_srgb;
@@ -101,9 +106,19 @@ struct OpenPbrColorTextureBindings {
     OpenPbrColorTextureBinding emission_color {};
 };
 
+struct OpenPbrScalarTextureBinding {
+    int texture_index = -1;
+};
+
+struct OpenPbrScalarTextureBindings {
+    OpenPbrScalarTextureBinding base_metalness {};
+    OpenPbrScalarTextureBinding specular_roughness {};
+};
+
 struct OpenPbrCompiledMaterial {
     OpenPbrCoreMaterial parameters {};
     OpenPbrColorTextureBindings color_textures {};
+    OpenPbrScalarTextureBindings scalar_textures {};
 };
 
 struct OpenPbrFrame {
@@ -326,6 +341,14 @@ RT_OPENPBR_HD RT_OPENPBR_INLINE void openpbr_apply_color_input(OpenPbrCoreMateri
         case OpenPbrColorInput::specular_color: material.specular_color = value; break;
         case OpenPbrColorInput::transmission_color: material.transmission_color = value; break;
         case OpenPbrColorInput::emission_color: material.emission_color = value; break;
+    }
+}
+
+RT_OPENPBR_HD RT_OPENPBR_INLINE void openpbr_apply_scalar_input(OpenPbrCoreMaterial& material,
+    OpenPbrScalarInput input, float value) {
+    switch (input) {
+        case OpenPbrScalarInput::base_metalness: material.base_metalness = value; break;
+        case OpenPbrScalarInput::specular_roughness: material.specular_roughness = value; break;
     }
 }
 

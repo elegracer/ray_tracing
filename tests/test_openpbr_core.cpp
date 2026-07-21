@@ -178,6 +178,40 @@ rt::scene::SceneIRv2 connected_color_scene(std::vector<std::string> input_names,
     return scene;
 }
 
+rt::scene::SceneIRv2 connected_scalar_scene() {
+    rt::scene::SceneIRv2 scene;
+    scene.add_prim(rt::scene::ScenePrim {.path = "/World"});
+    scene.add_prim(rt::scene::ScenePrim {.path = "/World/Textures"});
+    scene.add_prim(rt::scene::ScenePrim {
+        .path = "/World/Textures/Scalar",
+        .kind = rt::scene::ScenePrimKind::texture,
+        .texture =
+            rt::scene::SceneTexture {
+                .node = rt::scene::SceneTextureNode::constant_color,
+                .node_definition = "ND_constant_float",
+                .output_type = rt::scene::SceneMaterialValueType::float_,
+                .color_space = rt::scene::SceneColorSpace::raw,
+                .value = Eigen::Vector3d::Constant(0.35),
+            },
+        .compatibility_source_index = 0,
+    });
+    scene.add_prim(rt::scene::ScenePrim {.path = "/World/Materials"});
+    rt::scene::SceneOpenPbrSurface surface;
+    surface.connections = {
+        {"base_metalness", rt::scene::SceneMaterialValueType::float_, "/World/Textures/Scalar",
+            rt::scene::SceneTextureChannel::rgb},
+        {"specular_roughness", rt::scene::SceneMaterialValueType::float_, "/World/Textures/Scalar",
+            rt::scene::SceneTextureChannel::rgb},
+    };
+    scene.add_prim(rt::scene::ScenePrim {
+        .path = "/World/Materials/Surface",
+        .kind = rt::scene::ScenePrimKind::material,
+        .material = surface,
+        .compatibility_source_index = 0,
+    });
+    return scene;
+}
+
 void test_color_connections_and_color_spaces() {
     rt::scene::SceneIRv2 scene = connected_color_scene(
         {"base_color", "specular_color", "transmission_color", "emission_color"},
@@ -192,6 +226,19 @@ void test_color_connections_and_color_spaces() {
         "supported color3 inputs bind the compatibility texture");
     expect_true(bindings.base_color.source_color_space == rt::OpenPbrSourceColorSpace::srgb_texture,
         "compiled binding retains source color space");
+
+    const auto scalar_table =
+        rt::scene::compile_openpbr_core_material_table(connected_scalar_scene(), 1, 1);
+    expect_true(scalar_table[0]->scalar_textures.base_metalness.texture_index == 0
+                    && scalar_table[0]->scalar_textures.specular_roughness.texture_index == 0,
+        "supported float inputs bind the compatibility texture");
+    rt::OpenPbrCoreMaterial scalar_parameters;
+    rt::openpbr_apply_scalar_input(scalar_parameters, rt::OpenPbrScalarInput::base_metalness,
+        0.65f);
+    rt::openpbr_apply_scalar_input(scalar_parameters, rt::OpenPbrScalarInput::specular_roughness,
+        0.2f);
+    expect_near(scalar_parameters.base_metalness, 0.65, 1e-6, "metalness scalar binding");
+    expect_near(scalar_parameters.specular_roughness, 0.2, 1e-6, "roughness scalar binding");
 
     const rt::OpenPbrVec3 raw =
         rt::openpbr_source_to_linear({0.04045f, 0.5f, 1.0f}, rt::OpenPbrSourceColorSpace::raw);
@@ -209,8 +256,7 @@ void test_color_connections_and_color_spaces() {
         (void)rt::scene::compile_openpbr_core_material_table(
             connected_color_scene({"coat_color"}, rt::scene::SceneColorSpace::linear_srgb), 1, 1);
     } catch (const std::invalid_argument& ex) {
-        unsupported_input =
-            std::string {ex.what()}.find("supports RGB connections only") != std::string::npos;
+        unsupported_input = std::string {ex.what()}.find("supports RGB base") != std::string::npos;
     }
     expect_true(unsupported_input, "unsupported active color connection fails explicitly");
 

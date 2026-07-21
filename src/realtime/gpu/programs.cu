@@ -931,6 +931,16 @@ __device__ void evaluate_openpbr_color_binding(const DeviceSceneView& scene,
         binding.source_color_space);
 }
 
+__device__ void evaluate_openpbr_scalar_binding(const DeviceSceneView& scene,
+    OpenPbrCoreMaterial& parameters, const OpenPbrScalarTextureBinding& binding,
+    OpenPbrScalarInput input, float u, float v, const float3& position) {
+    if (binding.texture_index < 0) {
+        return;
+    }
+    const float value = evaluate_texture(scene, binding.texture_index, u, v, position).x;
+    openpbr_apply_scalar_input(parameters, input, value);
+}
+
 __device__ OpenPbrCoreMaterial evaluate_openpbr_scattering_material(const DeviceSceneView& scene,
     const OpenPbrCompiledMaterial& material, const HitInfo& hit) {
     OpenPbrCoreMaterial parameters = material.parameters;
@@ -941,6 +951,10 @@ __device__ OpenPbrCoreMaterial evaluate_openpbr_scattering_material(const Device
         OpenPbrColorInput::specular_color, hit.tex_u, hit.tex_v, hit.position);
     evaluate_openpbr_color_binding(scene, parameters, material.color_textures.transmission_color,
         OpenPbrColorInput::transmission_color, hit.tex_u, hit.tex_v, hit.position);
+    evaluate_openpbr_scalar_binding(scene, parameters, material.scalar_textures.base_metalness,
+        OpenPbrScalarInput::base_metalness, hit.tex_u, hit.tex_v, hit.position);
+    evaluate_openpbr_scalar_binding(scene, parameters, material.scalar_textures.specular_roughness,
+        OpenPbrScalarInput::specular_roughness, hit.tex_u, hit.tex_v, hit.position);
     return parameters;
 }
 
